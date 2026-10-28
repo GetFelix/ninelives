@@ -16,9 +16,9 @@ which services the image starts.
 
 | Role | Runs | How many |
 |---|---|---|
-| core | control plane, broker, felixd | 3, or 5 in larger clusters |
-| storage | broker, felixd | as many as data and throughput need |
-| worker | felixd | the rest |
+| core | control plane, broker, felixd | 3, or 5 in larger clusters (1 for development) |
+| storage | broker, felixd | optional; as many as data and throughput need |
+| worker | felixd | optional; the rest |
 
 - **The control plane stays at 3 or 5.** It is a Raft group and every
   metadata write waits for a majority. Three tolerates one failure and five
@@ -26,8 +26,36 @@ which services the image starts.
 - **Brokers don't need to be everywhere.** Each broker is somewhere the
   control plane can place shards. The replication factor decides how many
   copies of a shard exist, not the number of brokers.
-- **The smallest cluster is three core machines.** That is the M2 demo.
 - The control plane uses Felix's built-in Raft store. There is no Postgres.
+
+## Cluster sizes
+
+Storage machines and workers are optional. A cluster starts small and adds
+them when it needs capacity.
+
+| Cluster | Machines | What you get |
+|---|---|---|
+| Development | 1 core | Everything works; nothing survives losing the machine |
+| Smallest fault-tolerant | 3 core | Survives losing any one machine. This is the M2 demo. |
+| Growing | 3 core + workers | More compute; the core machines still hold the log |
+| Large | 3 or 5 core + storage + workers | More log capacity, and workloads kept off the log's machines |
+
+Three is the floor for surviving a failure: Raft needs a majority, and with
+two machines losing either one leaves no majority.
+
+The smallest fault-tolerant cluster:
+
+```mermaid
+flowchart LR
+    c1["core-1<br/>control plane<br/>broker<br/>felixd"]
+    c2["core-2<br/>control plane<br/>broker<br/>felixd"]
+    c3["core-3<br/>control plane<br/>broker<br/>felixd"]
+    c1 <-->|Raft| c2
+    c2 <-->|Raft| c3
+    c1 <-->|Raft| c3
+```
+
+A large cluster adds storage machines and workers around the same core:
 
 ```mermaid
 flowchart TB
@@ -37,16 +65,15 @@ flowchart TB
         c2["core-2<br/>control plane<br/>broker<br/>felixd"]
         c3["core-3<br/>control plane<br/>broker<br/>felixd"]
     end
-    subgraph storage["Storage machines (any number)"]
+    subgraph storage["Storage machines (optional)"]
         direction LR
         s1["storage-1<br/>broker<br/>felixd"]
         s2["storage-2<br/>broker<br/>felixd"]
     end
-    subgraph workers["Workers (the rest)"]
+    subgraph workers["Workers (optional)"]
         direction LR
         w1["worker-1<br/>felixd"]
         w2["worker-2<br/>felixd"]
-        w3["worker-3<br/>felixd"]
     end
     c1 <-->|Raft| c2
     c2 <-->|Raft| c3
@@ -92,7 +119,7 @@ Two ways to place the log:
 | | Shared (default) | External |
 |---|---|---|
 | Setup | One image; Felix comes up as part of the OS | The join config names an existing Felix cluster; every machine is a worker |
-| Smallest cluster | 3 machines | 3 Felix machines plus at least 1 worker |
+| Smallest cluster | 1, or 3 to survive a failure | 3 Felix machines plus at least 1 worker |
 | Risk | A workload on a core machine competes with the log, limited by the cgroup reservation | A workload can't touch the log |
 | Fits | Demos, small clusters, edge sites | Larger clusters, teams already running Felix |
 

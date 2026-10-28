@@ -13,9 +13,11 @@ machine, how a machine joins, and which system services live on the log.
 
 ## What runs where
 
-Every machine runs the NineLives image: Linux, early init and felixd. Some
-machines also run a Felix broker. Felix is the one layer the system does not
-schedule, because everything else depends on it.
+Every machine runs the NineLives image: Linux, early init and felixd. Three or
+five core machines also run the Felix control plane and a broker, and storage
+machines run a broker. Felix is the one layer the system does not schedule,
+because everything else depends on it. Roles, services and how a cluster comes
+up are in [topology.md](topology.md).
 
 | OS concept | In NineLives |
 |---|---|
@@ -52,7 +54,8 @@ track later; nothing above the kernel should depend on that happening.
 3. On first boot, the machine joins a cluster: it reads a join token from
    cloud metadata, a config partition or the kernel command line, registers,
    and stores its credentials on the data partition.
-4. Brokers start on machines assigned to run Felix.
+4. The control plane starts on core machines and brokers on core and storage
+   machines, as systemd services ([topology.md](topology.md)).
 5. felixd starts, connects to Felix and claims the work the log assigns it.
 
 The first milestones use systemd as PID 1. Whether NineLives needs its own
@@ -74,7 +77,7 @@ the log.
 
 - Our own PID 1, or systemd?
 - How a machine proves its identity on first join.
-- Which machines run brokers, and how that set changes.
+- Who decides a machine's role, and how a machine changes role later.
 - Encrypting records and redacting history, since the log holds everything
   that passed through it.
 

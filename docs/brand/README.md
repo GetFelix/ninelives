@@ -24,6 +24,7 @@
 | `stacked-light.svg`, `stacked-dark.svg` | Mark above the wordmark. Square spaces, slides, stickers. |
 | `mark-light.svg`, `mark-dark.svg` | The mark alone. Avatars, favicons, app icons. |
 | `mark-animated-light.svg`, `mark-animated-dark.svg` | The mark with the blink, the pulse down the tail and the lost record returning. Stops under reduced motion. |
+| `social-preview.png` | 1280×640 image for GitHub's social preview (Settings, General, Social preview) and link cards. Everything sits at least 40 px inside the edges. `social-preview.svg` is its source. |
 | `*.png` | Transparent PNG exports of the same, for places that don't take SVG. |
 
 `light` files are for light backgrounds and `dark` files for dark ones. In a GitHub README, pick by
@@ -51,7 +52,7 @@ is not committed:
 cd scripts/brand
 curl -sLO https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip
 unzip -q Inter-4.1.zip 'extras/otf/*' -d font && rm Inter-4.1.zip
-python3 build.py && python3 anim.py
+python3 build.py && python3 anim.py && python3 social.py
 ```
 
 The PNGs are exports of the SVGs at 512 px (mark) and about 1500 px wide (lockups).

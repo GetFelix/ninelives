@@ -34,6 +34,7 @@ files that are durable streams, and a history you can replay.
 |---|---|
 | `boot/` | Bootloader configuration (systemd-boot), UEFI and secure-boot signing |
 | `kernel/` | Linux kernel config fragments and the pinned version. No fork. |
+| `felixd/` | The node agent, as a git submodule pinned to a felixd commit |
 | `init/` | Early boot: mounts, network, first-boot cluster join, starting felixd |
 | `rootfs/` | The image definition: read-only root, A/B partitions |
 | `system/` | Programs that run on the log: scheduler, name service, `fx` shell |
@@ -45,7 +46,10 @@ Images are built with [mkosi](https://github.com/systemd/mkosi).
 
 ## Building
 
-Not yet. The first milestone produces an image that boots in qemu, and the
+Clone with `git clone --recurse-submodules`, or run
+`git submodule update --init` in an existing clone.
+
+Nothing builds yet. The first milestone produces an image that boots in qemu, and the
 third boots three of them into a cluster that survives losing one.
 
 ## License

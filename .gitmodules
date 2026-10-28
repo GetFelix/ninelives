@@ -1,0 +1,3 @@
+[submodule "felixd"]
+	path = felixd
+	url = https://github.com/GetFelix/felixd.git

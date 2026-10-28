@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/horizontal-dark.svg">
+    <img src="docs/brand/horizontal-light.svg" alt="NineLives" width="520">
+  </picture>
+</p>
+
 # NineLives
 
 A distributed operating system built on the [Felix](https://github.com/GetFelix/felix) log.
@@ -51,6 +58,13 @@ Clone with `git clone --recurse-submodules`, or run
 
 Nothing builds yet. The first milestone produces an image that boots in qemu, and the
 third boots three of them into a cluster that survives losing one.
+
+## The logo
+
+A cat whose head and tail make a 9. The tail is the tail of the log: nine
+records, one of them lost after a machine died, and the newest glowing amber
+like the eyes. The files and how to regenerate them are in
+[docs/brand](docs/brand/).
 
 ## License
 

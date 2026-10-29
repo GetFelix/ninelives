@@ -51,6 +51,10 @@ files that are durable streams, and a history you can replay.
 
 Images are built with [mkosi](https://github.com/systemd/mkosi).
 
+## Website
+
+[ninelives.getfelix.dev](https://ninelives.getfelix.dev) is built from [`site/`](site/). See its README.
+
 ## Building
 
 Clone with `git clone --recurse-submodules`, or run

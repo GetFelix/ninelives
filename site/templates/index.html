@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}NineLives: a distributed OS on the Felix log{% endblock title %}
+{% block ogtitle %}NineLives{% endblock ogtitle %}
+{% block main %}
+{% set d = load_data(path="data/milestones.toml") %}
+<section class="hero">
+  <div class="wrap">
+    <div>
+      <p class="kicker">A distributed operating system</p>
+      <h1>A cluster that behaves like one machine.</h1>
+      <p class="lede">I'm building NineLives so that the memory of a whole cluster is a log. When a machine dies, its programs carry on somewhere else, from the last record they handled.</p>
+      <div class="actions">
+        <a class="btn primary" href="/roadmap/">See the roadmap</a>
+        <a class="btn" href="/design/">Read the design</a>
+        <a class="btn" href="{{ config.extra.repo }}">View the repo</a>
+      </div>
+      <div style="margin-top:36px">{% include "rail.html" %}</div>
+    </div>
+    <div class="hero-mark">
+      <img class="on-light" src="/brand/mark-animated-light.svg" alt="The NineLives mark: a cat whose head and tail make a 9. The tail is nine log records." width="320" height="320">
+      <img class="on-dark" src="/brand/mark-animated-dark.svg" alt="The NineLives mark: a cat whose head and tail make a 9. The tail is nine log records." width="320" height="320">
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <h2>What it is</h2>
+    <div class="prose">
+      <p>Every change to the system is a durable, ordered record in <a href="https://getfelix.dev">Felix</a>: what should run, where it runs, what each program received and what it produced. A program's state is a fold over those records, so any machine can rebuild it. That is where the name comes from.</p>
+      <p>Linux handles drivers, memory and local processes. NineLives handles what Linux can't do across machines.</p>
+    </div>
+    <ul class="claims">
+      <li><h3>Failover</h3><p>A dead machine's programs continue elsewhere, without lost or repeated work.</p></li>
+      <li><h3>Time travel</h3><p>Rebuild any program as it was at any moment, then step forward one record at a time.</p></li>
+      <li><h3>An audit trail</h3><p>Every decision the system made is on the record, in order.</p></li>
+    </ul>
+    <p style="margin-top:28px">The kernel is stock Linux, on purpose. <a href="/devlog/why-stock-linux/">Here is why.</a></p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <h2>Where it is</h2>
+    <p class="status-line">{{ d.project.stage }}. {{ d.project.summary }} Updated {{ d.project.updated }}.</p>
+    <ol class="log compact">
+      {%- for m in d.milestones %}
+      <li class="rec {{ m.status }}">
+        <div class="rec-head">
+          <span class="offset">{{ m.id }}</span>
+          <h3>{{ m.title }}</h3>
+          <span class="pill">{% if m.status == "done" %}Done{% elif m.status == "active" %}In progress{% elif m.status == "next" %}Next{% else %}Planned{% endif %}</span>
+        </div>
+      </li>
+      {%- endfor %}
+    </ol>
+    <p><a href="/roadmap/">What each milestone proves</a></p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <h2>Follow along</h2>
+    <p>The work happens in the open. Read it, argue with it, or pick up an issue.</p>
+    <ul class="links">
+      <li><a href="{{ config.extra.repo }}"><b>Repository</b><span>Image definition, kernel config, docs and this site.</span></a></li>
+      <li><a href="{{ config.extra.repo }}/issues"><b>Issues</b><span>Every milestone broken into tasks.</span></a></li>
+      <li><a href="{{ config.extra.repo }}/discussions"><b>Discussions</b><span>Design questions, like Linux or a Rust kernel.</span></a></li>
+      <li><a href="/devlog/"><b>Devlog</b><span>Short notes as things get decided.</span></a></li>
+    </ul>
+  </div>
+</section>
+{% endblock main %}

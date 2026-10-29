@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>NineLives devlog</title>
+  <subtitle>{{ section.description }}</subtitle>
+  <link rel="self" type="application/atom+xml" href="{{ feed_url | safe }}"/>
+  <link rel="alternate" type="text/html" href="{{ config.base_url }}/devlog/"/>
+  <id>{{ config.base_url }}/devlog/</id>
+  <updated>{{ last_updated | date(format="%Y-%m-%dT%H:%M:%SZ") }}</updated>
+  {%- for p in pages %}
+  <entry>
+    <title>{{ p.title }}</title>
+    <link rel="alternate" type="text/html" href="{{ p.permalink | safe }}"/>
+    <id>{{ p.permalink | safe }}</id>
+    <published>{{ p.date | date(format="%Y-%m-%dT%H:%M:%SZ") }}</published>
+    <updated>{{ p.date | date(format="%Y-%m-%dT%H:%M:%SZ") }}</updated>
+    <author><name>Gabriel Loewen</name></author>
+    <summary>{{ p.description }}</summary>
+    <content type="html">{{ p.content }}</content>
+  </entry>
+  {%- endfor %}
+</feed>

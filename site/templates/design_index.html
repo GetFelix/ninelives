@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Design | NineLives{% endblock title %}
+{% block ogtitle %}Design | NineLives{% endblock ogtitle %}
+{% block main %}
+<div class="page"><div class="wrap">
+  <p class="kicker">Design</p>
+  <h1>{{ section.title }}</h1>
+  <div class="prose">{{ section.content | safe }}</div>
+  <ul class="links">
+    {%- for p in section.pages %}
+    <li><a href="{{ p.permalink }}"><b>{{ p.title }}</b><span>{{ p.description }}</span></a></li>
+    {%- endfor %}
+  </ul>
+</div></div>
+{% endblock main %}

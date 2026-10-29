@@ -1,0 +1,84 @@
+# The one file to edit when the status changes. The home page and the roadmap
+# both read it. status is one of: done, active, next, planned.
+# Mark an issue done = true when it closes. Keep this in step with the GitHub milestones.
+
+[project]
+stage = "Design stage"
+summary = "Nothing boots yet. The plan is written down and the first milestone is next."
+updated = "2026-10-28"
+
+[[milestones]]
+id = "M0"
+number = 1
+title = "Boots in a VM"
+status = "next"
+proves = "The image can be built the same way every time, and CI can boot it. Every later test stands on this."
+ends = "An image boots in qemu on x86_64 and aarch64, and CI boots it on every pull request."
+issues = [
+  { n = 1, title = "Build a qemu image with mkosi" },
+  { n = 2, title = "CI: build the image and boot it in qemu on every PR" },
+  { n = 3, title = "Kernel: pin a version and write the config fragments" },
+]
+
+[[milestones]]
+id = "M1"
+number = 2
+title = "Joins a cluster"
+status = "planned"
+proves = "A machine becomes a cluster member by itself, with Felix and felixd running from the image and no setup by hand."
+ends = "Felix and felixd start on the image, and a machine joins a cluster on first boot."
+issues = [
+  { n = 4, title = "Data partition for state that survives upgrades" },
+  { n = 5, title = "First-boot join" },
+  { n = 6, title = "Ship Felix and felixd in the image" },
+  { n = 15, title = "Design: our own PID 1, or systemd?" },
+  { n = 16, title = "Design: how a machine proves its identity on first join" },
+]
+
+[[milestones]]
+id = "M2"
+number = 3
+title = "Survives losing a machine"
+status = "planned"
+proves = "The central claim: kill a machine and its workload carries on elsewhere with nothing lost or repeated."
+ends = "Three VMs form a cluster, run a workload, lose one VM, and the workload continues. CI runs this."
+issues = [
+  { n = 7, title = "Three-VM demo: lose a machine, keep the workload" },
+]
+
+[[milestones]]
+id = "M3"
+number = 4
+title = "Atomic upgrades"
+status = "planned"
+proves = "A machine can be upgraded and rolled back without losing its state, and only signed images run."
+ends = "A/B root partitions switch atomically and fall back on a failed boot. Images are signed."
+issues = [
+  { n = 8, title = "A/B root partitions with rollback" },
+  { n = 9, title = "Signed images and secure boot" },
+]
+
+[[milestones]]
+id = "M4"
+number = 5
+title = "System programs on the log"
+status = "planned"
+proves = "The operating system is made of programs on the log, so its own decisions can be replayed like any other workload's."
+ends = "The scheduler, the name service and the fx shell run as programs on the log."
+issues = [
+  { n = 10, title = "Scheduler as a program on the log" },
+  { n = 11, title = "Name service and namespace tree" },
+  { n = 12, title = "fx shell" },
+]
+
+[[milestones]]
+id = "M5"
+number = 6
+title = "Real hardware and clouds"
+status = "planned"
+proves = "NineLives runs somewhere other than qemu."
+ends = "Cloud images and a Raspberry Pi image."
+issues = [
+  { n = 13, title = "Cloud images" },
+  { n = 14, title = "Raspberry Pi image" },
+]

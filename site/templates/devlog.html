@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Devlog | NineLives{% endblock title %}
+{% block ogtitle %}Devlog | NineLives{% endblock ogtitle %}
+{% block main %}
+<div class="page"><div class="wrap">
+  <p class="kicker">Devlog</p>
+  <h1>{{ section.title }}</h1>
+  <p class="lede">{{ section.description }}</p>
+  <ul class="posts">
+    {%- for p in section.pages %}
+    <li>
+      <p class="meta"><time datetime="{{ p.date }}">{{ p.date | date(format="%-d %B %Y") }}</time></p>
+      <h2><a href="{{ p.permalink }}">{{ p.title }}</a></h2>
+      <p>{{ p.description }}</p>
+    </li>
+    {%- endfor %}
+  </ul>
+</div></div>
+{% endblock main %}

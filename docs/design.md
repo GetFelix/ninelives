@@ -36,6 +36,46 @@ up are in [topology.md](topology.md).
 | Boot | Read the desired state and claim leases. A cold start of the cluster is a replay. |
 | Upgrades | Machines: an image swap that can roll back (A/B partitions are the proposal). Workloads: run the new module over recorded inputs, compare, switch at an offset. |
 
+## Lessons from Plan 9
+
+Plan 9 is the closest ancestor of what NineLives is trying to be, and the
+reasons it didn't spread are well documented. felixd's design covers the
+lessons for workloads
+([Lessons from Plan 9](https://github.com/GetFelix/felixd/blob/main/docs/design.md#lessons-from-plan-9)).
+These are the ones for the operating system around it:
+
+- **A migration path from the first release.** Plan 9 asked people to leave
+  their software behind, and Pike's own summary is that it lost to systems
+  that were good enough. Its POSIX layer, APE, could not emulate much of what
+  existing programs needed. NineLives runs existing programs unmodified from
+  the start, through felixd's native tier, and keeps compatibility with Linux
+  programs whichever kernel is chosen.
+- **Drivers come from an existing kernel or a compatibility layer.** Few
+  drivers was one of the usual reasons given for Plan 9's slow adoption.
+  NineLives does not plan to write its own.
+- **Permissive licensing from the start.** Plan 9 spent years under licenses
+  that kept outside developers away and only became MIT in 2021. NineLives is
+  MIT already.
+- **No hidden distribution.** A Plan 9 client that lost its file server hung,
+  and losing the root server meant a reboot. In NineLives every machine keeps
+  its root on local disk, and a lost machine or a lost Felix quorum is
+  reported as a typed outcome (degraded, unknown, failed) rather than a hang.
+- **Typed interfaces.** System services expose versioned, typed records, not
+  text commands in `ctl` files and string errors.
+- **An upgrade and package story.** Machines upgrade by swapping whole
+  images atomically, with rollback. Images are built reproducibly and signed,
+  so anyone can check that an image matches its source.
+- **Fault tolerance as a first principle.** Plan 9's recovery tools were added
+  later. Here, losing a machine is the normal case the design starts from.
+
+Every kernel, init and image choice below stays open; these are constraints on
+whichever is picked.
+
+Sources: Pike, TUHS mailing list, 2023-01-31; Raymond, *The Art of Unix
+Programming*, ch. 20; Trickey, "APE: The ANSI/POSIX Environment"; the Plan 9
+Foundation's 2021 license announcement; Guardiola, Cox and Van Hensbergen,
+"Persistent 9P Sessions for Plan 9" (2006).
+
 ## The kernel
 
 Undecided, with no proposal yet. The options are stock Linux, a kernel of our

@@ -76,6 +76,53 @@ Programming*, ch. 20; Trickey, "APE: The ANSI/POSIX Environment"; the Plan 9
 Foundation's 2021 license announcement; Guardiola, Cox and Van Hensbergen,
 "Persistent 9P Sessions for Plan 9" (2006).
 
+## Lessons from Barrelfish
+
+Barrelfish ran a separate kernel on every core of one machine and kept OS
+state as replicas that change by agreement. It did not become a mainstream
+system, and its authors say the scalability premise did not arrive: core counts
+grew slowly and Linux was made to scale with modest changes. The parts that
+carry over to NineLives are about how to account for a machine, not about the
+kernel. The felixd design has the workload-level
+[lessons](https://github.com/GetFelix/felixd/blob/main/docs/design.md#lessons-from-barrelfish).
+
+- **One agent and one failure domain per machine.** Barrelfish treated the
+  whole machine as a single failure unit. A machine runs one felixd and holds
+  one session lease. Several agents on one machine would look like independent
+  failures and are not.
+- **Don't treat one many-core node as a distributed system.** Message passing
+  between cores on cache-coherent hardware is built on shared memory anyway, and
+  the best in-kernel descendant (NrOS) replicates per NUMA node over shared
+  memory, not per core over messages. NineLives does not need a multikernel.
+  Inside a node, felixd pins an instance to a NUMA node and uses local memory,
+  never Felix.
+- **Heterogeneous hardware is a set of scheduler facts.** NUMA nodes, core
+  counts, instruction set and accelerators are recorded as node facts that the
+  scheduler reads. A GPU or DPU host is an effect executor. Mixed x86_64 and
+  aarch64 clusters stay pinned by instruction set until CI shows that replay
+  matches across both, which the M0 images can do.
+- **No heavyweight capability system.** Barrelfish's distributed capabilities
+  took about 8,000 lines and a two-phase protocol, and one of its authors calls
+  the model its biggest distraction. A program's token is its capability, it
+  expires, and the epoch fence refuses a stale one.
+- **Policy separate from mechanism.** The scheduler decides where work runs and
+  is a workload on the log. If it is missing or stale, first claim wins and the
+  system keeps running. Nothing on the boot path may depend on it.
+- **Upgrades can park and return.** A planned image swap records that the
+  machine's work should come back when it rejoins.
+
+Barrelfish also confirms choices already made here: run existing programs
+rather than excluding compatibility, and take drivers from an existing kernel.
+Its team wrote its own drivers, and building high-level services "took years".
+
+Every kernel, init and image choice stays open; these constrain whichever is
+picked.
+
+Sources: Baumann et al., "The Multikernel", SOSP 2009; Baumann, "Fish in a
+Barrel", SIGOPS blog (2021); Bhardwaj et al., "NrOS", OSDI 2021; Boyd-Wickizer
+et al., "An Analysis of Linux Scalability to Many Cores", OSDI 2010 (abstract
+only); Gerber, PhD thesis (ETH, 2018).
+
 ## The kernel
 
 Undecided, with no proposal yet. The options are stock Linux, a kernel of our

@@ -3,29 +3,43 @@
 {% block ogtitle %}Roadmap | NineLives{% endblock ogtitle %}
 {% block main %}
 {% set d = load_data(path="data/milestones.toml") %}
-<div class="page"><div class="wrap">
-  <p class="kicker">Roadmap</p>
-  <h1>Six milestones, each with a check.</h1>
-  <p class="lede">Each milestone ends with something CI can check. {{ d.project.stage }}: {{ d.project.summary }}</p>
+<header class="page-head">
+  <div class="wrap">
+    <p class="eyebrow rise">Roadmap</p>
+    <h1 class="rise" style="--d:1">Six milestones, each with a check.</h1>
+    <p class="lede rise" style="--d:2">Each milestone ends with something CI can check. {{ d.project.stage }}. {{ d.project.summary }}</p>
+  </div>
+</header>
+<div class="page-body"><div class="wrap">
   <ol class="log">
-    {%- for m in d.milestones %}
-    <li class="rec {{ m.status }}" id="{{ m.id | lower }}">
-      <div class="rec-head">
-        <span class="offset">offset {{ loop.index0 }}</span>
-        <h3>{{ m.id }}: {{ m.title }}</h3>
-        <span class="pill">{% if m.status == "done" %}Done{% elif m.status == "active" %}In progress{% elif m.status == "next" %}Next{% else %}Planned{% endif %}</span>
-      </div>
-      <p class="proves"><strong>What it proves.</strong> {{ m.proves }}</p>
-      <p class="ends"><strong>At the end.</strong> {{ m.ends }}</p>
-      <ul class="issues">
-        {%- for i in m.issues %}
-        <li{% if i.done %} class="done"{% endif %}><a href="{{ config.extra.repo }}/issues/{{ i.n }}">#{{ i.n }} {{ i.title }}</a></li>
-        {%- endfor %}
-        <li><a href="{{ config.extra.repo }}/milestone/{{ m.number }}">Milestone on GitHub</a></li>
-      </ul>
+    {%- for ms in d.milestones %}
+    <li class="{{ ms.status }} reveal" id="{{ ms.id | lower }}">
+      <div class="marker" aria-hidden="true"><i></i><span>{{ loop.index0 }}</span></div>
+      <article class="card">
+        <div class="head">
+          <span class="mid">{{ ms.id }}</span>
+          <h2>{{ ms.title }}</h2>
+          <span class="pill">{% if ms.status == "done" %}Done{% elif ms.status == "active" %}In progress{% elif ms.status == "next" %}Next{% else %}Planned{% endif %}</span>
+        </div>
+        <dl class="facts">
+          <div><dt>What it proves</dt><dd>{{ ms.proves }}</dd></div>
+          <div><dt>At the end</dt><dd>{{ ms.ends }}</dd></div>
+        </dl>
+        <ul class="issues">
+          {%- for i in ms.issues %}
+          <li{% if i.done %} class="done"{% endif %}><a href="{{ config.extra.repo }}/issues/{{ i.n }}"><b>#{{ i.n }}</b>{{ i.title }}</a></li>
+          {%- endfor %}
+          <li class="gh"><a href="{{ config.extra.repo }}/milestone/{{ ms.number }}">Milestone on GitHub &nearr;</a></li>
+        </ul>
+      </article>
     </li>
     {%- endfor %}
   </ol>
-  <div class="prose">{{ page.content | safe }}</div>
+  <section class="page-after" id="open-questions">
+    <h2 class="reveal">Open questions</h2>
+    <p class="lede reveal">The milestones say what has to work, not how. These choices are still open.</p>
+    {% include "questions.html" %}
+  </section>
+  <div class="prose page-after">{{ page.content | safe }}</div>
 </div></div>
 {% endblock main %}

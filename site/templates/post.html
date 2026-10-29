@@ -2,10 +2,15 @@
 {% block title %}{{ page.title }} | NineLives devlog{% endblock title %}
 {% block ogtitle %}{{ page.title }}{% endblock ogtitle %}
 {% block main %}
-<article class="page"><div class="wrap">
-  <p class="kicker"><a href="/devlog/">Devlog</a></p>
-  <h1>{{ page.title }}</h1>
-  <p class="meta"><time datetime="{{ page.date }}">{{ page.date | date(format="%-d %B %Y") }}</time> · {{ page.reading_time }} min read</p>
-  <div class="prose">{{ page.content | safe }}</div>
-</div></article>
+<article class="article">
+  <header class="page-head">
+    <div class="wrap">
+      <p class="eyebrow rise"><a href="/devlog/">Devlog</a></p>
+      <h1 class="rise" style="--d:1">{{ page.title }}</h1>
+      <p class="lede rise" style="--d:2">{{ page.description }}</p>
+      <p class="meta rise" style="--d:3"><time datetime="{{ page.date }}">{{ page.date | date(format="%-d %B %Y") }}</time> · {{ page.reading_time }} min read</p>
+    </div>
+  </header>
+  <div class="page-body"><div class="wrap"><div class="prose">{{ page.content | safe }}</div></div></div>
+</article>
 {% endblock main %}

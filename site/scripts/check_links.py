@@ -48,7 +48,9 @@ for name, html in pages.items():
             for ref in value.split():
                 if ref not in ids[name]:
                     problems.append("%s: %s names missing id %s" % (name, attr, ref))
-    if "<title>" not in html or "<h1" not in html and name != "404.html":
+    # Zola's alias pages are bare redirects with no h1.
+    redirect = 'http-equiv="refresh"' in html
+    if "<title>" not in html or "<h1" not in html and name != "404.html" and not redirect:
         problems.append("%s: missing title or h1" % name)
 
 if "--external" in sys.argv:

@@ -11,7 +11,7 @@ Nothing boots yet, so the most useful help right now is opinions and review.
 
 ## Talk it through
 
-Design questions go in [Discussions](https://github.com/GetFelix/ninelives/discussions). The first one asks [why Linux, and when a Rust kernel might be worth it](https://github.com/GetFelix/ninelives/discussions/22). If you think I got the trade-off wrong, reply there.
+Design questions go in [Discussions](https://github.com/GetFelix/ninelives/discussions). The first one asks whether to use [Linux or a kernel of our own](https://github.com/GetFelix/ninelives/discussions/22). Nothing is decided, so this is the time to weigh in.
 
 ## Pick up an issue
 
@@ -25,7 +25,7 @@ Clone with submodules, since felixd is pinned as one:
 git clone --recurse-submodules https://github.com/GetFelix/ninelives
 ```
 
-Images are built with [mkosi](https://github.com/systemd/mkosi) and booted in qemu, and that happens in CI. There is no local build yet. The first milestone adds a workflow that builds the image and boots it on every pull request, and you will be able to read its log without installing anything.
+There is no build yet. The proposal is to build images with [mkosi](https://github.com/systemd/mkosi) and boot them in qemu in CI, and how images are built is still [open](https://github.com/GetFelix/ninelives/issues/1). The first milestone adds a workflow that builds the image and boots it on every pull request, and you will be able to read its log without installing anything.
 
 ## Change this site
 

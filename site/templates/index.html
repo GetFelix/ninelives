@@ -1,72 +1,123 @@
 {% extends "base.html" %}
-{% block title %}NineLives: a distributed OS on the Felix log{% endblock title %}
+{% block title %}NineLives: an operating system with the Felix log at its core{% endblock title %}
 {% block ogtitle %}NineLives{% endblock ogtitle %}
 {% block main %}
 {% set d = load_data(path="data/milestones.toml") %}
 <section class="hero">
   <div class="wrap">
-    <div>
-      <p class="kicker">In development, in the open</p>
-      <h1>An operating system built on stock Linux and the Felix log.</h1>
-      <p class="lede">Nothing boots yet. I'm building NineLives so that the memory of a whole cluster is a log, and so that when a machine dies its programs can carry on somewhere else, from the last record they handled.</p>
-      <div class="actions">
-        <a class="btn primary" href="/roadmap/">See the roadmap</a>
-        <a class="btn" href="/design/">Read the design</a>
-        <a class="btn" href="{{ config.extra.repo }}">View the repo</a>
-      </div>
-      <div style="margin-top:36px">{% include "rail.html" %}</div>
-    </div>
-    <div class="hero-mark">
+    <div class="hero-mark rise" style="--d:2">
       <img class="on-light" src="/brand/mark-animated-light.svg" alt="The NineLives mark: a cat whose head and tail make a 9. The tail is nine log records." width="320" height="320">
       <img class="on-dark" src="/brand/mark-animated-dark.svg" alt="The NineLives mark: a cat whose head and tail make a 9. The tail is nine log records." width="320" height="320">
     </div>
-  </div>
-</section>
-
-<section class="section">
-  <div class="wrap">
-    <h2>What it is meant to be</h2>
-    <div class="prose">
-      <p>The design is that every change to the system will be a durable, ordered record in <a href="https://getfelix.dev">Felix</a>: what should run, where it runs, what each program received and what it produced. A program's state is a fold over those records, so any machine can rebuild it. That is where the name comes from.</p>
-      <p>Linux is meant to keep handling drivers, memory and local processes. NineLives is for what Linux can't do across machines.</p>
+    <div class="hero-tag rise" style="--d:0">
+      <p class="eyebrow">In development, in the open</p>
+      <p class="stage"><span class="dot" aria-hidden="true"></span>{{ d.project.stage }}{% for ms in d.milestones %}{% if ms.status == "next" %}, {{ ms.id }} next{% endif %}{% endfor %}</p>
     </div>
-    <ul class="claims">
-      <li><h3>Failover</h3><p>The goal: a dead machine's programs continue elsewhere, without lost or repeated work.</p></li>
-      <li><h3>Time travel</h3><p>The goal: rebuild any program as it was at any moment, then step forward one record at a time.</p></li>
-      <li><h3>An audit trail</h3><p>The goal: every decision the system makes is on the record, in order.</p></li>
-    </ul>
-    <p style="margin-top:28px">The kernel is stock Linux, on purpose. <a href="/devlog/why-stock-linux/">Here is why.</a></p>
+    <h1 class="rise" style="--d:1">An operating system with <em>the Felix log</em> at its core.</h1>
+    <p class="lede rise" style="--d:2"><strong>Nothing boots yet</strong>, and most of the big choices are still open. The aim is a cluster whose memory is a log, so that when a machine dies its programs carry on somewhere else, from the last record they handled.</p>
+    <div class="actions rise" style="--d:3">
+      <a class="btn primary" href="/roadmap/">See the roadmap <span class="arrow" aria-hidden="true">&rarr;</span></a>
+      <a class="btn" href="#open-questions">Open questions</a>
+      <a class="btn" href="/design/">Read the design</a>
+    </div>
+  </div>
+  <div class="wrap strip rise" style="--d:4" aria-hidden="true">
+    <ol>{% for n in range(end=9) %}<li><i style="--n:{{ n }}"></i><span>{{ n }}</span></li>{% endfor %}</ol>
   </div>
 </section>
 
-<section class="section">
+<section class="section" id="meant-to-be">
   <div class="wrap">
-    <h2>Where it is</h2>
-    <p class="status-line">{{ d.project.stage }}. {{ d.project.summary }} Updated {{ d.project.updated }}.</p>
-    <ol class="log compact">
-      {%- for m in d.milestones %}
-      <li class="rec {{ m.status }}">
-        <div class="rec-head">
-          <span class="offset">{{ m.id }}</span>
-          <h3>{{ m.title }}</h3>
-          <span class="pill">{% if m.status == "done" %}Done{% elif m.status == "active" %}In progress{% elif m.status == "next" %}Next{% else %}Planned{% endif %}</span>
-        </div>
+    <div class="section-head reveal">
+      <div><span class="num">01 / The idea</span><h2>What it is meant to be</h2></div>
+      <div class="body">
+        <p>The design is that every change to the system will be a durable, ordered record in <a href="https://getfelix.dev">Felix</a>: what should run, where it runs, what each program received and what it produced. A program's state is a fold over those records, so any machine can rebuild it. That is where the name comes from.</p>
+        <p>A kernel on each machine would keep handling drivers, memory and local processes. NineLives is for what no single machine's kernel can do across machines.</p>
+      </div>
+    </div>
+    <ul class="goals">
+      <li class="card reveal" style="--d:0">
+        <svg class="glyph" viewBox="0 0 240 64" aria-hidden="true" preserveAspectRatio="xMinYMid meet">
+          <path class="l" d="M0 15.5h240M0 47.5h240"/>
+          <path class="r" d="M4 10h22l-4 10H0z"/><path class="r" d="M34 10h22l-4 10H30z"/><path class="r" d="M64 10h22l-4 10H60z"/><path class="f" d="M94 10h22l-4 10H90z"/>
+          <path class="p" fill="none" stroke-dasharray="3 4" d="M118 15c20 0 20 32 40 32"/>
+          <path class="r" d="M164 42h22l-4 10H160z"/><path class="a" d="M194 42h22l-4 10H190z"/>
+        </svg>
+        <span class="label">Goal</span>
+        <h3>Failover</h3>
+        <p>A dead machine's programs continue elsewhere, without lost or repeated work.</p>
+      </li>
+      <li class="card reveal" style="--d:1">
+        <svg class="glyph" viewBox="0 0 240 64" aria-hidden="true" preserveAspectRatio="xMinYMid meet">
+          <path class="r" d="M4 34h22l-4 10H0z"/><path class="r" d="M34 34h22l-4 10H30z"/><path class="r" d="M64 34h22l-4 10H60z"/><path class="r" d="M94 34h22l-4 10H90z"/><path class="a" d="M124 34h22l-4 10H120z"/><path class="f" d="M154 34h22l-4 10H150z"/><path class="f" d="M184 34h22l-4 10H180z"/><path class="f" d="M214 34h22l-4 10H210z"/>
+          <path class="p" d="M146 10v42"/><path class="a" d="M140 6h12l-6 7z"/>
+        </svg>
+        <span class="label">Goal</span>
+        <h3>Time travel</h3>
+        <p>Rebuild any program as it was at any moment, then step forward one record at a time.</p>
+      </li>
+      <li class="card reveal" style="--d:2">
+        <svg class="glyph" viewBox="0 0 240 64" aria-hidden="true" preserveAspectRatio="xMinYMid meet">
+          <path class="r" d="M4 2h22l-4 8H0z"/><path class="l" d="M36 6h150"/>
+          <path class="r" d="M4 19h22l-4 8H0z"/><path class="l" d="M36 23h110"/>
+          <path class="r" d="M4 36h22l-4 8H0z"/><path class="l" d="M36 40h170"/>
+          <path class="a" d="M4 53h22l-4 8H0z"/><path class="l" d="M36 57h90"/>
+        </svg>
+        <span class="label">Goal</span>
+        <h3>An audit trail</h3>
+        <p>Every decision the system makes is on the record, in order.</p>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<div class="wrap"><div class="divider"></div></div>
+
+<section class="section" id="where-it-is">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div><span class="num">02 / Status</span><h2>Where it is</h2></div>
+      <div class="body"><p>{{ d.project.stage }}. {{ d.project.summary }} Each milestone ends with something CI can check.</p></div>
+    </div>
+    <ol class="track reveal">
+      {%- for ms in d.milestones %}
+      <li class="{{ ms.status }}">
+        <span class="bar" aria-hidden="true"></span>
+        <span class="mid">{{ ms.id }}</span>
+        <h3>{{ ms.title }}</h3>
+        <span class="pill">{% if ms.status == "done" %}Done{% elif ms.status == "active" %}In progress{% elif ms.status == "next" %}Next{% else %}Planned{% endif %}</span>
       </li>
       {%- endfor %}
     </ol>
-    <p><a href="/roadmap/">What each milestone proves</a></p>
+    <p class="track-foot"><a class="more" href="/roadmap/">What each milestone proves <span aria-hidden="true">&rarr;</span></a><span class="meta">Updated {{ d.project.updated }}</span></p>
   </div>
 </section>
 
-<section class="section">
+<div class="wrap"><div class="divider"></div></div>
+
+<section class="section" id="open-questions">
   <div class="wrap">
-    <h2>Follow along</h2>
-    <p>The work happens in the open. Read it, argue with it, or pick up an issue.</p>
+    <div class="section-head reveal">
+      <div><span class="num">03 / Undecided</span><h2>Open questions</h2></div>
+      <div class="body"><p>Almost nothing about how NineLives is built is settled, the kernel included. Each of these has a proposal, and each proposal is there to be argued with.</p></div>
+    </div>
+    {% include "questions.html" %}
+  </div>
+</section>
+
+<div class="wrap"><div class="divider"></div></div>
+
+<section class="section" id="follow">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div><span class="num">04 / In the open</span><h2>Follow along</h2></div>
+      <div class="body"><p>The work happens in the open. Read it, argue with it, or pick up an issue.</p></div>
+    </div>
     <ul class="links">
-      <li><a href="{{ config.extra.repo }}"><b>Repository</b><span>Image definition, kernel config, docs and this site.</span></a></li>
-      <li><a href="{{ config.extra.repo }}/issues"><b>Issues</b><span>Every milestone broken into tasks.</span></a></li>
-      <li><a href="{{ config.extra.repo }}/discussions"><b>Discussions</b><span>Design questions, like Linux or a Rust kernel.</span></a></li>
-      <li><a href="/devlog/"><b>Devlog</b><span>Short notes as things get decided.</span></a></li>
+      <li class="reveal" style="--d:0"><a href="{{ config.extra.repo }}"><b>Repository</b><span>Docs, the plan and this site. The image comes with the first milestone.</span></a></li>
+      <li class="reveal" style="--d:1"><a href="{{ config.extra.repo }}/issues"><b>Issues</b><span>Every milestone broken into tasks.</span></a></li>
+      <li class="reveal" style="--d:2"><a href="{{ config.extra.repo }}/discussions"><b>Discussions</b><span>Design questions, starting with Linux or our own kernel.</span></a></li>
+      <li class="reveal" style="--d:3"><a href="/devlog/"><b>Devlog</b><span>Short notes as things get decided.</span></a></li>
     </ul>
   </div>
 </section>

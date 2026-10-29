@@ -11,9 +11,14 @@ covers how workloads run, hold leases, write exactly-once output and replay.
 This document covers the operating system around it: what boots on each
 machine, how a machine joins, and which system services live on the log.
 
+Very little of this is decided. The kernel, the init system, how images are
+built and how machines are upgraded are all open questions, listed at the
+end. Where this document names a tool, it is the current proposal, written
+down so it can be argued with.
+
 ## What runs where
 
-Every machine runs the NineLives image: Linux, early init and felixd. Three or
+Every machine runs the NineLives image: a kernel, early init and felixd. Three or
 five core machines also run the Felix control plane and a broker, and storage
 machines run a broker. Felix is the one layer the system does not schedule,
 because everything else depends on it. Roles, services and how a cluster comes
@@ -29,38 +34,50 @@ up are in [topology.md](topology.md).
 | Scheduler | A workload that reads heartbeats and demand and writes assignments, so its decisions can be replayed |
 | Users and permissions | Felix tenants and grants. A program's token is its capability. |
 | Boot | Read the desired state and claim leases. A cold start of the cluster is a replay. |
-| Upgrades | Machines: A/B image swap. Workloads: run the new module over recorded inputs, compare, switch at an offset. |
+| Upgrades | Machines: an image swap that can roll back (A/B partitions are the proposal). Workloads: run the new module over recorded inputs, compare, switch at an offset. |
 
 ## The kernel
 
-Stock Linux, pinned to a release and configured with fragments in `kernel/`.
-Drivers, filesystems and networking are not where NineLives is different, and
-a fork would cost far more than it returns. A custom kernel can be a research
-track later; nothing above the kernel should depend on that happening.
+Undecided. The proposal is stock Linux, pinned to a release and configured
+with fragments in `kernel/`: drivers, filesystems and networking are not where
+NineLives is different, and a fork would cost far more than it returns. The
+alternative is a kernel of our own, or an existing Rust kernel such as one
+that is compatible with Linux at the syscall level. The trade-off is being
+discussed in [Discussion #22](https://github.com/GetFelix/ninelives/discussions/22).
+Either way, nothing above the kernel should depend on kernel-specific features
+more than it has to.
 
 ## The image
 
-- Built with mkosi from `rootfs/` and `images/<target>/`.
+What the image must do is settled more than how. The current proposal:
+
+- Built with mkosi from `rootfs/` and `images/<target>/`. Proposed, not chosen.
 - systemd-boot, unified kernel images, and secure boot once signing exists.
+  Proposed, and tied to the kernel and init questions.
 - A read-only root and two root partitions. An upgrade writes the inactive
-  one and switches on reboot; a failed boot falls back.
+  one and switches on reboot; a failed boot falls back. The update mechanism
+  is open; A/B partitions are the proposal.
 - Machine state that must survive an upgrade (Felix data, the machine's
   identity and credentials) lives on a separate data partition.
 
 ## Boot sequence
 
-1. Firmware loads systemd-boot, which loads the unified kernel image.
+This is the sequence under the current proposal; the steps that name a tool
+change if the proposal does.
+
+1. Firmware loads the bootloader (systemd-boot is proposed), which loads the kernel.
 2. Early init mounts the root and data partitions and brings up the network.
 3. On first boot, the machine joins a cluster: it reads a join token from
    cloud metadata, a config partition or the kernel command line, registers,
    and stores its credentials on the data partition.
 4. The control plane starts on core machines and brokers on core and storage
-   machines, as systemd services ([topology.md](topology.md)).
+   machines, as services under the init system ([topology.md](topology.md)).
 5. felixd starts, connects to Felix and claims the work the log assigns it.
 
-The first milestones use systemd as PID 1. Whether NineLives needs its own
-init is an open question; it depends on how much of systemd's job moves onto
-the log.
+The proposal is systemd as PID 1 for the first milestones. Whether NineLives
+needs its own init is an open question
+([#15](https://github.com/GetFelix/ninelives/issues/15)); it depends on how
+much of systemd's job moves onto the log.
 
 ## Milestones
 
@@ -75,14 +92,18 @@ the log.
 
 ## Open questions
 
-- Our own PID 1, or systemd?
-- How a machine proves its identity on first join.
+- Linux or a kernel of our own?
+  ([Discussion #22](https://github.com/GetFelix/ninelives/discussions/22))
+- Our own PID 1, or systemd? ([#15](https://github.com/GetFelix/ninelives/issues/15))
+- How images are built: mkosi is the proposal.
+- How machines are upgraded: A/B root partitions with rollback are the proposal.
+- How a machine proves its identity on first join. ([#16](https://github.com/GetFelix/ninelives/issues/16))
 - Who decides a machine's role, and how a machine changes role later.
 - Encrypting records and redacting history, since the log holds everything
   that passed through it.
 
 ## Licensing
 
-This repository is MIT. A built image contains the Linux kernel and other
-GPL-licensed software. Publishing images means publishing the matching source,
+This repository is MIT. If the kernel is Linux, a built image will contain it
+and other GPL-licensed software. Publishing images means publishing the matching source,
 or a written offer for it, for those components.

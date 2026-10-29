@@ -1,0 +1,16 @@
+base_url = "https://ninelives.getfelix.dev"
+title = "NineLives"
+description = "A distributed operating system built on the Felix log."
+default_language = "en"
+generate_feeds = false
+feed_filenames = ["feed.xml"]
+compile_sass = false
+build_search_index = false
+
+[markdown]
+smart_punctuation = false
+render_emoji = false
+external_links_target_blank = false
+
+[extra]
+repo = "https://github.com/GetFelix/ninelives"

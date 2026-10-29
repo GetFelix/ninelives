@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ page.title }} | NineLives devlog{% endblock title %}
+{% block ogtitle %}{{ page.title }}{% endblock ogtitle %}
+{% block main %}
+<article class="page"><div class="wrap">
+  <p class="kicker"><a href="/devlog/">Devlog</a></p>
+  <h1>{{ page.title }}</h1>
+  <p class="meta"><time datetime="{{ page.date }}">{{ page.date | date(format="%-d %B %Y") }}</time> · {{ page.reading_time }} min read</p>
+  <div class="prose">{{ page.content | safe }}</div>
+</div></article>
+{% endblock main %}

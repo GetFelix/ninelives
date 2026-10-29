@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Roadmap | NineLives{% endblock title %}
+{% block ogtitle %}Roadmap | NineLives{% endblock ogtitle %}
+{% block main %}
+{% set d = load_data(path="data/milestones.toml") %}
+<div class="page"><div class="wrap">
+  <p class="kicker">Roadmap</p>
+  <h1>Six milestones, each one provable.</h1>
+  <p class="lede">Each milestone ends with something CI can check. {{ d.project.stage }}: {{ d.project.summary }}</p>
+  <ol class="log">
+    {%- for m in d.milestones %}
+    <li class="rec {{ m.status }}" id="{{ m.id | lower }}">
+      <div class="rec-head">
+        <span class="offset">offset {{ loop.index0 }}</span>
+        <h3>{{ m.id }}: {{ m.title }}</h3>
+        <span class="pill">{% if m.status == "done" %}Done{% elif m.status == "active" %}In progress{% elif m.status == "next" %}Next{% else %}Planned{% endif %}</span>
+      </div>
+      <p class="proves"><strong>What it proves.</strong> {{ m.proves }}</p>
+      <p class="ends"><strong>At the end.</strong> {{ m.ends }}</p>
+      <ul class="issues">
+        {%- for i in m.issues %}
+        <li{% if i.done %} class="done"{% endif %}><a href="{{ config.extra.repo }}/issues/{{ i.n }}">#{{ i.n }} {{ i.title }}</a></li>
+        {%- endfor %}
+        <li><a href="{{ config.extra.repo }}/milestone/{{ m.number }}">Milestone on GitHub</a></li>
+      </ul>
+    </li>
+    {%- endfor %}
+  </ol>
+  <div class="prose">{{ page.content | safe }}</div>
+</div></div>
+{% endblock main %}

@@ -91,9 +91,12 @@ a:hover { text-decoration-thickness: 2px; }
 .curl-under {
   clip-path: polygon(0 0, 100% 0, 0 100%);
   background:
-    radial-gradient(circle at 24% 22%, rgba(255, 255, 255, .55) 0 1.2px, transparent 1.8px),
     linear-gradient(135deg, hsl(192, 90%, 46%), hsl(192, 95%, 22%));
 }
+.curl-under img { position: absolute; left: 3px; top: 3px; width: 40%; height: auto; max-width: none; border-radius: 50%; }
+.curl-wrap { position: absolute; top: 0; left: 0; z-index: 61; }
+.curl-tip { position: absolute; top: 64px; left: 8px; width: max-content; max-width: min(260px, calc(100vw - 16px)); padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); color: var(--text); font-size: 13px; line-height: 1.35; box-shadow: 0 6px 18px rgba(0, 0, 0, .25); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .15s ease; }
+.curl-wrap:hover .curl-tip, .curl-wrap:focus-within .curl-tip { opacity: 1; visibility: visible; }
 .curl-flap {
   clip-path: polygon(100% 0, 0 100%, 70% 70%);
   background: linear-gradient(135deg, var(--sunken), var(--raised) 70%);
@@ -234,11 +237,13 @@ main { display: block; }
 }
 @media (max-width: 600px) {
   .curl { --curl: 36px; --curl-peek: 44px; }
+  .curl-tip { top: 52px; }
   .site-header .wrap { padding-left: 54px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .rail i, .rec.active::before { animation: none; }
   .curl { transition: none; }
+  .curl-tip { transition: none; }
   .curl:hover, .curl:focus-visible { width: var(--curl); height: var(--curl); }
   html { scroll-behavior: auto; }
 }

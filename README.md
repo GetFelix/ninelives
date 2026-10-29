@@ -35,8 +35,9 @@ The pieces:
   `fx` shell.
 
 The kernel would handle drivers, memory and local processes. NineLives is for
-what a single machine's kernel can't do across machines: processes that outlive a machine, pipes and
-files that are durable streams, and a history you can replay.
+what a single machine's kernel can't do across machines: processes that
+outlive a machine, pipes and files that are durable streams, and a history you
+can replay.
 
 ## Layout
 

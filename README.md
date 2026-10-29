@@ -39,6 +39,10 @@ what a single machine's kernel can't do across machines: processes that
 outlive a machine, pipes and files that are durable streams, and a history you
 can replay.
 
+Existing programs run unmodified from the start, and failures are reported,
+never hidden behind a hang. The reasoning, from what held Plan 9 back, is in
+[Lessons from Plan 9](docs/design.md#lessons-from-plan-9).
+
 ## Layout
 
 | Directory | What it holds |

@@ -25,8 +25,8 @@ somewhere else. That is where the name comes from.
 The pieces:
 
 - **A bootable image** for each machine: a pinned kernel, a read-only root
-  and atomic upgrades that can roll back. Stock Linux and A/B partitions are
-  the current proposal; the kernel is an
+  and atomic upgrades that can roll back. A/B partitions are the current
+  proposal; the kernel is an
   [open question](https://github.com/GetFelix/ninelives/discussions/22).
 - **[felixd](https://github.com/GetFelix/felixd)**, the node agent that runs
   workloads from the log. It has its own repo; this one ships it.
@@ -44,7 +44,7 @@ can replay.
 | Directory | What it holds |
 |---|---|
 | `boot/` | Bootloader configuration (systemd-boot is proposed), UEFI and secure-boot signing |
-| `kernel/` | Kernel config fragments and the pinned version. The proposal is stock Linux, no fork. |
+| `kernel/` | Kernel config fragments and a pinned version, if stock Linux is chosen. |
 | `felixd/` | The node agent, as a git submodule pinned to a felixd commit |
 | `init/` | Early boot: mounts, network, first-boot cluster join, starting felixd |
 | `rootfs/` | The image definition: read-only root, A/B partitions (proposed) |

@@ -35,4 +35,4 @@ The site is Zola, in `site/`. Milestone status is one file, `site/data/milestone
 site/scripts/build.sh
 ```
 
-builds it into `site/public/`. [Zola](https://www.getzola.org/) is the only tool you need.
+builds it into `site/public/`. You need [Zola](https://www.getzola.org/) and Python 3.

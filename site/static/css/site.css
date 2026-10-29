@@ -83,10 +83,10 @@ a:hover { text-decoration-thickness: 2px; }
 .skip { position: absolute; left: 8px; top: -60px; z-index: 100; padding: 10px 14px; background: var(--amber); color: var(--on-amber); font-weight: 600; border-radius: 6px; }
 .skip:focus { top: 8px; }
 
-/* Page curl. A folded corner that links to getfelix.dev; fixed so it stays put with the header. */
-.curl { --curl: 48px; --curl-peek: 60px; position: fixed; top: 0; left: 0; z-index: 60; width: var(--curl); height: var(--curl); transition: width .25s ease, height .25s ease; }
+/* Page curl: a folded corner linking to getfelix.dev. Absolute, so it scrolls away with the header; the anchor is clipped to the drawn shape so the rest of the corner stays clickable. */
+.curl { --curl: 48px; --curl-peek: 60px; clip-path: polygon(0 0, 100% 0, 70% 70%, 0 100%); position: absolute; top: 0; left: 0; z-index: 60; width: var(--curl); height: var(--curl); transition: width .25s ease, height .25s ease; }
 .curl:hover, .curl:focus-visible { width: var(--curl-peek); height: var(--curl-peek); }
-.curl:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.curl:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; clip-path: none; }
 .curl-under, .curl-flap { position: absolute; inset: 0; }
 .curl-under {
   clip-path: polygon(0 0, 100% 0, 0 100%);
@@ -95,9 +95,9 @@ a:hover { text-decoration-thickness: 2px; }
     linear-gradient(135deg, hsl(192, 90%, 46%), hsl(192, 95%, 22%));
 }
 .curl-flap {
-  clip-path: polygon(100% 0, 0 100%, 100% 100%);
+  clip-path: polygon(100% 0, 0 100%, 70% 70%);
   background: linear-gradient(135deg, var(--sunken), var(--raised) 70%);
-  filter: drop-shadow(-2px 2px 2px rgba(0, 0, 0, .3));
+  filter: drop-shadow(-1px 1px 1px rgba(0, 0, 0, .3));
 }
 
 /* Header */
@@ -231,6 +231,10 @@ main { display: block; }
   .section { padding: 40px 0; }
   .nav { margin-left: 0; width: 100%; }
   .rec { padding-left: 52px; }
+}
+@media (max-width: 600px) {
+  .curl { --curl: 36px; --curl-peek: 44px; }
+  .site-header .wrap { padding-left: 54px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .rail i, .rec.active::before { animation: none; }

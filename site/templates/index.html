@@ -6,9 +6,9 @@
 <section class="hero">
   <div class="wrap">
     <div>
-      <p class="kicker">A distributed operating system</p>
-      <h1>A cluster that behaves like one machine.</h1>
-      <p class="lede">I'm building NineLives so that the memory of a whole cluster is a log. When a machine dies, its programs carry on somewhere else, from the last record they handled.</p>
+      <p class="kicker">In development, in the open</p>
+      <h1>An operating system built on stock Linux and the Felix log.</h1>
+      <p class="lede">Nothing boots yet. I'm building NineLives so that the memory of a whole cluster is a log, and so that when a machine dies its programs can carry on somewhere else, from the last record they handled.</p>
       <div class="actions">
         <a class="btn primary" href="/roadmap/">See the roadmap</a>
         <a class="btn" href="/design/">Read the design</a>
@@ -25,15 +25,15 @@
 
 <section class="section">
   <div class="wrap">
-    <h2>What it is</h2>
+    <h2>What it is meant to be</h2>
     <div class="prose">
-      <p>Every change to the system is a durable, ordered record in <a href="https://getfelix.dev">Felix</a>: what should run, where it runs, what each program received and what it produced. A program's state is a fold over those records, so any machine can rebuild it. That is where the name comes from.</p>
-      <p>Linux handles drivers, memory and local processes. NineLives handles what Linux can't do across machines.</p>
+      <p>The design is that every change to the system will be a durable, ordered record in <a href="https://getfelix.dev">Felix</a>: what should run, where it runs, what each program received and what it produced. A program's state is a fold over those records, so any machine can rebuild it. That is where the name comes from.</p>
+      <p>Linux is meant to keep handling drivers, memory and local processes. NineLives is for what Linux can't do across machines.</p>
     </div>
     <ul class="claims">
-      <li><h3>Failover</h3><p>A dead machine's programs continue elsewhere, without lost or repeated work.</p></li>
-      <li><h3>Time travel</h3><p>Rebuild any program as it was at any moment, then step forward one record at a time.</p></li>
-      <li><h3>An audit trail</h3><p>Every decision the system made is on the record, in order.</p></li>
+      <li><h3>Failover</h3><p>The goal: a dead machine's programs continue elsewhere, without lost or repeated work.</p></li>
+      <li><h3>Time travel</h3><p>The goal: rebuild any program as it was at any moment, then step forward one record at a time.</p></li>
+      <li><h3>An audit trail</h3><p>The goal: every decision the system makes is on the record, in order.</p></li>
     </ul>
     <p style="margin-top:28px">The kernel is stock Linux, on purpose. <a href="/devlog/why-stock-linux/">Here is why.</a></p>
   </div>

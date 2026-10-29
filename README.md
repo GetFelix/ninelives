@@ -41,7 +41,9 @@ can replay.
 
 Existing programs run unmodified from the start, and failures are reported,
 never hidden behind a hang. The reasoning, from what held Plan 9 back, is in
-[Lessons from Plan 9](docs/design.md#lessons-from-plan-9).
+[Lessons from Plan 9](docs/design.md#lessons-from-plan-9), with a second
+look at one machine as a failure domain in
+[Lessons from Barrelfish](docs/design.md#lessons-from-barrelfish).
 
 ## Layout
 

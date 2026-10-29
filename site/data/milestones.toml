@@ -86,7 +86,7 @@ issues = [
 # The big undecided choices, shown on the home page and the roadmap. Remove one when it is decided.
 [[questions]]
 title = "Linux or our own kernel?"
-proposal = "Stock Linux, pinned, no fork. A Rust kernel stays on the table."
+proposal = "None yet. Both sides are in the discussion."
 link = "https://github.com/GetFelix/ninelives/discussions/22"
 label = "Discussion #22"
 

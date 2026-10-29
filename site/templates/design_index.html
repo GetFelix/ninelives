@@ -2,14 +2,23 @@
 {% block title %}Design | NineLives{% endblock title %}
 {% block ogtitle %}Design | NineLives{% endblock ogtitle %}
 {% block main %}
-<div class="page"><div class="wrap">
-  <p class="kicker">Design</p>
-  <h1>{{ section.title }}</h1>
-  <div class="prose">{{ section.content | safe }}</div>
-  <ul class="links">
+<header class="page-head">
+  <div class="wrap">
+    <p class="eyebrow rise">Design</p>
+    <h1 class="rise" style="--d:1">{{ section.title }}</h1>
+    <div class="lede rise" style="--d:2">{{ section.content | safe }}</div>
+  </div>
+</header>
+<div class="page-body"><div class="wrap">
+  <ul class="links docs">
     {%- for p in section.pages %}
-    <li><a href="{{ p.permalink }}"><b>{{ p.title }}</b><span>{{ p.description }}</span></a></li>
+    <li class="reveal" style="--d:{{ loop.index0 }}"><a href="{{ p.permalink }}"><span class="doc-n">{{ loop.index }}</span><b>{{ p.title }}</b><span>{{ p.description }}</span></a></li>
     {%- endfor %}
   </ul>
+  <section class="page-after" id="open-questions">
+    <h2 class="reveal">Open questions</h2>
+    <p class="lede reveal">Where these documents name a tool, it is a proposal. The choices still open:</p>
+    {% include "questions.html" %}
+  </section>
 </div></div>
 {% endblock main %}

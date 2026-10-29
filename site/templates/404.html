@@ -2,9 +2,12 @@
 {% block title %}Not found | NineLives{% endblock title %}
 {% block canonical %}{{ config.base_url }}/404.html{% endblock canonical %}
 {% block main %}
-<div class="page"><div class="wrap">
-  <p class="kicker">404</p>
-  <h1>This record was lost.</h1>
-  <p class="lede">The page you wanted isn't here. <a href="/">Back to the start</a>.</p>
-</div></div>
+<header class="page-head lost">
+  <div class="wrap">
+    <div class="strip lost-strip" aria-hidden="true"><ol>{% for n in range(end=9) %}<li><i style="--n:{{ n }}"></i><span>{{ n }}</span></li>{% endfor %}</ol></div>
+    <p class="eyebrow">404</p>
+    <h1>This record was lost.</h1>
+    <p class="lede">The page you wanted isn't here. <a href="/">Back to the start</a>.</p>
+  </div>
+</header>
 {% endblock main %}

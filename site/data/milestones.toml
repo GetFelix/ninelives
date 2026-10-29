@@ -4,7 +4,7 @@
 
 [project]
 stage = "Design stage"
-summary = "Nothing boots yet. The plan is written down and the first milestone is next."
+summary = "Nothing boots yet, and the big choices are still open. The first milestone is next."
 updated = "2026-10-28"
 
 [[milestones]]
@@ -15,9 +15,9 @@ status = "next"
 proves = "The image can be built the same way every time, and CI can boot it. Every later test stands on this."
 ends = "An image boots in qemu on x86_64 and aarch64, and CI boots it on every pull request."
 issues = [
-  { n = 1, title = "Build a qemu image with mkosi" },
+  { n = 1, title = "Build a qemu image (mkosi is proposed)" },
   { n = 2, title = "CI: build the image and boot it in qemu on every PR" },
-  { n = 3, title = "Kernel: pin a version and write the config fragments" },
+  { n = 3, title = "Kernel: pin the first image's kernel (which kernel is open)" },
 ]
 
 [[milestones]]
@@ -52,9 +52,9 @@ number = 4
 title = "Atomic upgrades"
 status = "planned"
 proves = "A machine can be upgraded and rolled back without losing its state, and only signed images run."
-ends = "A/B root partitions switch atomically and fall back on a failed boot. Images are signed."
+ends = "An upgrade switches atomically and falls back on a failed boot. Images are signed. A/B root partitions are the proposal."
 issues = [
-  { n = 8, title = "A/B root partitions with rollback" },
+  { n = 8, title = "A/B root partitions with rollback (proposed)" },
   { n = 9, title = "Signed images and secure boot" },
 ]
 
@@ -82,3 +82,34 @@ issues = [
   { n = 13, title = "Cloud images" },
   { n = 14, title = "Raspberry Pi image" },
 ]
+
+# The big undecided choices, shown on the home page and the roadmap. Remove one when it is decided.
+[[questions]]
+title = "Linux or our own kernel?"
+proposal = "Stock Linux, pinned, no fork. A Rust kernel stays on the table."
+link = "https://github.com/GetFelix/ninelives/discussions/22"
+label = "Discussion #22"
+
+[[questions]]
+title = "Our own PID 1, or systemd?"
+proposal = "systemd for the first milestones, then see how much of its job moves onto the log."
+link = "https://github.com/GetFelix/ninelives/issues/15"
+label = "Issue #15"
+
+[[questions]]
+title = "How are images built?"
+proposal = "mkosi, producing a read-only root."
+link = "https://github.com/GetFelix/ninelives/issues/1"
+label = "Issue #1"
+
+[[questions]]
+title = "How does a machine upgrade?"
+proposal = "A/B root partitions that switch on reboot and fall back on a failed boot."
+link = "https://github.com/GetFelix/ninelives/issues/8"
+label = "Issue #8"
+
+[[questions]]
+title = "How does a machine prove who it is?"
+proposal = "None yet. This is the first join, before the machine has credentials."
+link = "https://github.com/GetFelix/ninelives/issues/16"
+label = "Issue #16"

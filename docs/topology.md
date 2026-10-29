@@ -86,8 +86,10 @@ flowchart TB
 ## Services, not containers
 
 Felix ships container images for people running it on Kubernetes or Compose.
-NineLives does the job those would do, so it runs the release binaries as
-systemd services instead:
+NineLives does the job those would do, so the proposal is to run the release
+binaries as services under the init system instead. With systemd as PID 1,
+which is proposed but not decided
+([#15](https://github.com/GetFelix/ninelives/issues/15)), that looks like:
 
 ```
 systemd
@@ -98,16 +100,16 @@ systemd
 
 - **Boot doesn't depend on a container runtime or a registry.** Everything
   else waits on Felix, so its start has to be the simplest step in boot.
-- **systemd does the isolation.** Each service runs as its own user, sees a
+- **The init system does the isolation.** With systemd, each service runs as its own user, sees a
   read-only system, writes only to its directory on the data partition, and
   has CPU and memory reserved with cgroups. The reservation is what stops a
   busy workload from slowing the log on a shared machine.
-- **Felix upgrades separately from the OS.** A
+- **Felix upgrades separately from the OS.** One option is a
   [systemd-sysext](https://www.freedesktop.org/software/systemd/man/latest/systemd-sysext.html)
   extension layers a Felix version over the read-only image. Rolling back
   means switching back to the previous extension.
-- Felix's data lives on the data partition, so an A/B image upgrade never
-  touches it.
+- Felix's data lives on the data partition, so an image upgrade never
+  touches it, whatever the update mechanism turns out to be.
 
 Podman quadlets would also work if containers are ever wanted, at the cost of
 the runtime and registry dependency at boot.

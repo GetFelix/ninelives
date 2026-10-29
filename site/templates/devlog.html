@@ -2,17 +2,21 @@
 {% block title %}Devlog | NineLives{% endblock title %}
 {% block ogtitle %}Devlog | NineLives{% endblock ogtitle %}
 {% block main %}
-<div class="page"><div class="wrap">
-  <p class="kicker">Devlog</p>
-  <h1>{{ section.title }}</h1>
-  <p class="lede">{{ section.description }}</p>
+<header class="page-head">
+  <div class="wrap">
+    <p class="eyebrow rise">Devlog</p>
+    <h1 class="rise" style="--d:1">{{ section.title }}</h1>
+    <p class="lede rise" style="--d:2">{{ section.description }} <a href="/devlog/feed.xml">Feed</a>.</p>
+  </div>
+</header>
+<div class="page-body"><div class="wrap">
   <ul class="posts">
     {%- for p in section.pages %}
-    <li>
-      <p class="meta"><time datetime="{{ p.date }}">{{ p.date | date(format="%-d %B %Y") }}</time></p>
-      <h2><a href="{{ p.permalink }}">{{ p.title }}</a></h2>
-      <p>{{ p.description }}</p>
-    </li>
+    <li class="reveal"><a href="{{ p.permalink }}">
+      <time datetime="{{ p.date }}">{{ p.date | date(format="%-d %B %Y") }}</time>
+      <div><h2>{{ p.title }}</h2><p>{{ p.description }}</p></div>
+      <span class="go" aria-hidden="true">&rarr;</span>
+    </a></li>
     {%- endfor %}
   </ul>
 </div></div>

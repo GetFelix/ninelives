@@ -5,7 +5,7 @@
 {% set d = load_data(path="data/milestones.toml") %}
 <div class="page"><div class="wrap">
   <p class="kicker">Roadmap</p>
-  <h1>Six milestones, each one provable.</h1>
+  <h1>Six milestones, each with a check.</h1>
   <p class="lede">Each milestone ends with something CI can check. {{ d.project.stage }}: {{ d.project.summary }}</p>
   <ol class="log">
     {%- for m in d.milestones %}

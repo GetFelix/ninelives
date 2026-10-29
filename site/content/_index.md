@@ -1,5 +1,5 @@
 +++
 title = "NineLives"
-description = "A distributed operating system built on the Felix log. A cluster that behaves like one machine."
+description = "An operating system built on stock Linux and the Felix log, developed in the open. Nothing boots yet."
 template = "index.html"
 +++

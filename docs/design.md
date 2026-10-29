@@ -38,12 +38,10 @@ up are in [topology.md](topology.md).
 
 ## The kernel
 
-Undecided. The proposal is stock Linux, pinned to a release and configured
-with fragments in `kernel/`: drivers, filesystems and networking are not where
-NineLives is different, and a fork would cost far more than it returns. The
-alternative is a kernel of our own, or an existing Rust kernel such as one
-that is compatible with Linux at the syscall level. The trade-off is being
-discussed in [Discussion #22](https://github.com/GetFelix/ninelives/discussions/22).
+Undecided, with no proposal yet. The options are stock Linux, a kernel of our
+own, or an existing Rust kernel such as one that is compatible with Linux at
+the syscall level. The trade-off is being discussed in
+[Discussion #22](https://github.com/GetFelix/ninelives/discussions/22).
 Either way, nothing above the kernel should depend on kernel-specific features
 more than it has to.
 

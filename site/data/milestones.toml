@@ -5,7 +5,7 @@
 [project]
 stage = "Design stage"
 summary = "Nothing boots yet, and the big choices are still open. The first milestone is next."
-updated = "2026-10-28"
+updated = "2026-10-30"
 
 [[milestones]]
 id = "M0"
@@ -86,7 +86,7 @@ issues = [
 # The big undecided choices, shown on the home page and the roadmap. Remove one when it is decided.
 [[questions]]
 title = "Linux or our own kernel?"
-proposal = "None yet. Both sides are in the discussion."
+proposal = "Stock Linux through the three-VM milestone, then look again. Both sides are in the discussion."
 link = "https://github.com/GetFelix/ninelives/discussions/22"
 label = "Discussion #22"
 
@@ -110,6 +110,6 @@ label = "Issue #8"
 
 [[questions]]
 title = "How does a machine prove who it is?"
-proposal = "None yet. This is the first join, before the machine has credentials."
+proposal = "A one-time join token for the first join; TPM and cloud identity later."
 link = "https://github.com/GetFelix/ninelives/issues/16"
 label = "Issue #16"

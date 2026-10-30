@@ -10,8 +10,8 @@
 A distributed operating system built on the [Felix](https://github.com/GetFelix/felix) log.
 
 > **Status:** design stage. Nothing boots yet, and most choices, including the
-> kernel, are still open. The plan is in
-> [docs/design.md](docs/design.md) and the work is tracked in
+> kernel, are still open. The plan, the open questions and what each milestone
+> needs from felixd are in [docs/design.md](docs/design.md), and the work is tracked in
 > [milestones](https://github.com/GetFelix/ninelives/milestones).
 
 ## What it is
@@ -39,8 +39,9 @@ what a single machine's kernel can't do across machines: processes that
 outlive a machine, pipes and files that are durable streams, and a history you
 can replay.
 
-Existing programs run unmodified from the start, and failures are reported,
-never hidden behind a hang. The reasoning, from what held Plan 9 back, is in
+Existing programs are meant to run unmodified through felixd's native tier,
+which is not built yet; until then workloads are WebAssembly. Failures are
+reported, never hidden behind a hang. The reasoning, from what held Plan 9 back, is in
 [Lessons from Plan 9](docs/design.md#lessons-from-plan-9), with a second
 look at one machine as a failure domain in
 [Lessons from Barrelfish](docs/design.md#lessons-from-barrelfish).

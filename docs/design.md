@@ -429,7 +429,8 @@ Nobody logs in to set it up.
 **Gaps:**
 
 - **Node credentials.** The token is a file read once at start, with no
-  refresh, and any node may write any output
+  refresh ([felixd#159](https://github.com/GetFelix/felixd/issues/159)), and
+  any node may write any output
   ([felixd#74](https://github.com/GetFelix/felixd/issues/74)). For M1 we
   issue a long-lived development token per machine.
 - **Submitting work needs admin rights.** `felixd run` creates streams with the
@@ -441,7 +442,8 @@ Nobody logs in to set it up.
   [#117](https://github.com/GetFelix/felixd/issues/117)). For M1 an operator
   submits from a core machine.
 - **Broker addresses are IP addresses.** felixd 0.1 does not resolve host
-  names, so the join config carries IPs. There is no felixd issue for this yet.
+  names, so the join config carries IPs
+  ([felixd#160](https://github.com/GetFelix/felixd/issues/160)).
 - **No status command in the release.** `felixd ps` and `felixd drain` are on
   felixd's main branch but not in 0.1. Until a release has them, the M1 check
   reads the `nodes` cache directly.
@@ -499,9 +501,10 @@ In order:
 
 1. **A release with `ps`, `drain` and metrics.** They are on felixd's main
    branch. M1 needs a status view, and M2's demo is easier to follow with one.
-2. **Node credentials that outlive a process** (part of
-   [felixd#74](https://github.com/GetFelix/felixd/issues/74)): refresh the node
-   token, or re-read the token file, so a machine keeps running on the
+2. **Node credentials that outlive a process**
+   ([felixd#159](https://github.com/GetFelix/felixd/issues/159), then
+   [felixd#74](https://github.com/GetFelix/felixd/issues/74)): re-read the
+   token file on refresh, so a machine keeps running on the
    credentials it got at join. Per-lease tokens follow.
 3. **Submission without admin rights** through intake and admission
    ([felixd#114](https://github.com/GetFelix/felixd/issues/114),
@@ -509,7 +512,8 @@ In order:
    [#116](https://github.com/GetFelix/felixd/issues/116),
    [#117](https://github.com/GetFelix/felixd/issues/117)), with `felixd init`
    as the step the image runs once when a cluster first forms.
-4. **Broker addresses by host name**, so a join config can name the core
+4. **Broker addresses by host name**
+   ([felixd#160](https://github.com/GetFelix/felixd/issues/160)), so a join config can name the core
    machines rather than their IPs.
 5. **One session lease per machine and drain with return**
    ([felixd#82](https://github.com/GetFelix/felixd/issues/82)), which M3's

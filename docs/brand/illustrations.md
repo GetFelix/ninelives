@@ -37,6 +37,11 @@ every piece of the cast below.
 - Every figure has real alt text that says what is drawn and what it shows.
 - Animate only when the motion is the idea: a calm loop, no flashing, and stopped under
   `prefers-reduced-motion`. A still drawing is the default.
+- An animated drawing is built with `Loop` in `scripts/brand/illus.py`: every moving part is one
+  keyframe track on a shared loop, animating only `transform` and `opacity`. Under
+  `prefers-reduced-motion` it holds one chosen frame rather than stopping wherever the shapes
+  happen to sit. The 404 page's drawing (`lost_page`, written to `site/static/img/404.svg`) is the
+  example.
 
 Do and don't:
 

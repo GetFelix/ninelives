@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 {% block title %}NineLives: an operating system with the Felix log at its core{% endblock title %}
 {% block ogtitle %}NineLives{% endblock ogtitle %}
+{% block head %}<script defer src="{{ get_url(path='js/hero-bg.js', cache_busting=true) }}"></script>{% endblock head %}
 {% block main %}
 {% set d = load_data(path="data/milestones.toml") %}
 <section class="hero">
+  <canvas class="hero-bg" aria-hidden="true"></canvas>
   <div class="wrap">
     <div class="hero-mark rise" style="--d:2">
       <img class="on-light" src="/brand/mark-animated-light.svg" alt="The NineLives mark: a cat whose head and tail make a 9. The tail is nine log records." width="320" height="320">

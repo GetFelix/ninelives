@@ -250,6 +250,11 @@ main { display: block; }
   background: radial-gradient(closest-side, var(--glow), transparent 70%);
   opacity: 0.55;
 }
+.hero-bg {
+  position: absolute; inset: 0; z-index: -1; width: 100%; height: 100%; pointer-events: none;
+  -webkit-mask-image: linear-gradient(#000 70%, transparent 96%);
+  mask-image: linear-gradient(#000 70%, transparent 96%);
+}
 .hero .wrap:first-child {
   display: grid;
   grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);

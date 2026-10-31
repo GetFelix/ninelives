@@ -522,7 +522,7 @@ main { display: block; }
 .issues .gh a { border-style: dashed; color: var(--muted); }
 .page-after { margin-top: 56px; }
 
-/* Devlog */
+/* Blog */
 .posts { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
 .posts li { border-bottom: 1px solid var(--line); }
 .posts a { display: grid; grid-template-columns: 180px minmax(0, 1fr) 24px; gap: 8px 32px; align-items: baseline; padding: 32px 4px; color: var(--text); text-decoration: none; }

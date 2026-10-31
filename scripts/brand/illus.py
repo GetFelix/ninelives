@@ -168,6 +168,37 @@ def middle_paths():
     return svg(b)
 
 
+def replay_decision():
+    b = []
+    b += machine(70, 110, 180, 100, "model v3", dead=True)
+    b += ['<g class="nl-dead">', '<path class="nl-k nl-dash" d="M160 212C160 310 379 296 379 372"/>', "</g>"]
+    b += records(200, 380, 10, newest=False)
+    b += ['<rect class="nl-new" x="368" y="380" width="22" height="14" rx="5"/>',
+          text(379, 416, "answer", "middle", "nl-t nl-ta"), text(185, 392, "log", "end")]
+    b += machine(470, 160, 190, 100, "replay")
+    b += arrow((450, 372), (470, 320), (530, 300), (548, 268))
+    b += cat(565, 136, eyes="happy")
+    return svg(b)
+
+
+def shadow_model():
+    b = []
+    b += records(234, 70, 9, newest=False)
+    b += [text(219, 82, "log", "end")]
+    b += arrow((300, 96), (260, 126), (150, 120), (130, 182))
+    b += arrow((390, 96), (420, 140), (500, 140), (520, 180))
+    b += machine(90, 190, 220, 100, "v3 · live")
+    b += [f'<rect class="nl-o" x="410" y="190" width="220" height="100" rx="12"/>',
+          '<path class="nl-k" d="M426 208h26M426 218h16"/>', text(426, 274, "v4 · shadow")]
+    b += cat(256, 166)
+    b += records(130, 340, 5, newest=False)
+    b += records(450, 340, 5, newest=False)
+    b += ['<rect class="nl-new" x="534" y="340" width="22" height="14" rx="5"/>',
+          text(545, 376, "first diff", "middle", "nl-t nl-ta")]
+    b += [text(200, 420, "acted on", "middle"), text(520, 420, "recorded only", "middle")]
+    return svg(b)
+
+
 if __name__ == "__main__":
     def write(rel, s):
         p = os.path.join(ROOT, rel)
@@ -181,3 +212,6 @@ if __name__ == "__main__":
     write(post + "1-three-vms.svg", three_vms())
     write(post + "2-two-stacks.svg", stacks())
     write(post + "3-middle-paths.svg", middle_paths())
+    post = "site/static/img/blog/what-if-every-decision-could-be-replayed/"
+    write(post + "1-replay-decision.svg", replay_decision())
+    write(post + "2-shadow-model.svg", shadow_model())

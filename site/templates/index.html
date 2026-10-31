@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}NineLives: an operating system with the Felix log at its core{% endblock title %}
 {% block ogtitle %}NineLives{% endblock ogtitle %}
+{% block head %}<script defer src="{{ get_url(path='js/hero-bg.js', cache_busting=true) }}"></script>{% endblock head %}
 {% block main %}
 {% set d = load_data(path="data/milestones.toml") %}
 <section class="hero">
@@ -24,6 +25,8 @@
   <div class="wrap strip rise" style="--d:4" aria-hidden="true">
     <ol>{% for n in range(end=9) %}<li><i style="--n:{{ n }}"></i><span>{{ n }}</span></li>{% endfor %}</ol>
   </div>
+  <!-- Last, so .hero .wrap:first-child keeps the hero layout. -->
+  <canvas class="hero-bg" aria-hidden="true"></canvas>
 </section>
 
 <section class="section" id="meant-to-be">

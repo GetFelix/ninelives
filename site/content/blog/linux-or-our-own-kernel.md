@@ -5,6 +5,9 @@ date = 2026-10-28
 slug = "linux-or-our-own-kernel"
 aliases = ["/devlog/why-stock-linux/", "/devlog/linux-or-our-own-kernel/"]
 
+[extra]
+card = "/img/blog/linux-or-our-own-kernel/1-three-vms.svg"
+
 [taxonomies]
 tags = ["kernel", "design", "linux"]
 +++

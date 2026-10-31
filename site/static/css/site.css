@@ -564,6 +564,10 @@ main { display: block; }
 .post-card h2 a:hover { color: var(--amber-text); text-decoration: underline; }
 .post-card p { margin: 0; color: var(--muted); max-width: 64ch; }
 .post-card .post-meta { color: var(--faint); }
+.post-text { display: grid; gap: 8px; min-width: 0; }
+.post-card.has-thumb { grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 28px; align-items: center; }
+.post-thumb { display: block; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.post-thumb svg { display: block; width: 100%; height: auto; }
 .post-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; font: 400 13px/1.5 var(--mono); color: var(--faint); }
 .post-meta > * + *::before { content: "\00b7"; margin-right: 14px; }
 .post-head .post-meta { margin-top: 22px; }
@@ -740,6 +744,7 @@ main { display: block; }
   .log .card { padding: 22px 20px; }
   .log .facts { grid-template-columns: 1fr; }
   .post-card { padding: 22px 0; }
+  .post-card.has-thumb { grid-template-columns: 1fr; gap: 16px; }
   .post-nav { grid-template-columns: 1fr; }
   .post-nav-next { grid-column: auto; }
   .search-row button { padding: 8px 14px; }

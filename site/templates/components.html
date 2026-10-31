@@ -7,13 +7,18 @@
 </ul>
 {% endcomponent chips %}
 
-{# One entry in the post list: date and reading time, title, summary, tags. #}
+{# One entry in the post list: thumbnail (extra.card, an SVG under static/), date and reading time, title, summary, tags. #}
 {% component card(page) %}
-<li><article class="post-card">
+<li><article class="post-card{% if page.extra.card %} has-thumb{% endif %}">
+  {%- if page.extra.card %}
+  <a class="post-thumb" href="{{ page.path }}" aria-hidden="true" tabindex="-1">{{ load_data(path="static" ~ page.extra.card, format="plain") | trim | safe }}</a>
+  {%- endif %}
+  <div class="post-text">
   <p class="post-meta"><time datetime="{{ page.date | date(format="%Y-%m-%d") }}">{{ page.date | date(format="%-d %B %Y") }}</time><span>{{ page.reading_time }} min read</span></p>
   <h2><a href="{{ page.path }}">{{ page.title }}</a></h2>
   <p>{{ page.description }}</p>
   {%- if page.taxonomies.tags %}{{<chips terms={page.taxonomies.tags} />}}{% endif %}
+  </div>
 </article></li>
 {% endcomponent card %}
 

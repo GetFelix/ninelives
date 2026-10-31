@@ -51,3 +51,19 @@
   </ul>
 </nav>
 {% endcomponent tag_nav %}
+
+{# A post figure: {{ <figure src="/img/blog/<slug>/1-name.svg" alt="..." caption="..." /> }}.
+   SVGs are inlined so they take the theme's --ill-* colours (docs/brand/illustrations.md). #}
+{% component figure(src: string, alt: string, caption: string = "") %}
+<figure class="nl-figure">
+  {%- if src is ending_with(pat=".svg") %}
+  {%- set drawing = load_data(path="static" ~ src, format="plain") %}
+  {{ drawing | replace(from='<svg xmlns="http://www.w3.org/2000/svg" class="nl-ill"', to='<svg xmlns="http://www.w3.org/2000/svg" class="nl-ill" role="img" aria-label="' ~ (alt | escape) ~ '"') | safe }}
+  {%- else %}
+  <img src="{{ src }}" alt="{{ alt }}" loading="lazy">
+  {%- endif %}
+  {%- if caption %}
+  <figcaption>{{ caption }}</figcaption>
+  {%- endif %}
+</figure>
+{% endcomponent figure %}

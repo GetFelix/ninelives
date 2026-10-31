@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="nl-ill" viewBox="0 0 720 480" width="720" height="480"><style>.nl-ill{--f-ink:#0e2a3a;--f-soft:rgba(95,211,239,.22);--f-cat:#0e2a3a;--f-eye:#5fd3ef;--f-label:#46536a;--f-amber-text:#8f4c00}
+@media (prefers-color-scheme:dark){.nl-ill{--f-ink:#5fd3ef;--f-soft:rgba(18,163,196,.16);--f-cat:#5fd3ef;--f-eye:#0e2a3a;--f-label:#a9b6c8;--f-amber-text:#f7b13a}}
+.nl-k{fill:none;stroke:var(--ill-ink,var(--f-ink));stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.nl-m{fill:var(--ill-soft,var(--f-soft));stroke:var(--ill-line,#12a3c4);stroke-width:2;stroke-linejoin:round}
+.nl-o{fill:none;stroke:var(--ill-ink,var(--f-ink));stroke-width:2;stroke-linejoin:round}
+.nl-ka{fill:none;stroke:var(--ill-accent,#f5a623);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.nl-dead{opacity:.35}
+.nl-dash{stroke-dasharray:5 6}
+.nl-r{fill:var(--ill-line,#12a3c4)}
+.nl-new{fill:var(--ill-accent,#f5a623)}
+.nl-lost{opacity:.28}
+.nl-cat{fill:var(--ill-cat,var(--f-cat));stroke:var(--ill-ink,var(--f-ink));stroke-width:2;stroke-linejoin:round}
+.nl-tail-e{fill:none;stroke:var(--ill-ink,var(--f-ink));stroke-width:10;stroke-linecap:round}
+.nl-tail{fill:none;stroke:var(--ill-cat,var(--f-cat));stroke-width:6;stroke-linecap:round}
+.nl-eye{fill:var(--ill-eye,var(--f-eye))}
+.nl-eye-a{fill:var(--ill-accent,#f5a623)}
+.nl-lid{fill:none;stroke:var(--ill-eye,var(--f-eye));stroke-width:2.4;stroke-linecap:round}
+.nl-t{font-family:var(--mono,"IBM Plex Mono",ui-monospace,monospace);font-size:13px;fill:var(--ill-label,var(--f-label))}
+.nl-ta{fill:var(--ill-accent-text,var(--f-amber-text))}</style><path class="nl-k" d="M90 300H630"/><rect class="nl-r" x="79" y="293" width="22" height="14" rx="5"/><text class="nl-t" x="90" y="336" text-anchor="middle">stock linux</text><rect class="nl-r" x="214" y="293" width="22" height="14" rx="5"/><text class="nl-t" x="225" y="336" text-anchor="middle">rust for</text><text class="nl-t" x="225" y="354" text-anchor="middle">linux</text><rect class="nl-r" x="349" y="293" width="22" height="14" rx="5"/><text class="nl-t" x="360" y="336" text-anchor="middle">asterinas</text><text class="nl-t" x="360" y="354" text-anchor="middle">linux syscalls</text><rect class="nl-r" x="484" y="293" width="22" height="14" rx="5"/><text class="nl-t" x="495" y="336" text-anchor="middle">hermit</text><text class="nl-t" x="495" y="354" text-anchor="middle">unikernel</text><rect class="nl-r" x="619" y="293" width="22" height="14" rx="5"/><text class="nl-t" x="630" y="336" text-anchor="middle">own kernel</text><path class="nl-k" d="M122 222C220 90 520 90 622 280M612.5 274.4L622 280L622.5 269.0"/><text class="nl-t" x="372" y="118" text-anchor="middle">?</text><text class="nl-t" x="90" y="420" text-anchor="start">reuse more</text><text class="nl-t" x="630" y="420" text-anchor="end">write more</text><path class="nl-k" d="M190 416H530M520 410L530 416L520 422M200 410L190 416L200 422"/><path class="nl-tail-e" d="M107 254C113 272 107 286 93 291"/><path class="nl-tail" d="M107 254C113 272 107 286 93 291"/><path class="nl-cat" d="M72 250C72 239 75 233 78 230L76 216L87 227Q90 226 93 227L104 216L102 230C105 233 108 239 108 250C108 262 100 268 90 268C80 268 72 262 72 250Z"/><ellipse class="nl-eye-a" cx="83" cy="249" rx="4.2" ry="2.8"/><ellipse class="nl-eye-a" cx="97" cy="249" rx="4.2" ry="2.8"/></svg>

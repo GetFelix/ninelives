@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="nl-ill" viewBox="0 0 720 480" width="720" height="480"><style>.nl-ill{--f-ink:#0e2a3a;--f-soft:rgba(95,211,239,.22);--f-cat:#0e2a3a;--f-eye:#5fd3ef;--f-label:#46536a;--f-amber-text:#8f4c00}
+@media (prefers-color-scheme:dark){.nl-ill{--f-ink:#5fd3ef;--f-soft:rgba(18,163,196,.16);--f-cat:#5fd3ef;--f-eye:#0e2a3a;--f-label:#a9b6c8;--f-amber-text:#f7b13a}}
+.nl-k{fill:none;stroke:var(--ill-ink,var(--f-ink));stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.nl-m{fill:var(--ill-soft,var(--f-soft));stroke:var(--ill-line,#12a3c4);stroke-width:2;stroke-linejoin:round}
+.nl-o{fill:none;stroke:var(--ill-ink,var(--f-ink));stroke-width:2;stroke-linejoin:round}
+.nl-ka{fill:none;stroke:var(--ill-accent,#f5a623);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.nl-dead{opacity:.35}
+.nl-dash{stroke-dasharray:5 6}
+.nl-r{fill:var(--ill-line,#12a3c4)}
+.nl-new{fill:var(--ill-accent,#f5a623)}
+.nl-lost{opacity:.28}
+.nl-cat{fill:var(--ill-cat,var(--f-cat));stroke:var(--ill-ink,var(--f-ink));stroke-width:2;stroke-linejoin:round}
+.nl-tail-e{fill:none;stroke:var(--ill-ink,var(--f-ink));stroke-width:10;stroke-linecap:round}
+.nl-tail{fill:none;stroke:var(--ill-cat,var(--f-cat));stroke-width:6;stroke-linecap:round}
+.nl-eye{fill:var(--ill-eye,var(--f-eye))}
+.nl-eye-a{fill:var(--ill-accent,#f5a623)}
+.nl-lid{fill:none;stroke:var(--ill-eye,var(--f-eye));stroke-width:2.4;stroke-linecap:round}
+.nl-t{font-family:var(--mono,"IBM Plex Mono",ui-monospace,monospace);font-size:13px;fill:var(--ill-label,var(--f-label))}
+.nl-ta{fill:var(--ill-accent-text,var(--f-amber-text))}</style><rect class="nl-m" x="60" y="190" width="170" height="110" rx="12"/><path class="nl-k" d="M76 208h26M76 218h16"/><text class="nl-t" x="76" y="284" text-anchor="start">vm 1 · linux</text><path class="nl-k" d="M145 302C145 340 300 346 290 380"/><g class="nl-dead"><rect class="nl-o nl-dash" x="275" y="190" width="170" height="110" rx="12"/><path class="nl-k nl-dash" d="M291 208h26M291 218h16"/><text class="nl-t" x="291" y="284" text-anchor="start">vm 2 · linux</text></g><g class="nl-dead"><path class="nl-k nl-dash" d="M360 302C360 340 360 346 360 380"/></g><rect class="nl-m" x="490" y="190" width="170" height="110" rx="12"/><path class="nl-k" d="M506 208h26M506 218h16"/><text class="nl-t" x="506" y="284" text-anchor="start">vm 3 · linux</text><path class="nl-k" d="M575 302C575 340 420 346 430 380"/><path class="nl-k" d="M330 160C380 70 500 70 542 138M532.2 133.0L542 138L541.9 127.0"/><rect class="nl-r" x="237" y="390" width="22" height="14" rx="5"/><rect class="nl-r" x="265" y="390" width="22" height="14" rx="5"/><rect class="nl-r" x="293" y="390" width="22" height="14" rx="5"/><rect class="nl-r" x="321" y="390" width="22" height="14" rx="5"/><rect class="nl-r" x="349" y="390" width="22" height="14" rx="5"/><rect class="nl-r" x="377" y="390" width="22" height="14" rx="5"/><rect class="nl-r" x="405" y="390" width="22" height="14" rx="5"/><rect class="nl-r" x="433" y="390" width="22" height="14" rx="5"/><rect class="nl-new" x="461" y="390" width="22" height="14" rx="5"/><text class="nl-t" x="222" y="402" text-anchor="end">log</text><path class="nl-tail-e" d="M592 174C598 192 592 206 578 211"/><path class="nl-tail" d="M592 174C598 192 592 206 578 211"/><path class="nl-cat" d="M557 170C557 159 560 153 563 150L561 136L572 147Q575 146 578 147L589 136L587 150C590 153 593 159 593 170C593 182 585 188 575 188C565 188 557 182 557 170Z"/><ellipse class="nl-eye" cx="568" cy="169" rx="4.2" ry="2.8"/><ellipse class="nl-eye" cx="582" cy="169" rx="4.2" ry="2.8"/></svg>

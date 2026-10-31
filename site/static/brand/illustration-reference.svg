@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="nl-ill" viewBox="0 0 720 480" width="720" height="480"><title>A cat leaves a dead machine, drawn faded and dashed, and steps along a curved arrow onto a live machine. Both machines sit over one log of nine records; one record is faint and the newest is amber.</title><style>.nl-ill{--f-ink:#0e2a3a;--f-soft:rgba(95,211,239,.22);--f-cat:#0e2a3a;--f-eye:#5fd3ef;--f-label:#46536a;--f-amber-text:#8f4c00}
+@media (prefers-color-scheme:dark){.nl-ill{--f-ink:#5fd3ef;--f-soft:rgba(18,163,196,.16);--f-cat:#5fd3ef;--f-eye:#0e2a3a;--f-label:#a9b6c8;--f-amber-text:#f7b13a}}
+.nl-k{fill:none;stroke:var(--ill-ink,var(--f-ink));stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.nl-m{fill:var(--ill-soft,var(--f-soft));stroke:var(--ill-line,#12a3c4);stroke-width:2;stroke-linejoin:round}
+.nl-o{fill:none;stroke:var(--ill-ink,var(--f-ink));stroke-width:2;stroke-linejoin:round}
+.nl-ka{fill:none;stroke:var(--ill-accent,#f5a623);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.nl-dead{opacity:.35}
+.nl-dash{stroke-dasharray:5 6}
+.nl-r{fill:var(--ill-line,#12a3c4)}
+.nl-new{fill:var(--ill-accent,#f5a623)}
+.nl-lost{opacity:.28}
+.nl-cat{fill:var(--ill-cat,var(--f-cat));stroke:var(--ill-ink,var(--f-ink));stroke-width:2;stroke-linejoin:round}
+.nl-tail-e{fill:none;stroke:var(--ill-ink,var(--f-ink));stroke-width:10;stroke-linecap:round}
+.nl-tail{fill:none;stroke:var(--ill-cat,var(--f-cat));stroke-width:6;stroke-linecap:round}
+.nl-eye{fill:var(--ill-eye,var(--f-eye))}
+.nl-eye-a{fill:var(--ill-accent,#f5a623)}
+.nl-lid{fill:none;stroke:var(--ill-eye,var(--f-eye));stroke-width:2.4;stroke-linecap:round}
+.nl-t{font-family:var(--mono,"IBM Plex Mono",ui-monospace,monospace);font-size:13px;fill:var(--ill-label,var(--f-label))}
+.nl-ta{fill:var(--ill-accent-text,var(--f-amber-text))}</style><g class="nl-dead"><rect class="nl-o nl-dash" x="90" y="200" width="200" height="120" rx="12"/><path class="nl-k nl-dash" d="M106 218h26M106 228h16"/><text class="nl-t" x="106" y="304" text-anchor="start">node a</text></g><rect class="nl-m" x="430" y="200" width="200" height="120" rx="12"/><path class="nl-k" d="M446 218h26M446 228h16"/><text class="nl-t" x="446" y="304" text-anchor="start">node b</text><g class="nl-dead"><path class="nl-k nl-dash" d="M190 322C190 360 270 368 300 390"/></g><path class="nl-k" d="M530 322C530 360 470 368 448 390"/><path class="nl-k" d="M200 168C240 60 420 60 488 150M477.8 145.9L488 150L486.8 139.1"/><rect class="nl-r" x="237" y="400" width="22" height="14" rx="5"/><rect class="nl-r" x="265" y="400" width="22" height="14" rx="5"/><rect class="nl-r" x="293" y="400" width="22" height="14" rx="5"/><rect class="nl-r" x="321" y="400" width="22" height="14" rx="5"/><rect class="nl-r nl-lost" x="349" y="400" width="22" height="14" rx="5"/><rect class="nl-r" x="377" y="400" width="22" height="14" rx="5"/><rect class="nl-r" x="405" y="400" width="22" height="14" rx="5"/><rect class="nl-r" x="433" y="400" width="22" height="14" rx="5"/><rect class="nl-new" x="461" y="400" width="22" height="14" rx="5"/><text class="nl-t" x="222" y="412" text-anchor="end">log</text><path class="nl-tail-e" d="M547 184C553 202 547 216 533 221"/><path class="nl-tail" d="M547 184C553 202 547 216 533 221"/><path class="nl-cat" d="M512 180C512 169 515 163 518 160L516 146L527 157Q530 156 533 157L544 146L542 160C545 163 548 169 548 180C548 192 540 198 530 198C520 198 512 192 512 180Z"/><ellipse class="nl-eye" cx="523" cy="179" rx="4.2" ry="2.8"/><ellipse class="nl-eye" cx="537" cy="179" rx="4.2" ry="2.8"/></svg>

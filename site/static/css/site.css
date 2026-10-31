@@ -176,6 +176,9 @@ p { margin: 0 0 1em; }
 .eyebrow::before { content: ""; width: 18px; height: 7px; border-radius: 2px; background: var(--amber); transform: skewX(-24deg); box-shadow: 0 0 12px var(--glow); }
 .lede { font-size: clamp(1.12rem, 1.6vw, 1.3rem); line-height: 1.6; color: var(--muted); max-width: 56ch; }
 .lede strong { color: var(--text); font-weight: 600; }
+.feed-link { display: inline-flex; align-items: center; gap: 8px; margin-top: 20px; font: 500 14px/1.4 var(--mono); color: var(--amber-text); text-decoration: none; }
+.feed-link:hover { text-decoration: underline; }
+.feed-link svg { width: 16px; height: 16px; flex: none; }
 code, kbd { font-family: var(--mono); font-size: 0.86em; background: var(--amber-soft); color: var(--text); padding: 0.12em 0.42em; border-radius: 6px; }
 main { display: block; }
 

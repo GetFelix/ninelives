@@ -42,6 +42,16 @@
   --peek-tip-text: var(--text);
   --peek-tip-line: var(--line-hi);
   --peek-tip-font: var(--sans);
+  /* Illustrations (docs/brand/illustrations.md). Structure in the three brand teals, amber for
+     the one thing that matters. */
+  --ill-ink: #0e2a3a;
+  --ill-line: #0b86a6;
+  --ill-soft: rgba(95, 211, 239, 0.22);
+  --ill-cat: #0e2a3a;
+  --ill-eye: #5fd3ef;
+  --ill-accent: #f5a623;
+  --ill-accent-text: var(--amber-text);
+  --ill-label: var(--muted);
 
   --serif: "Fraunces", "Iowan Old Style", Georgia, serif;
   --sans: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -75,6 +85,11 @@
     --light-display: none;
     --dark-display: block;
     --peek-line: hsl(192, 85%, 55%);
+  --ill-ink: #5fd3ef;
+  --ill-line: #12a3c4;
+  --ill-soft: rgba(18, 163, 196, 0.16);
+  --ill-cat: #5fd3ef;
+  --ill-eye: #0e2a3a;
   }
 }
 :root[data-theme="dark"] {
@@ -99,6 +114,11 @@
   --light-display: none;
   --dark-display: block;
   --peek-line: hsl(192, 85%, 55%);
+  --ill-ink: #5fd3ef;
+  --ill-line: #12a3c4;
+  --ill-soft: rgba(18, 163, 196, 0.16);
+  --ill-cat: #5fd3ef;
+  --ill-eye: #0e2a3a;
 }
 
 /* Solarized (dark), after Ethan Schoonover's palette, with NineLives' amber. Placed after the
@@ -125,6 +145,11 @@
   --light-display: none;
   --dark-display: block;
   --peek-line: #2aa198;
+  --ill-ink: #5fd3ef;
+  --ill-line: #12a3c4;
+  --ill-soft: rgba(18, 163, 196, 0.16);
+  --ill-cat: #5fd3ef;
+  --ill-eye: #0e2a3a;
 }
 
 /* Base */
@@ -590,6 +615,8 @@ main { display: block; }
 .post-body figcaption { margin-top: 12px; color: var(--muted); font-size: 0.92rem; line-height: 1.55; }
 .post-body svg { display: block; height: auto; margin: 1.8em auto; }
 .post-body figure svg { margin: 0 auto; }
+.post-body .nl-figure svg, .post-body .nl-figure img { width: 100%; max-width: 720px; height: auto; }
+.post-body .nl-figure figcaption { max-width: 720px; margin-left: auto; margin-right: auto; }
 .post-body code { overflow-wrap: anywhere; }
 .post-body .footnote-definition { margin: 0.6em 0; padding-left: 1.2em; font-size: 0.92rem; color: var(--muted); }
 .post-body .footnote-definition p { display: inline; margin: 0; }

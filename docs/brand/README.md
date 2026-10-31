@@ -30,6 +30,12 @@
 `light` files are for light backgrounds and `dark` files for dark ones. In a GitHub README, pick by
 theme with `<picture>` and `prefers-color-scheme`, as the repository README does.
 
+## Illustrations
+
+Drawings for posts, docs and the site follow [illustrations.md](illustrations.md): the cat as the
+workload, machines as rounded boxes, the log as a row of tail segments, and colours from the site's
+theme. [`illustration-reference.svg`](illustration-reference.svg) is the drawing to copy from.
+
 ## Colors
 
 | | |

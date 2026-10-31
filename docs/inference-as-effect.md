@@ -1,9 +1,9 @@
 # Inference as an effect
 
-> **Proposal.** Nothing in this document is decided or built. It describes how
-> model inference could run on NineLives so that its decisions can be replayed,
-> and what felixd and Felix would need first. It is written down so it can be
-> argued with.
+> **Accepted design, not built.** This document describes how model inference
+> runs on NineLives so that its decisions can be replayed, and what felixd and
+> Felix need first. The open questions are settled under
+> [Decisions](#decisions).
 
 ## The claim
 
@@ -177,7 +177,7 @@ the record, because the model and the executor may be gone by then.
 - The merge log, `wl.<id>.merge`, records where the response entered the
   fold.
 - Model artifacts live in a content-addressed store
-  ([Open questions](#where-model-artifacts-live)).
+  ([Decisions](#where-model-artifacts-live)).
 
 **Size limits.** A Felix record is bounded by the broker's frame cap (16 MiB
 by default), and large records on a `Quorum` stream make every replica slower.
@@ -363,75 +363,52 @@ recorded, and a workload that planned for it falls back to its local model.
 The records from the device reach the rest of the fleet later, which needs
 Felix to forward a local log upstream ([What has to land first](#what-has-to-land-first)).
 
-## Open questions
+## Decisions
 
-None of these is decided. Each lists the options and a recommendation.
+Accepted 2026-10-31. Each outcome is short; the options that were weighed are
+in the PR discussion.
 
 ### Where model artifacts live
 
-| Option | For | Against |
-|---|---|---|
-| A Felix cache, like felixd's `modules` | Exists today; keyed by hash | A value is one record, bounded by the frame cap; models are megabytes to gigabytes. No reference-counted retention. |
-| felixd's chunk store ([felixd#77](https://github.com/GetFelix/felixd/issues/77)) | Chunked, retained by reference count, keyed per tenant, shared with modules and snapshots | Not built |
-| Outside NineLives, recorded only by hash | No storage work | Retention is out of our hands; a deleted model breaks shadow evaluation of old history |
-
-**Recommendation:** the chunk store (#77). Until it exists, mode A models are
-compiled into the module so the module hash covers them, and mode B executors
-load models from local disk and refuse any whose hash does not match.
+felixd's chunk store ([felixd#77](https://github.com/GetFelix/felixd/issues/77)).
+A Felix cache value is one record, bounded by the frame cap, and models are
+megabytes to gigabytes. Until the chunk store exists, mode A weights go inside
+the module, so the module hash covers them, and mode B executors load models
+from local disk and refuse any whose hash does not match.
 
 ### Whether mode A is in scope before the determinism ABI
 
-| Option | For | Against |
-|---|---|---|
-| Wait for #62 | No claim we cannot back | Delays the cheapest, offline-capable mode |
-| Allow it now, pinned by instruction set and felixd build, with `replay --diff` in CI | Works on today's rule that every node runs the same build | Nothing refuses a node with different settings; a slip is found only by the diff |
-| Mode B only at first | Recorded responses are reproducible today, whatever the hardware | Needs #71, and no offline inference |
-
-**Recommendation:** lead with mode B as #71's first effect kind, as the #71
-priority note already says. Allow mode A only for integer-quantized models,
-pinned by instruction set and marked experimental, until #62 lands.
+Mode B comes first, as the first effect kind of
+[felixd#71](https://github.com/GetFelix/felixd/issues/71). Mode A is allowed
+only for integer-quantized models, pinned to an instruction set and marked
+experimental, until [felixd#62](https://github.com/GetFelix/felixd/issues/62)
+lands. Nothing refuses a node with different settings, so `replay --diff` in CI
+is the guard.
 
 ### How model identity is attested
 
-| Option | For | Against |
-|---|---|---|
-| The executor reports the hash it loaded | Simple | Trusts every executor node |
-| The executor hashes the artifact as it loads it from the content-addressed store, and responses are signed with a per-node identity | The hash is checked where it matters; a forged response needs a node's key | Needs node identities ([felixd#74](https://github.com/GetFelix/felixd/issues/74), [ninelives#16](https://github.com/GetFelix/ninelives/issues/16)) |
-| Hardware attestation (a TPM-measured loader or a confidential computing enclave) | Strongest; covers a compromised host | Hardware-specific, much more to build |
-
-**Recommendation:** the second option. Load from the content-addressed store
-and verify the hash first; sign responses once per-node identities exist.
-Hardware attestation comes with signed images and secure boot (M3) and real
+The executor checks the hash as it loads the model from the content-addressed
+store, and signs responses once per-node identities exist
+([felixd#74](https://github.com/GetFelix/felixd/issues/74),
+[ninelives#16](https://github.com/GetFelix/ninelives/issues/16)). Hardware
+attestation comes later, with signed images and secure boot (M3) and real
 hardware (M5), if a user needs it.
 
 ### Retention of recorded responses versus head trim
 
-Responses are inputs. Once a snapshot covers them, a resume no longer needs
-them, so felixd's trim floors would let them go. An audit may need them for
-years.
-
-| Option | For | Against |
-|---|---|---|
-| Treat responses like any input: delete below the resume floors | Nothing new | The audit horizon becomes the snapshot retention, which nobody chose for that |
-| An audit horizon per workload, in the spec; response and merge streams are trimmed only below the lower of the resume floor and the horizon | The horizon is a stated, recorded choice | Streams grow with it |
-| Keep only digests and references on the stream, bulky outputs in the chunk store with their own retention | Streams stay small | Two retentions to reason about |
-
-**Recommendation:** the second and third together. An explicit audit horizon
-in the spec, applied with Felix's head trim at an offset
-([felix#1662](https://github.com/GetFelix/felix/issues/1662)), and large
-outputs by reference so the horizon is cheap. Redaction, when a record must go
-early, uses the chunk store's per-tenant keys (#77).
+Each workload states an audit horizon in its spec. Response and merge streams
+are trimmed only below the lower of the resume floor and the horizon, using
+Felix's head trim at an offset
+([felix#1662](https://github.com/GetFelix/felix/issues/1662)). Large outputs
+are stored by reference so the horizon stays cheap. Redaction, when a record
+must go early, uses the chunk store's per-tenant keys (#77).
 
 ### Whether the executor is part of felixd
 
-| Option | For | Against |
-|---|---|---|
-| Inside felixd | One process per machine | A GPU driver fault or a model's memory use can stall felixd's lease renewals |
-| A separate service on the same machine, started by the init system | A crashing engine does not touch felixd's leases; engines upgrade on their own schedule | One more service to ship and supervise |
-
-**Recommendation:** a separate service, one per machine, in its own cgroup
-([topology.md](topology.md)). The machine is still one failure domain; the
-separation only keeps an engine crash from looking like a lost node.
+No. The executor is a separate service, one per machine, in its own cgroup
+([topology.md](topology.md)). A GPU driver fault or a model's memory use then
+cannot stall felixd's lease renewals. The machine is still one failure domain;
+the separation only keeps an engine crash from looking like a lost node.
 
 ## What has to land first
 

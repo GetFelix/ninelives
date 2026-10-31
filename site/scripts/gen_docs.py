@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render the repository's docs/ as site pages, so the design has one source.
 
-Writes site/content/design/{os,topology}.md (git-ignored). Run by build.sh.
+Writes site/content/design/{os,topology,inference-as-effect}.md (git-ignored). Run by build.sh.
 """
 import pathlib
 import re
@@ -12,8 +12,9 @@ docs = [
     # source, page, weight, description
     ("design.md", "os", 1, "What boots on each machine, how it joins, and which services live on the log."),
     ("topology.md", "topology", 2, "Where Felix and felixd run, and how a cluster comes up."),
+    ("inference-as-effect.md", "inference-as-effect", 3, "How model inference runs as a recorded effect so its decisions can be replayed."),
 ]
-links = {"topology.md": "/design/topology/", "design.md": "/design/os/"}
+links = {"topology.md": "/design/topology/", "design.md": "/design/os/", "inference-as-effect.md": "/design/inference-as-effect/"}
 
 for src, page, weight, desc in docs:
     text = (root / "docs" / src).read_text(encoding="utf-8")

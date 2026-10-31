@@ -1,13 +1,23 @@
-// Theme toggle: follows the system until a choice is stored.
+// Theme toggle: light, dark, solarized. Follows the system until a choice is stored.
 (function () {
   var root = document.documentElement;
   var btn = document.querySelector(".theme");
-  if (btn) btn.addEventListener("click", function () {
-    var cur = root.getAttribute("data-theme");
-    if (!cur) cur = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-    var next = cur === "dark" ? "light" : "dark";
-    root.setAttribute("data-theme", next);
-    try { localStorage.setItem("theme", next); } catch (e) {}
+  var themes = ["light", "dark", "solarized"];
+  function current() {
+    return root.getAttribute("data-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  }
+  function next() { return themes[(themes.indexOf(current()) + 1) % themes.length]; }
+  function label() {
+    btn.setAttribute("aria-label", "Switch to " + next() + " theme");
+    btn.setAttribute("title", "Switch to " + next() + " theme");
+  }
+  if (!btn) return;
+  label();
+  btn.addEventListener("click", function () {
+    var n = next();
+    root.setAttribute("data-theme", n);
+    try { localStorage.setItem("theme", n); } catch (e) {}
+    label();
   });
 })();
 

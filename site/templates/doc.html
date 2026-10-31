@@ -13,9 +13,12 @@
       pre.textContent = c.textContent;
     });
     var t = document.documentElement.getAttribute("data-theme");
+    var sol = t === "solarized";
     var dark = t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
     // Match the site: night or paper, amber edges, the body font.
-    var v = dark
+    var v = sol
+      ? { background: "#002b36", primaryColor: "#073642", primaryTextColor: "#eee8d5", primaryBorderColor: "#f0b43a", secondaryColor: "#002b36", tertiaryColor: "#002b36", lineColor: "#6fb3e0", textColor: "#eee8d5", clusterBkg: "#00222b", clusterBorder: "#3d5b63", edgeLabelBackground: "#002b36" }
+      : dark
       ? { background: "#0c1626", primaryColor: "#111d30", primaryTextColor: "#eef3f9", primaryBorderColor: "#f5a623", secondaryColor: "#0c1626", tertiaryColor: "#0c1626", lineColor: "#8fc9ec", textColor: "#eef3f9", clusterBkg: "#0a1322", clusterBorder: "#2e3f57", edgeLabelBackground: "#0c1626" }
       : { background: "#fbfcfd", primaryColor: "#ffffff", primaryTextColor: "#0d1728", primaryBorderColor: "#c97f0a", secondaryColor: "#f4f6f9", tertiaryColor: "#f4f6f9", lineColor: "#4f93c4", textColor: "#0d1728", clusterBkg: "#f4f6f9", clusterBorder: "#cfd8e3", edgeLabelBackground: "#fbfcfd" };
     v.fontFamily = "Hanken Grotesk, system-ui, sans-serif";

@@ -23,8 +23,8 @@
 <meta name="twitter:card" content="summary_large_image">
 <link rel="preload" href="/fonts/fraunces-400-800.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/hanken-grotesk-400-700.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="{{ get_url(path='css/site.css', cache_busting=true) }}">
-<link rel="stylesheet" href="{{ get_url(path='css/peek.css', cache_busting=true) }}">
+<link rel="stylesheet" href="{{ get_url(path='css/site.css') }}?h={{ get_hash(path='css/site.css', sha_type=256, base64=false) | truncate(length=12, end='') }}">
+<link rel="stylesheet" href="{{ get_url(path='css/peek.css') }}?h={{ get_hash(path='css/peek.css', sha_type=256, base64=false) | truncate(length=12, end='') }}">
 <script>
 (function () {
   var d = document.documentElement;
@@ -35,7 +35,7 @@
   } catch (e) {}
 })();
 </script>
-<script defer src="{{ get_url(path='js/site.js', cache_busting=true) }}"></script>
+<script defer src="{{ get_url(path='js/site.js') }}?h={{ get_hash(path='js/site.js', sha_type=256, base64=false) | truncate(length=12, end='') }}"></script>
 {%- block head %}{% endblock head %}
 </head>
 <body>

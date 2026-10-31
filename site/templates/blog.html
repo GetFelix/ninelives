@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Blog | NineLives{% if paginator.current_index > 1 %} (page {{ paginator.current_index }}){% endif %}{% endblock title %}
 {% block ogtitle %}Blog | NineLives{% endblock ogtitle %}
-{% block head %}<script defer src="{{ get_url(path='js/blog-search.js', cache_busting=true) }}"></script>{% endblock head %}
+{% block head %}<script defer src="{{ get_url(path='js/blog-search.js') }}?h={{ get_hash(path='js/blog-search.js', sha_type=256, base64=false) | truncate(length=12, end='') }}"></script>{% endblock head %}
 {% block main %}
 <header class="page-head">
   <div class="wrap">

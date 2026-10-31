@@ -220,6 +220,8 @@ class Loop:
             keys.insert(0, (0, keys[0][1], "lin"))
         if keys[-1][0] < self.T:
             keys.append((self.T, keys[-1][1], "lin"))
+        if prop == "opacity":  # fades ease in and out; it also keeps the keyframes short
+            keys = [(t, v, "io" if e == "lin" else e) for t, v, e in keys]
         self.tracks.append((f"{self.prefix}-{name}", prop, keys))
         return f"{self.prefix}-{name}"
 
@@ -263,7 +265,7 @@ class Loop:
                 if (v, e) not in rules:
                     rules[(v, e)] = []
                     order.append((v, e))
-                rules[(v, e)].append(f"{t / self.T * 100:.2f}".rstrip("0").rstrip(".") + "%")
+                rules[(v, e)].append(f"{t / self.T * 100:.1f}".rstrip("0").rstrip(".") + "%")
             frames = "".join(
                 f"{','.join(rules[k])}{{{prop}:{k[0]}"
                 + ("" if k[1] == "io" else f";animation-timing-function:{self.EASE[k[1]]}") + "}"
@@ -283,10 +285,10 @@ def lost_page():
     """The 404: the cat looks for the page on one machine after another. Each machine dies under
     it and the cat fails over to the next, a life gone each time. All nine spent, it shrugs and
     the lives replay, because it's a log."""
-    k = 1.45                                   # the cat's size against the reference drawing
+    k = 1.3                                    # the cat's size against the reference drawing
     xs = (140, 360, 580)                       # machine centres
     top, mh, mw = 274, 104, 176                # machine roof, height, width
-    cy = top - 22 * k                          # the cat's head centre when it sits on a roof
+    cy = top - 44 * k                          # the cat's head centre when it sits on a roof
     durs = [1.4, 1.34, 1.28, 1.22, 1.16, 1.1, 1.04, 0.98, 0.92]   # the search speeds up a little
     starts = [sum(durs[:i]) for i in range(9)]
     end = sum(durs)
@@ -332,62 +334,73 @@ def lost_page():
             keys += [(t0, "0", "out"), (t0 + 0.15, "1", "lin"), (t1 + 0.1, "1", "in"), (t1 + 0.4, "0", "lin")]
         cls = tr(f"arrow{a}", keys, "opacity")
         x0, x1 = xs[a] + 8, xs[b] - 8
-        h = 110 if abs(b - a) == 1 else 170
+        h = 96 if abs(b - a) == 1 else 146
         sgn = 1 if x1 > x0 else -1
-        p0, p1 = (x0 + 10 * sgn, cy - 34), (x1 - 10 * sgn, cy - 34)
-        c1, c2 = (x0 + 40 * sgn, cy - 34 - h), (x1 - 40 * sgn, cy - 34 - h)
+        p0, p1 = (x0 + 14 * sgn, cy - 40), (x1 - 14 * sgn, cy - 40)
+        c1, c2 = (x0 + 40 * sgn, cy - 40 - h), (x1 - 40 * sgn, cy - 40 - h)
         arrows += [f'<g class="{cls}">'] + arrow(p0, c1, c2, p1) + ["</g>"]
 
     # Where the cat is: x moves evenly through each hop, height is its own track.
-    pos, hop, sq, tilt, look, wide, ear_l, ear_r, tail = ([] for _ in range(9))
+    pos, hop, sq, lean, head_t, look, wide, ear_l, ear_r, tail, leg_l, leg_r = ([] for _ in range(12))
     for i in range(9):
         s, d = starts[i], durs[i]
         x_from, x_to = xs[on(i)], xs[on(i + 1)]
-        up, land = s + 0.7 * d, s + d
-        high = 170 if abs(x_to - x_from) > 300 else 110
+        crouch, up, land = s + 0.58 * d, s + 0.72 * d, s + d
+        high = 150 if abs(x_to - x_from) > 300 else 100
+        way = 1 if x_to > x_from else -1
         pos += [(up, {"x": x_from}, "lin"), (land, {"x": x_to}, "lin")]
         hop += [(up, {}, "out"), ((up + land) / 2, {"y": -high}, "in"), (land, {}, "lin")]
-        # Anticipation, stretch, squash on landing, settle.
-        sq += [(s + 0.56 * d, {}, "io"), (up, {"sx": 1.12, "sy": 0.84}, "out"),
-               (up + 0.08, {"sx": 0.92, "sy": 1.1}, "io"), (land - 0.03, {"sx": 0.97, "sy": 1.04}, "in"),
-               (land + 0.04, {"sx": 1.16, "sy": 0.82}, "out"), (land + 0.16, {"sx": 0.97, "sy": 1.04}, "io"),
+        # Crouch, push off, stretch through the arc, squash on landing, settle.
+        sq += [(crouch, {}, "io"), (up - 0.02, {"sx": 1.14, "sy": 0.8}, "out"),
+               (up + 0.1, {"sx": 0.9, "sy": 1.12}, "io"), (land - 0.04, {"sx": 0.96, "sy": 1.05}, "in"),
+               (land + 0.03, {"sx": 1.18, "sy": 0.8}, "out"), (land + 0.15, {"sx": 0.96, "sy": 1.05}, "io"),
                (land + 0.28, {}, "io")]
+        # Leaning into the jump, and back upright as it lands.
+        lean += [(crouch, {}, "io"), (up - 0.02, {"r": 8 * way}, "io"), ((up + land) / 2, {"r": 4 * way}, "io"),
+                 (land, {"r": -5 * way}, "io"), (land + 0.2, {}, "io")]
+        # Front legs reach out in the air and grip again on landing.
+        leg_l += [(up - 0.02, {}, "out"), (up + 0.12, {"r": 28}, "io"), (land - 0.05, {"r": 8}, "out"), (land + 0.05, {}, "io")]
+        leg_r += [(up - 0.02, {}, "out"), (up + 0.12, {"r": -28}, "io"), (land - 0.05, {"r": -8}, "out"), (land + 0.05, {}, "io")]
         # Peer at the slot, then the startle when the machine goes.
         pk, dk = peer_at(i), s + 0.48 * d
-        tilt += [(s + 0.12 * d, {}, "io"), (pk, {"r": 19, "x": 7}, "io"), (dk, {"r": 17, "x": 7}, "out"),
-                 (dk + 0.08, {"r": -6}, "io"), (up, {"r": -4}, "io"), (land, {"r": 6}, "io"), (land + 0.25, {}, "io")]
+        lean += [(s + 0.12 * d, {}, "io"), (pk, {"r": 6}, "io"), (dk, {"r": 6}, "out"), (dk + 0.1, {"r": -3}, "io")]
+        head_t += [(s + 0.12 * d, {}, "io"), (pk, {"r": 16, "x": 3}, "io"), (dk, {"r": 15, "x": 3}, "out"),
+                   (dk + 0.08, {"r": -7, "y": -2}, "io"), (crouch, {"y": 2}, "io"), (land, {"r": 5 * way}, "io"),
+                   (land + 0.25, {}, "io")]
         look += [(s + 0.1 * d, {"x": 1}, "io"), (pk, {"x": 2.4, "y": 1.9}, "io"), (dk, {"x": 2.4, "y": 1.9}, "out"),
-                 (dk + 0.06, {"x": (1.8 if x_to > x_from else -1.8), "y": -0.6}, "io"), (land, {}, "io")]
+                 (dk + 0.06, {"x": 1.8 * way, "y": -0.6}, "io"), (land, {}, "io")]
         wide += [(dk, {}, "out"), (dk + 0.06, {"sx": 1.12, "sy": 1.32}, "io"), (up, {"sx": 1.05, "sy": 1.12}, "io"),
                  (land + 0.1, {}, "io")]
         ear_l += [(dk, {}, "out"), (dk + 0.07, {"r": -14}, "io"), (dk + 0.25, {}, "io"),
-                  (land, {}, "out"), (land + 0.06, {"r": 12}, "io"), (land + 0.22, {}, "io")]
+                  (up, {"r": -10}, "io"), (land + 0.06, {"r": 12}, "io"), (land + 0.24, {}, "io")]
         ear_r += [(dk + 0.03, {}, "out"), (dk + 0.1, {"r": 14}, "io"), (dk + 0.28, {}, "io"),
-                  (land, {}, "out"), (land + 0.08, {"r": -10}, "io"), (land + 0.24, {}, "io")]
-        tail += [(up, {}, "io"), (up + 0.12, {"r": -24}, "io"), (land + 0.05, {"r": 18}, "io"),
-                 (land + 0.22, {"r": -8}, "io"), (land + 0.4, {}, "io")]
-    # The shrug: nine lives spent. Look at the counter, tilt one way and the other, ears out.
+                  (up, {"r": 10}, "io"), (land + 0.08, {"r": -10}, "io"), (land + 0.26, {}, "io")]
+        # The tail trails the body: it lags into the jump and swings past on landing.
+        tail += [(up, {}, "io"), (up + 0.14, {"r": 30 * way}, "io"), (land + 0.06, {"r": -26 * way}, "io"),
+                 (land + 0.24, {"r": 10 * way}, "io"), (land + 0.44, {}, "io")]
+    # The shrug: nine lives spent. Shoulders up, paws out, ears back, a slow blink.
     f = end
-    tilt += [(f + 0.3, {}, "io"), (f + 0.55, {"r": -10}, "io"), (f + 0.9, {"r": -10}, "io"),
-             (f + 1.15, {"r": 9}, "io"), (f + 1.5, {"r": 9}, "io"), (f + 1.85, {}, "io")]
-    look += [(f + 0.2, {}, "io"), (f + 0.35, {"x": -1.6, "y": 1.8}, "io"), (f + 0.75, {"x": -1.6, "y": 1.8}, "io"),
-             (f + 0.9, {}, "io")]
-    ear_l += [(f + 0.45, {}, "io"), (f + 0.65, {"r": -24}, "io"), (f + 1.6, {"r": -24}, "back"), (f + 1.9, {}, "io")]
-    ear_r += [(f + 0.45, {}, "io"), (f + 0.65, {"r": 24}, "io"), (f + 1.6, {"r": 24}, "back"), (f + 1.9, {}, "io")]
-    tail += [(f + 0.5, {}, "io"), (f + 0.9, {"r": -14}, "io"), (f + 1.3, {"r": 10}, "io"), (f + 1.75, {}, "io")]
-    sq += [(f + 0.45, {}, "io"), (f + 0.65, {"sx": 1.04, "sy": 0.94}, "io"), (f + 1.6, {"sx": 1.04, "sy": 0.94}, "io"),
-           (f + 1.85, {}, "io")]
+    sq += [(f + 0.5, {}, "io"), (f + 0.8, {"sx": 0.97, "sy": 1.07}, "back"), (f + 1.55, {"sx": 0.97, "sy": 1.07}, "io"),
+           (f + 1.9, {}, "io")]
+    head_t += [(f + 0.5, {}, "io"), (f + 0.8, {"y": 4, "r": -8}, "back"), (f + 1.55, {"y": 4, "r": -8}, "io"),
+               (f + 1.9, {}, "io")]
+    leg_l += [(f + 0.5, {}, "io"), (f + 0.8, {"r": 78}, "back"), (f + 1.55, {"r": 74}, "io"), (f + 1.9, {}, "io")]
+    leg_r += [(f + 0.5, {}, "io"), (f + 0.8, {"r": -78}, "back"), (f + 1.55, {"r": -74}, "io"), (f + 1.9, {}, "io")]
+    look += [(f + 0.2, {}, "io"), (f + 0.35, {"x": -1.6, "y": 1.8}, "io"), (f + 0.6, {"x": -1.6, "y": 1.8}, "io"),
+             (f + 0.8, {}, "io")]
+    ear_l += [(f + 0.5, {}, "io"), (f + 0.75, {"r": -30}, "io"), (f + 1.55, {"r": -28}, "back"), (f + 1.9, {}, "io")]
+    ear_r += [(f + 0.5, {}, "io"), (f + 0.75, {"r": 30}, "io"), (f + 1.55, {"r": 28}, "back"), (f + 1.9, {}, "io")]
+    tail += [(f + 0.5, {}, "io"), (f + 0.85, {"r": -16}, "io"), (f + 1.3, {"r": 8}, "io"), (f + 1.75, {}, "io")]
     pos += [(T, {"x": xs[0]}, "lin")]
-    c_pos, c_hop, c_sq, c_tilt = tr("pos", pos), tr("hop", hop), tr("sq", sq), tr("tilt", tilt)
+    c_pos, c_hop, c_sq, c_lean, c_head = tr("pos", pos), tr("hop", hop), tr("sq", sq), tr("lean", lean), tr("head", head_t)
     c_look, c_wide = tr("look", look), tr("wide", wide)
     c_el, c_er, c_tail = tr("earl", ear_l), tr("earr", ear_r), tr("tail", tail)
-    blinks = [starts[1] + 0.25, starts[5] + 0.2, f + 2.25]
+    c_ll, c_lr = tr("legl", leg_l), tr("legr", leg_r)
     bl = []
-    for b in blinks:
+    for b in (starts[1] + 0.25, starts[5] + 0.2):
         bl += [(b, {}, "in"), (b + 0.07, {"sy": 0.1}, "out"), (b + 0.19, {}, "io")]
+    bl += [(f + 0.85, {}, "io"), (f + 1.15, {"sy": 0.08}, "io"), (f + 1.45, {"sy": 0.08}, "io"), (f + 1.8, {}, "io")]
     c_blink = tr("blink", bl)
-    c_open = tr("open", [(0, "1", "step"), (f + 0.6, "0", "step"), (f + 1.75, "1", "step")], "opacity")
-    c_happy = tr("happy", [(0, "0", "step"), (f + 0.6, "1", "step"), (f + 1.75, "0", "step")], "opacity")
 
     # The lives: one goes faint at each death, and all nine replay in order at the end.
     pips = []
@@ -397,7 +410,7 @@ def lost_page():
         c_o = tr(f"life{i}", [(0, "1", "lin"), (d, "1", "out"), (d + 0.25, ".28", "lin"),
                               (back, ".28", "lin"), (back + 0.12, "1", "lin")], "opacity")
         c_s = tr(f"lifes{i}", [(d, {}, "out"), (d + 0.12, {"sx": 0.7, "sy": 0.7}, "io"), (d + 0.3, {}, "lin"),
-                               (back - 0.01, {}, "step"), (back, {"sx": 0.6, "sy": 0.6}, "back"),
+                               (back - 0.03, {}, "step"), (back, {"sx": 0.6, "sy": 0.6}, "back"),
                                (back + 0.26, {}, "lin")])
         x = 214 + i * 34
         pips.append(part(c_s, (x + 12, 440), f'<g class="{c_o}"><rect class="nl-r" x="{x}" y="433" width="24" height="14" rx="5"/></g>'))
@@ -408,36 +421,50 @@ def lost_page():
     counter = (pips + [f'<g class="{c_lives}">', text(200, 444, "lives", "end"), "</g>",
                        f'<g class="{c_replay}">', text(200, 444, "replay", "end"), "</g>"])
 
-    # The cat, drawn at size k around its head centre. Ears and tail are their own parts.
+    # The cat, drawn at size k around its head centre: the 9's head and tail, sat on the roof
+    # (y = 44) with a body, front legs whose paws grip the roof's edge, and its own ears.
     def P(*pts):
         return " ".join(f"{a * k:g}" if isinstance(a, (int, float)) else a for a in pts)
     head = ("M" + P(-18, 4) + "C" + P(-18, -7, -15, -13, -12, -16) + "Q" + P(0, -21, 12, -16)
             + "C" + P(15, -13, 18, -7, 18, 4) + "C" + P(18, 16, 10, 22, 0, 22) + "C" + P(-10, 22, -18, 16, -18, 4) + "Z")
+    torso = ("M" + P(-11, 14) + "C" + P(-19, 20, -21, 28, -19, 34) + "C" + P(-26, 36, -27, 44, -19, 44)
+             + "L" + P(19, 44) + "C" + P(27, 44, 26, 36, 19, 34) + "C" + P(21, 28, 19, 20, 11, 14) + "Z")
     ear_lp = "M" + P(-16, -8) + "L" + P(-14, -30) + "L" + P(-1, -16) + "Z"
     ear_rp = "M" + P(16, -8) + "L" + P(14, -30) + "L" + P(1, -16) + "Z"
-    tail_p = "M" + P(16, 8) + "C" + P(23, 26, 17, 40, 3, 45)
+    tail_p = "M" + P(17, 38) + "C" + P(30, 42, 33, 60, 25, 70) + "C" + P(20, 76, 13, 74, 13, 68)
     eyes = "".join(f'<ellipse class="nl-eye-a" cx="{dx * k:g}" cy="{3 * k:g}" rx="{4.2 * k:g}" ry="{2.8 * k:g}"/>' for dx in (-7, 7))
-    happy = "".join(f'<path class="nl-lid nl-happy" d="M{(dx - 4) * k:g} {5 * k:g}Q{dx * k:g} {-1 * k:g} {(dx + 4) * k:g} {5 * k:g}"/>' for dx in (-7, 7))
     wt = 6 * k  # tail body; its outline stays 2px, as the brand's strokes do
-    cat_parts = (
-        part(c_tail, (16 * k, 8 * k),
-             f'<path class="nl-tail-e" style="stroke-width:{wt + 4:g}px" d="{tail_p}"/>'
-             f'<path class="nl-tail" style="stroke-width:{wt:g}px" d="{tail_p}"/>')
-        + part(c_el, (-9 * k, -15 * k), f'<path class="nl-cat" d="{ear_lp}"/>')
+
+    def foreleg(side, cls):
+        x = 7.5 * side
+        leg = (f'<rect class="nl-cat" x="{(x - 4) * k:g}" y="{22 * k:g}" width="{8 * k:g}" height="{22 * k:g}" rx="{4 * k:g}"/>'
+               f'<ellipse class="nl-cat" cx="{x * k:g}" cy="{44.5 * k:g}" rx="{5.6 * k:g}" ry="{3.8 * k:g}"/>'
+               f'<path class="nl-toe" d="M{(x - 1.9) * k:g} {43.6 * k:g}v{2.6 * k:g}M{(x + 1.9) * k:g} {43.6 * k:g}v{2.6 * k:g}"/>')
+        return part(cls, (x * k, 24 * k), leg)
+
+    head_parts = (
+        part(c_el, (-9 * k, -15 * k), f'<path class="nl-cat" d="{ear_lp}"/>')
         + part(c_er, (9 * k, -15 * k), f'<path class="nl-cat" d="{ear_rp}"/>')
         + f'<path class="nl-cat" d="{head}"/>'
-        + part(c_blink, (0, 3 * k), f'<g class="{c_open}">' + part(c_wide, (0, 3 * k), f'<g class="{c_look}">{eyes}</g>') + "</g>")
-        + f'<g class="{c_happy}">{happy}</g>'
+        + part(c_blink, (0, 3 * k), part(c_wide, (0, 3 * k), f'<g class="{c_look}">{eyes}</g>'))
     )
-    bottom = (0, 22 * k)
+    cat_parts = (
+        part(c_tail, (17 * k, 38 * k),
+             f'<path class="nl-tail-e" style="stroke-width:{wt + 4:g}px" d="{tail_p}"/>'
+             f'<path class="nl-tail" style="stroke-width:{wt:g}px" d="{tail_p}"/>')
+        + f'<path class="nl-cat" d="{torso}"/>'
+        + part(c_head, (0, 20 * k), head_parts)
+        + foreleg(-1, c_ll) + foreleg(1, c_lr)
+    )
+    bottom = (0, 44 * k)
     cat = (f'<g transform="translate(0 {cy:g})"><g class="{c_pos}"><g class="{c_hop}">'
-           + part(c_sq, bottom, part(c_tilt, bottom, cat_parts)) + "</g></g></g>")
+           + part(c_sq, bottom, part(c_lean, bottom, cat_parts)) + "</g></g></g>")
 
     body = arrows + machines + counter + [cat]
     title = ("The NineLives cat looks for the page on node a, b and c in turn. Each machine dies under "
              "it and the cat fails over to the next, losing one of nine lives each time. With none left "
              "it shrugs, and the nine lives replay.")
-    css = loop.css(".nl-ill")
+    css = ".nl-toe{fill:none;stroke:var(--ill-eye,var(--f-eye));stroke-width:1.4;stroke-linecap:round}\n" + loop.css(".nl-ill")
     out = svg(body, title)
     return out.replace("</style>", "\n" + css + "</style>", 1)
 

@@ -42,6 +42,10 @@ every piece of the cast below.
   `prefers-reduced-motion` it holds one chosen frame rather than stopping wherever the shapes
   happen to sit. The 404 page's drawing (`lost_page`, written to `site/static/img/404.svg`) is the
   example.
+- The 404 drawing also has the cat's full-body variant, for a drawing where the cat is the star:
+  the same head and tail, sat on a body with two front legs whose paws grip the machine's roof.
+  It stays a silhouette in `--ill-cat`; only the eyes and the toe marks take `--ill-eye`. Everywhere
+  else the cat stays the head-and-tail 9.
 
 Do and don't:
 

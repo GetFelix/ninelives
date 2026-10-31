@@ -5,7 +5,6 @@
 {% block main %}
 {% set d = load_data(path="data/milestones.toml") %}
 <section class="hero">
-  <canvas class="hero-bg" aria-hidden="true"></canvas>
   <div class="wrap">
     <div class="hero-mark rise" style="--d:2">
       <img class="on-light" src="/brand/mark-animated-light.svg" alt="The NineLives mark: a cat whose head and tail make a 9. The tail is nine log records." width="320" height="320">
@@ -26,6 +25,8 @@
   <div class="wrap strip rise" style="--d:4" aria-hidden="true">
     <ol>{% for n in range(end=9) %}<li><i style="--n:{{ n }}"></i><span>{{ n }}</span></li>{% endfor %}</ol>
   </div>
+  <!-- Last, so .hero .wrap:first-child keeps the hero layout. -->
+  <canvas class="hero-bg" aria-hidden="true"></canvas>
 </section>
 
 <section class="section" id="meant-to-be">

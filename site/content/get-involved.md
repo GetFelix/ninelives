@@ -29,7 +29,7 @@ There is no build yet. The proposal is to build images with [mkosi](https://gith
 
 ## Change this site
 
-The site is Zola, in `site/`. Milestone status is one file, `site/data/milestones.toml`. Devlog posts are Markdown in `site/content/devlog/`. The design pages are rendered from `docs/`, so fix the docs and the site follows.
+The site is Zola, in `site/`. Milestone status is one file, `site/data/milestones.toml`. Blog posts are Markdown in `site/content/blog/`. The design pages are rendered from `docs/`, so fix the docs and the site follows.
 
 ```sh
 site/scripts/build.sh

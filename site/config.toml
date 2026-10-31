@@ -5,7 +5,18 @@ default_language = "en"
 generate_feeds = false
 feed_filenames = ["feed.xml"]
 compile_sass = false
-build_search_index = false
+build_search_index = true
+
+taxonomies = [
+  { name = "tags", feed = true, paginate_by = 6 },
+]
+
+[search]
+index_format = "elasticlunr_javascript"
+include_title = true
+include_description = true
+include_path = false
+include_content = true
 
 [markdown]
 smart_punctuation = false

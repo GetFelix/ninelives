@@ -2,15 +2,24 @@
 {% block title %}{{ page.title }} | NineLives blog{% endblock title %}
 {% block ogtitle %}{{ page.title }}{% endblock ogtitle %}
 {% block main %}
-<article class="article">
-  <header class="page-head">
+<article class="post" aria-labelledby="post-title">
+  <header class="page-head post-head">
     <div class="wrap">
       <p class="eyebrow rise"><a href="/blog/">Blog</a></p>
-      <h1 class="rise" style="--d:1">{{ page.title }}</h1>
+      <h1 class="rise" id="post-title" style="--d:1">{{ page.title }}</h1>
       <p class="lede rise" style="--d:2">{{ page.description }}</p>
-      <p class="meta rise" style="--d:3"><time datetime="{{ page.date }}">{{ page.date | date(format="%-d %B %Y") }}</time> · {{ page.reading_time }} min read</p>
+      {%- if page.taxonomies.tags %}{{<chips terms={page.taxonomies.tags} />}}{% endif %}
+      <p class="post-meta rise" style="--d:3"><span>Gabriel Loewen</span><time datetime="{{ page.date | date(format="%Y-%m-%d") }}">{{ page.date | date(format="%-d %B %Y") }}</time><span>{{ page.reading_time }} min read</span></p>
     </div>
   </header>
-  <div class="page-body"><div class="wrap"><div class="prose">{{ page.content | safe }}</div></div></div>
+  <div class="page-body"><div class="wrap"><div class="prose post-body">{{ page.content | safe }}</div>
+    {%- if page.lower or page.higher %}
+    <nav class="post-nav" aria-label="More posts">
+      {%- if page.higher %}<a class="post-nav-prev" rel="prev" href="{{ page.higher.permalink }}"><span>Older</span>{{ page.higher.title }}</a>{% else %}<span></span>{% endif %}
+      {%- if page.lower %}<a class="post-nav-next" rel="next" href="{{ page.lower.permalink }}"><span>Newer</span>{{ page.lower.title }}</a>{% endif %}
+    </nav>
+    {%- endif %}
+    <p class="back-line"><a class="post-back" href="/blog/">&larr; All posts</a></p>
+  </div></div>
 </article>
 {% endblock main %}

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}{{ term.name | capitalize }} | NineLives blog{% if paginator.current_index > 1 %} (page {{ paginator.current_index }}){% endif %}{% endblock title %}
+{% block ogtitle %}{{ term.name | capitalize }} | NineLives blog{% endblock ogtitle %}
+{% block main %}
+<header class="page-head">
+  <div class="wrap">
+    <p class="eyebrow rise"><a href="/blog/">Blog</a></p>
+    <h1 class="rise" style="--d:1">Tag: {{ term.name }}</h1>
+    <p class="lede rise" style="--d:2">{{ term.pages | length }} post{% if term.pages | length != 1 %}s{% endif %} about {{ term.name }}, newest first.</p>
+    <a class="feed-link rise" style="--d:3" href="{{ term.path }}feed.xml"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M5 11a8 8 0 0 1 8 8M5 4a15 15 0 0 1 15 15"/><circle cx="6" cy="18" r="1.6" fill="currentColor" stroke="none"/></svg>RSS for this tag</a>
+  </div>
+</header>
+<section class="blog-tools" aria-label="Tags">
+  <div class="wrap">
+    {{<tag_nav current={term.name} />}}
+    <p class="back-line"><a class="post-back" href="/blog/">&larr; All posts</a></p>
+  </div>
+</section>
+<section class="blog-list" aria-label="Posts">
+  <div class="wrap">
+    <ol class="post-list" reversed>
+      {%- for p in paginator.pages %}
+      {{<card page={p} />}}
+      {%- endfor %}
+    </ol>
+    {{<pager paginator={paginator} base={term.path} />}}
+  </div>
+</section>
+{% endblock main %}

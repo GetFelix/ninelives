@@ -1,23 +1,40 @@
 {% extends "base.html" %}
-{% block title %}Blog | NineLives{% endblock title %}
+{% block title %}Blog | NineLives{% if paginator.current_index > 1 %} (page {{ paginator.current_index }}){% endif %}{% endblock title %}
 {% block ogtitle %}Blog | NineLives{% endblock ogtitle %}
+{% block head %}<script defer src="{{ get_url(path='js/blog-search.js', cache_busting=true) }}"></script>{% endblock head %}
 {% block main %}
 <header class="page-head">
   <div class="wrap">
     <p class="eyebrow rise">Blog</p>
     <h1 class="rise" style="--d:1">{{ section.title }}</h1>
-    <p class="lede rise" style="--d:2">{{ section.description }} <a href="/blog/feed.xml">Feed</a>.</p>
+    <p class="lede rise" style="--d:2">{{ section.description }}</p>
+    <a class="feed-link rise" style="--d:3" href="/blog/feed.xml"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M5 11a8 8 0 0 1 8 8M5 4a15 15 0 0 1 15 15"/><circle cx="6" cy="18" r="1.6" fill="currentColor" stroke="none"/></svg>Subscribe with RSS</a>
   </div>
 </header>
-<div class="page-body"><div class="wrap">
-  <ul class="posts">
-    {%- for p in section.pages %}
-    <li class="reveal"><a href="{{ p.permalink }}">
-      <time datetime="{{ p.date }}">{{ p.date | date(format="%-d %B %Y") }}</time>
-      <div><h2>{{ p.title }}</h2><p>{{ p.description }}</p></div>
-      <span class="go" aria-hidden="true">&rarr;</span>
-    </a></li>
-    {%- endfor %}
-  </ul>
-</div></div>
+<section class="blog-tools" aria-label="Find a post">
+  <div class="wrap">
+    <div class="blog-search" id="blog-search" hidden>
+      <form role="search" id="search-form" action="/blog/" autocomplete="off">
+        <label for="search-q">Search posts</label>
+        <div class="search-row">
+          <input type="search" id="search-q" name="q" placeholder="Title, summary or text" aria-describedby="search-status" aria-controls="search-results" spellcheck="false">
+          <button type="submit">Search</button>
+        </div>
+      </form>
+      <p id="search-status" class="search-status" role="status" aria-live="polite"></p>
+      <ol id="search-results" class="search-results" hidden></ol>
+    </div>
+    {{<tag_nav />}}
+  </div>
+</section>
+<section class="blog-list" aria-label="Posts">
+  <div class="wrap">
+    <ol class="post-list" id="post-list" reversed>
+      {%- for p in paginator.pages %}
+      {{<card page={p} />}}
+      {%- endfor %}
+    </ol>
+    {{<pager paginator={paginator} base="/blog/" />}}
+  </div>
+</section>
 {% endblock main %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Tags | NineLives blog{% endblock title %}
+{% block ogtitle %}Tags | NineLives blog{% endblock ogtitle %}
+{% block main %}
+<header class="page-head">
+  <div class="wrap">
+    <p class="eyebrow rise"><a href="/blog/">Blog</a></p>
+    <h1 class="rise" style="--d:1">Tags</h1>
+    <p class="lede rise" style="--d:2">Posts grouped by what they are about.</p>
+  </div>
+</header>
+<section class="blog-tools" aria-label="Tags">
+  <div class="wrap">
+    <ul class="tag-chips tag-chips-lg">
+      {%- for t in terms %}
+      <li><a class="chip" href="{{ t.path }}">{{ t.name }} <span class="chip-n">{{ t.pages | length }}<span class="sr-only"> posts</span></span></a></li>
+      {%- endfor %}
+    </ul>
+    <p class="back-line"><a class="post-back" href="/blog/">&larr; All posts</a></p>
+  </div>
+</section>
+{% endblock main %}

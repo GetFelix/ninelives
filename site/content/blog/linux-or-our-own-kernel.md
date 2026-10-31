@@ -4,6 +4,9 @@ description = "The first open question, with the case for each side. Nothing is 
 date = 2026-10-28
 slug = "linux-or-our-own-kernel"
 aliases = ["/devlog/why-stock-linux/", "/devlog/linux-or-our-own-kernel/"]
+
+[taxonomies]
+tags = ["kernel", "design", "linux"]
 +++
 
 The first question anyone asks is whether NineLives will have its own kernel. There are good Rust crates now, and booting, paging and a basic scheduler are weeks of work, not years. It isn't decided. I opened [a discussion](https://github.com/GetFelix/ninelives/discussions/22) to work it out, and this is the short version of both sides.

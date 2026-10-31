@@ -1,0 +1,53 @@
+{# Tag chips. Each links to the tag's page. #}
+{% component chips(terms: array, current: string = "") %}
+<ul class="tag-chips" aria-label="Tags">
+  {%- for t in terms %}
+  <li><a class="chip" href="/tags/{{ t | slugify }}/"{% if t == current %} aria-current="page"{% endif %}>{{ t }}</a></li>
+  {%- endfor %}
+</ul>
+{% endcomponent chips %}
+
+{# One entry in the post list: date and reading time, title, summary, tags. #}
+{% component card(page) %}
+<li><article class="post-card">
+  <p class="post-meta"><time datetime="{{ page.date | date(format="%Y-%m-%d") }}">{{ page.date | date(format="%-d %B %Y") }}</time><span>{{ page.reading_time }} min read</span></p>
+  <h2><a href="{{ page.path }}">{{ page.title }}</a></h2>
+  <p>{{ page.description }}</p>
+  {%- if page.taxonomies.tags %}{{<chips terms={page.taxonomies.tags} />}}{% endif %}
+</article></li>
+{% endcomponent card %}
+
+{# Newer, numbered and older links for a paginated list. #}
+{% component pager(paginator, base: string) %}
+{%- if paginator.number_pagers > 1 %}
+<nav class="pager" aria-label="Pagination">
+  {%- if paginator.previous %}
+  <a class="pager-step" href="{{ paginator.previous }}" rel="prev"><span aria-hidden="true">&larr;</span> Newer<span class="sr-only"> posts</span></a>
+  {%- else %}
+  <span class="pager-step is-off" aria-hidden="true">&larr; Newer</span>
+  {%- endif %}
+  <ol class="pager-pages">
+    {%- for n in range(start=1, end=paginator.number_pagers + 1) %}
+    <li><a href="{% if n == 1 %}{{ base }}{% else %}{{ base }}page/{{ n }}/{% endif %}"{% if n == paginator.current_index %} aria-current="page" aria-label="Page {{ n }}, current page"{% else %} aria-label="Page {{ n }}"{% endif %}>{{ n }}</a></li>
+    {%- endfor %}
+  </ol>
+  {%- if paginator.next %}
+  <a class="pager-step" href="{{ paginator.next }}" rel="next">Older<span class="sr-only"> posts</span> <span aria-hidden="true">&rarr;</span></a>
+  {%- else %}
+  <span class="pager-step is-off" aria-hidden="true">Older &rarr;</span>
+  {%- endif %}
+</nav>
+{%- endif %}
+{% endcomponent pager %}
+
+{% component tag_nav(current: string = "") %}
+{%- set tax = get_taxonomy(kind="tags") %}
+<nav class="tag-nav" aria-labelledby="tags-label">
+  <h2 id="tags-label" class="tag-nav-label">Tags</h2>
+  <ul class="tag-chips">
+    {%- for t in tax.items %}
+    <li><a class="chip" href="{{ t.path }}"{% if current == t.name %} aria-current="page"{% endif %}>{{ t.name }} <span class="chip-n">{{ t.pages | length }}<span class="sr-only"> posts</span></span></a></li>
+    {%- endfor %}
+  </ul>
+</nav>
+{% endcomponent tag_nav %}

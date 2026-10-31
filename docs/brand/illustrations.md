@@ -37,6 +37,15 @@ every piece of the cast below.
 - Every figure has real alt text that says what is drawn and what it shows.
 - Animate only when the motion is the idea: a calm loop, no flashing, and stopped under
   `prefers-reduced-motion`. A still drawing is the default.
+- An animated drawing is built with `Loop` in `scripts/brand/illus.py`: every moving part is one
+  keyframe track on a shared loop, animating only `transform` and `opacity`. Under
+  `prefers-reduced-motion` it holds one chosen frame rather than stopping wherever the shapes
+  happen to sit. The 404 page's drawing (`lost_page`, written to `site/static/img/404.svg`) is the
+  example.
+- The 404 drawing also has the cat's full-body variant, for a drawing where the cat is the star:
+  the same head and tail, sat on a body with two front legs whose paws grip the machine's roof.
+  It stays a silhouette in `--ill-cat`; only the eyes and the toe marks take `--ill-eye`. Everywhere
+  else the cat stays the head-and-tail 9.
 
 Do and don't:
 

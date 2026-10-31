@@ -4,6 +4,9 @@ description = "An idea being explored, not something built: treat a model call a
 date = 2026-10-31
 slug = "what-if-every-decision-could-be-replayed"
 
+[extra]
+card = "/img/blog/what-if-every-decision-could-be-replayed/1-replay-decision.svg"
+
 [taxonomies]
 tags = ["inference", "replay", "design"]
 +++

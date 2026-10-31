@@ -99,6 +99,19 @@ Post images live in `site/static/img/blog/<post-slug>/`, named `<n>-<what-it-sho
 order they appear, for example `2-two-stacks.svg`. Social cards for a post go in the same folder as
 `card.png`, 1200x630. The reference drawing is served from `site/static/brand/`.
 
+## Listing thumbnails
+
+A post's first figure doubles as its thumbnail on the blog list. Set it in the front matter:
+
+```toml
+[extra]
+card = "/img/blog/<post-slug>/1-name.svg"
+```
+
+The `card` component inlines the SVG next to the post (decorative, so the link is `aria-hidden`
+and the title link is the one screen readers get). Leave `card` out and the post lists without an
+image. Keep drawings free of `<title>` so nothing is read twice.
+
 ## Checking a drawing
 
 `zola build` in `site/` must pass. Then check each theme's colours against its background:

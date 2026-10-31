@@ -8,21 +8,21 @@
 
 :root {
   color-scheme: light;
-  --bg: #f4f6f9;
-  --bg-deep: #e8edf3;
-  --surface: #fbfcfd;
-  --surface-hi: #ffffff;
+  --bg: #ece6d8;
+  --bg-deep: #e0d9c7;
+  --surface: #f1ecdf;
+  --surface-hi: #f5f1e6;
   --line: rgba(14, 30, 56, 0.11);
   --line-hi: rgba(14, 30, 56, 0.22);
   --text: #0d1728;
   --muted: #46536a;
-  --faint: #5d6a80;
+  --faint: #536076;
   --amber: #f0a020;
   --amber-hi: #f7b84a;
   --amber-text: #8f4c00;
-  --amber-soft: rgba(240, 160, 32, 0.16);
+  --amber-soft: rgba(240, 160, 32, 0.10);
   --on-amber: #1a1204;
-  --glow: rgba(240, 160, 32, 0.30);
+  --glow: rgba(240, 160, 32, 0.16);
   --record: #4f93c4;
   --record-faint: rgba(79, 147, 196, 0.32);
   --code-bg: #0b1524;
@@ -201,6 +201,9 @@ p { margin: 0 0 1em; }
 .eyebrow::before { content: ""; width: 18px; height: 7px; border-radius: 2px; background: var(--amber); transform: skewX(-24deg); box-shadow: 0 0 12px var(--glow); }
 .lede { font-size: clamp(1.12rem, 1.6vw, 1.3rem); line-height: 1.6; color: var(--muted); max-width: 56ch; }
 .lede strong { color: var(--text); font-weight: 600; }
+.feed-link { display: inline-flex; align-items: center; gap: 8px; margin-top: 20px; font: 500 14px/1.4 var(--mono); color: var(--amber-text); text-decoration: none; }
+.feed-link:hover { text-decoration: underline; }
+.feed-link svg { width: 16px; height: 16px; flex: none; }
 code, kbd { font-family: var(--mono); font-size: 0.86em; background: var(--amber-soft); color: var(--text); padding: 0.12em 0.42em; border-radius: 6px; }
 main { display: block; }
 

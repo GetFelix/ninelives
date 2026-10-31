@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}NineLives: an operating system with the Felix log at its core{% endblock title %}
 {% block ogtitle %}NineLives{% endblock ogtitle %}
-{% block head %}<script defer src="{{ get_url(path='js/hero-bg.js', cache_busting=true) }}"></script>{% endblock head %}
+{% block head %}<script defer src="{{ get_url(path='js/hero-bg.js') }}?h={{ get_hash(path='js/hero-bg.js', sha_type=256, base64=false) | truncate(length=12, end='') }}"></script>{% endblock head %}
 {% block main %}
 {% set d = load_data(path="data/milestones.toml") %}
 <section class="hero">

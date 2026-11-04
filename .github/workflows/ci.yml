@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install actionlint
+        run: bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
+      - name: actionlint
+        run: ./actionlint -color
+      - name: shellcheck
+        run: git ls-files -z '*.sh' | xargs -0 --no-run-if-empty shellcheck
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Scripts compile
+        run: python3 -m compileall -q scripts site/scripts
+
+  # The one check main requires, so a job added later is covered without changing the ruleset.
+  ci-ok:
+    name: CI ok
+    if: always()
+    needs: [lint, python]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          [[ "${{ join(needs.*.result, ' ') }}" =~ ^(success\ ?)+$ ]]

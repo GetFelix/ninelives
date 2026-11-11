@@ -9,7 +9,7 @@
   var root = document.documentElement;
   var reduce = matchMedia("(prefers-reduced-motion: reduce)");
   var TAU = 6.2832, SPAN = 150, LEAD = 4;
-  var streams = [], trains = [], boxes = [], land = null, floorY = 0;
+  var streams = [], trains = [], boxes = [], floorY = 0;
   var w = 0, h = 0, gap = 18, col = {}, clock = 0, nextKill = 6;
   var running = false, visible = true, last = 0, lastDraw = 0;
 
@@ -40,13 +40,7 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     gap = w < 700 ? 15 : 18;
     // Quieter behind the headline block and behind the logo.
-    var c = canvas.getBoundingClientRect(), strip = hero.querySelector(".strip ol"), slot = hero.querySelector(".strip li:last-child i");
-    land = null;
-    if (slot && slot.getBoundingClientRect().width) {
-      var q = slot.getBoundingClientRect();
-      land = { x: q.left + q.width / 2 - c.left, y: q.top + q.height / 2 - c.top };
-    }
-    floorY = Math.min(h - 8, Math.max(strip ? strip.getBoundingClientRect().bottom - c.top + 10 : h, h - 22));
+    floorY = h - 8;
     boxes = [rectOf([].slice.call(hero.querySelectorAll(".hero-tag, h1, .lede, .actions"))), rectOf([].slice.call(hero.querySelectorAll(".hero-mark")))].filter(Boolean);
   }
   function quiet(x, y) {
@@ -57,26 +51,24 @@
     }
     return f;
   }
-  // Roles: the last stream runs low across the bottom, the one before it lands in the log strip.
+  // Roles: the last stream runs low across the bottom, the one before it crosses mid-height.
   function fresh(s, i, n) {
     s.y = (i + rnd(0.2, 0.8)) / (n - 2); s.amp = rnd(0.06, 0.11); s.f = rnd(0.45, 0.9);
     s.ph = rnd(0, TAU); s.v = rnd(11, 19); s.dead = 0; s.role = i === n - 1 ? 2 : i === n - 2 ? 1 : 0;
     if (s.role === 1) { s.y = 0.5; s.amp = 0.07; }
     if (s.role === 2) { s.amp = 0.006; s.f = 1; }
   }
-  function endX(s) { return s.role === 1 && land ? land.x : w; }
+  function endX() { return w; }
   function addTrains(si, fade) {
     for (var j = 0; j < 3; j++) { var n = Math.round(rnd(14, 24)); trains.push({ s: si, to: -1, kx: 0, kt: 0, x: rnd(0, endX(streams[si])), n: n, nmax: n, g: 0, a: fade ? 0 : 1 }); }
   }
   function yAt(s, x) {
     if (s.role === 2) return floorY + s.amp * h * Math.sin(x / w * TAU * 2 + clock * 0.2);
     var y = h * (s.y + s.amp * Math.sin((x / w) * TAU * s.f + s.ph + clock * 0.05));
-    // The landing stream bends into the strip's newest slot.
-    if (s.role === 1 && land) y += (land.y - y) * ease((x - (land.x - 260)) / 260);
     return y;
   }
   function seed() {
-    var n = w < 700 ? 5 : 7; // the last two are the landing and floor streams
+    var n = w < 700 ? 5 : 7; // the last two are the mid and floor streams
     streams = []; trains = [];
     for (var i = 0; i < n; i++) { var s = {}; fresh(s, i, n); streams.push(s); addTrains(i, false); }
   }

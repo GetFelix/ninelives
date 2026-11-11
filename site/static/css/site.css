@@ -351,6 +351,12 @@ main { display: block; }
 .section-head .body { font-size: 1.12rem; color: var(--muted); }
 .section-head .body p:last-child { margin-bottom: 0; }
 .section-head .body a { font-weight: 500; }
+.why { padding-bottom: 0; }
+.why-body { max-width: 760px; }
+.why-body h2 { margin-bottom: 0.6em; }
+.why-body p { font-size: 1.12rem; color: var(--muted); max-width: var(--measure); }
+.why-body .why-line { font: 600 clamp(1.5rem, 3vw, 2.2rem)/1.2 var(--serif); letter-spacing: -0.02em; color: var(--text); margin: 1.1em 0; }
+.why-body .why-line span { color: var(--amber-text); font-style: italic; font-weight: 500; }
 .divider { height: 1px; background: linear-gradient(90deg, transparent, var(--line-hi) 20%, var(--line-hi) 80%, transparent); }
 
 /* Goal cards */

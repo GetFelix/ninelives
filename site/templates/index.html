@@ -26,6 +26,16 @@
   <canvas class="hero-bg" aria-hidden="true"></canvas>
 </section>
 
+<section class="section why" id="why" aria-labelledby="why-title">
+  <div class="wrap"><div class="why-body reveal">
+    <span class="eyebrow">Why NineLives</span>
+    <h2 id="why-title">A cluster should remember what it did.</h2>
+    <p>Today the record of what a cluster did is spread across schedulers, local disks and log files. When a machine dies, someone has to piece together what it was doing. The design is to write every change to one Felix log instead.</p>
+    <p class="why-line">One ordered record,<br> <span>so a program can be rebuilt anywhere.</span></p>
+    <p>A program's state is a fold over its records, so failover, migration and replay are the same operation. When something fails, the outcome is reported as degraded, unknown or failed, never a hang. None of this boots yet. This is the design we are building toward.</p>
+  </div></div>
+</section>
+
 <section class="section" id="meant-to-be">
   <div class="wrap">
     <div class="section-head reveal">

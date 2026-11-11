@@ -351,12 +351,15 @@ main { display: block; }
 .section-head .body { font-size: 1.12rem; color: var(--muted); }
 .section-head .body p:last-child { margin-bottom: 0; }
 .section-head .body a { font-weight: 500; }
-.why { padding-bottom: 0; }
-.why-body { max-width: 760px; }
-.why-body h2 { margin-bottom: 0.6em; }
-.why-body p { font-size: 1.12rem; color: var(--muted); max-width: var(--measure); }
-.why-body .why-line { font: 600 clamp(1.5rem, 3vw, 2.2rem)/1.2 var(--serif); letter-spacing: -0.02em; color: var(--text); margin: 1.1em 0; }
+.why { overflow: hidden; background: var(--bg-deep); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.why::before { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse 60% 70% at 50% 45%, var(--glow), transparent 70%); opacity: 0.45; pointer-events: none; }
+.why-body { position: relative; max-width: 760px; margin: 0 auto; text-align: center; }
+.why-body h2 { margin-bottom: 0; }
+.why-body p { color: var(--muted); font-size: 1.12rem; line-height: 1.65; margin: 20px 0 0; }
+.why-body .why-line { margin: 44px 0; color: var(--text); font: 600 clamp(1.75rem, 4.6vw, 2.75rem)/1.2 var(--serif); letter-spacing: -0.02em; text-wrap: balance; }
 .why-body .why-line span { color: var(--amber-text); font-style: italic; font-weight: 500; }
+.why-body .why-line br { display: none; }
+@media (max-width: 680px) { .why-body .why-line br { display: inline; } }
 .divider { height: 1px; background: linear-gradient(90deg, transparent, var(--line-hi) 20%, var(--line-hi) 80%, transparent); }
 
 /* Goal cards */

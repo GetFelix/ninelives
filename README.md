@@ -7,6 +7,18 @@
 
 # NineLives
 
+<p align="center">
+  <a href="https://github.com/GetFelix/ninelives/actions/workflows/ci.yml">
+    <img src="https://github.com/GetFelix/ninelives/actions/workflows/ci.yml/badge.svg?branch=main&event=push" alt="CI" />
+  </a>
+  <a href="https://github.com/GetFelix/ninelives/blob/main/LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT" />
+  </a>
+  <a href="https://ninelives.getfelix.dev">
+    <img src="https://img.shields.io/badge/Documentation-8A2BE2" alt="Documentation" />
+  </a>
+</p>
+
 A distributed operating system built on the [Felix](https://github.com/GetFelix/felix) log.
 
 > **Status:** design stage. Nothing boots yet, and most choices, including the

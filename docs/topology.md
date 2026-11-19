@@ -33,7 +33,7 @@ images refuse it.
   tolerates two; more members only make writes slower.
 - **A cluster of only core machines serves no clients.** Core brokers are
   internal-only, so clients and felixd need storage brokers; the
-  fault-tolerant production size is open (below).
+  fault-tolerant production size is below.
 - **Brokers don't need to be everywhere.** Each broker is somewhere the
   control plane can place shards. The replication factor decides how many
   copies of a shard exist, not the number of brokers.
@@ -49,14 +49,14 @@ small and adds machines when it needs capacity.
 |---|---|---|
 | Development | 1 `core-dev` machine, development or test image only | Everything works; nothing survives losing the machine |
 | Smallest production | 1 core + 1 storage | Serves clients; survives nothing |
-| Fault-tolerant production | Open. Proposal: 3 core + 2 storage | Survives losing any one machine, and serving survives losing a storage machine. The formation design and the M2 demo ([#7](https://github.com/GetFelix/ninelives/issues/7)) decide it. |
+| Fault-tolerant production | 3 core + 2 storage | Survives losing any one machine, and serving survives losing a storage machine. Decided: this is also the M2 demo ([#7](https://github.com/GetFelix/ninelives/issues/7)), five VMs. |
 | Growing | fault-tolerant + workers | More compute; workloads off the log's machines |
 | Large | 3 or 5 core + storage + workers | More log capacity and throughput |
 
 Three is the floor for surviving a failure: Raft needs a majority, and with
 two machines losing either one leaves no majority.
 
-The proposed fault-tolerant production cluster (not decided):
+The fault-tolerant production cluster:
 
 ```mermaid
 flowchart LR

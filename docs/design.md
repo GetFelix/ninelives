@@ -342,7 +342,7 @@ TPM and cloud identity come with M3 and M5. Secrets never go on the log.
 |---|---|
 | M0 | An image boots in qemu (x86_64 and aarch64) and CI boots it on every PR |
 | M1 | Felix and felixd start on the image; a machine joins a cluster on first boot |
-| M2 | Three VMs form a cluster, run a workload, lose one VM, and the workload continues. CI runs this. |
+| M2 | Five VMs (3 core + 2 storage) form a cluster, run a workload, lose one VM, and the workload continues. CI runs this. |
 | M3 | Atomic A/B upgrades with rollback, and signed images |
 | M4 | The scheduler, name service and `fx` shell run as programs on the log |
 | M5 | Cloud images and Raspberry Pi |
@@ -420,7 +420,7 @@ repair on the next boot.
 
 ### M2: survives losing a machine
 
-Issues: [#7](https://github.com/GetFelix/ninelives/issues/7) three-VM demo,
+Issues: [#7](https://github.com/GetFelix/ninelives/issues/7) five-VM demo,
 [#54](https://github.com/GetFelix/ninelives/issues/54) the Asterinas
 experiment, [#53](https://github.com/GetFelix/ninelives/issues/53) reviewing
 the M0 to M2 decisions.

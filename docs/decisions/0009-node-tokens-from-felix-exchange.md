@@ -1,6 +1,6 @@
 # 0009: Node tokens come from Felix's token exchange, with the issuer as identity provider
 
-**Status:** Proposed, 2026-11-19. Answers the minting half of
+**Status:** Accepted, 2026-11-19. Answers the minting half of
 [#73](https://github.com/GetFelix/ninelives/issues/73) for M1.
 
 ## Context

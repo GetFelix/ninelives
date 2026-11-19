@@ -40,3 +40,12 @@ packages = [
   "mount", "mtools", "python3", "python3-pefile", "systemd", "systemd-boot-efi",
   "systemd-repart", "systemd-ukify", "tar", "util-linux", "xz-utils",
 ]
+
+# What the CI boot test runs the image on (docs/components/image.md, "Boot test").
+# Same snapshot, same lock, same verification as the tools. The boot job and
+# tools/boot.sh install exactly this set in the bootstrap container.
+#   qemu-system-x86  qemu-system-x86_64
+#   ovmf             the UEFI firmware, /usr/share/OVMF/OVMF_CODE_4M.fd
+[boot]
+release = "trixie"
+packages = ["ovmf", "qemu-system-x86"]

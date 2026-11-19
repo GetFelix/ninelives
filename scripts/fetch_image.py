@@ -14,7 +14,8 @@ without network and reads only what this leaves in --out.
 
 Any mismatch exits non-zero before anything is built.
 
-  fetch_image.py --out DIR
+  fetch_image.py --out DIR          the image build's inputs
+  fetch_image.py --out DIR --boot   only the packages the boot test runs on
 """
 import argparse
 import json
@@ -78,9 +79,9 @@ def fetch_release(out: pathlib.Path, lock: dict, which: str, arch: str, snapshot
     return stanzas
 
 
-def fetch_debs(out: pathlib.Path, lock: dict, snapshot: str) -> int:
+def fetch_debs(out: pathlib.Path, lock: dict, snapshot: str, sets: tuple[str, ...]) -> int:
     seen = {}
-    for which in ("root", "tools"):
+    for which in sets:
         for p in lock[which]["package"]:
             seen[(p["archive"], p["filename"])] = p
     for (archive, filename), p in sorted(seen.items()):
@@ -106,6 +107,7 @@ def fetch_pinned(url: str, sha256: str, dest: pathlib.Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", type=pathlib.Path, required=True)
+    parser.add_argument("--boot", action="store_true", help="fetch only the boot test's packages")
     parser.add_argument("--target-arch", default="x86_64", choices=sorted(ARCH))
     args = parser.parse_args()
 
@@ -120,9 +122,13 @@ def main() -> int:
     if arch != ARCH[args.target_arch]:
         fail(f"the lock is for {arch}, not {ARCH[args.target_arch]}")
 
-    for which in ("root", "tools"):
+    sets = ("boot",) if args.boot else ("root", "tools")
+    for which in sets:
         fetch_release(out, lock, which, arch, snapshot)
-    n = fetch_debs(out, lock, snapshot)
+    n = fetch_debs(out, lock, snapshot, sets)
+    if args.boot:
+        print(f"fetched {n} packages into {out}")
+        return 0
 
     mk = tools["mkosi"]
     fetch_pinned(mk["url"], mk["sha256"], out / "mkosi" / f"mkosi-{mk['version']}.tar.gz")

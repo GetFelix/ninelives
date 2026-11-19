@@ -1,0 +1,80 @@
+# Packages that are installed to bootstrap the root and then removed, and why
+# (docs/components/image.md, "Building the root", step 4). The installed set
+# must equal packages.toml plus this list exactly: a package that is in
+# neither fails the build, so a new dependency is a decision and cannot be
+# dropped silently. A listed name that is not installed fails too.
+
+[[remove]]
+reason = "Shells, interpreters and text tools that Debian marks essential. The image runs no scripts and has no shell (S1)."
+names = [
+  "bash",
+  "dash",
+  "perl-base",
+  "mawk",
+  "coreutils",
+  "findutils",
+  "grep",
+  "sed",
+  "gzip",
+  "tar",
+  "diffutils",
+  "hostname",
+  "sysvinit-utils",
+  "debianutils",
+  "bsdutils",
+  "ncurses-bin",
+  "ncurses-base",
+  "util-linux",
+]
+
+[[remove]]
+reason = "The package manager and what only it needs: no package manager in the image (S1)."
+names = [
+  "dpkg",
+  "debconf",
+  "libdebconfclient0",
+  "base-passwd",
+  "init-system-helpers",
+  "libc-bin",
+]
+
+[[remove]]
+reason = "PAM, login and account libraries: no login or authentication on the machine (S1, S6)."
+names = [
+  "libpam-modules",
+  "libpam-modules-bin",
+  "libpam-runtime",
+  "libpam0g",
+  "libaudit1",
+  "libaudit-common",
+  "libcap-ng0",
+  "libdb5.3t64",
+  "liblastlog2-2",
+  "libselinux1",
+  "libsmartcols1",
+  "libmount1",
+  "libblkid1",
+  "libuuid1",
+]
+
+[[remove]]
+reason = "Libraries that only the removed programs link against."
+names = [
+  "libacl1",
+  "libattr1",
+  "libbz2-1.0",
+  "libcap2",
+  "libcrypt1",
+  "libgmp10",
+  "liblzma5",
+  "libmd0",
+  "libpcre2-8-0",
+  "libsqlite3-0",
+  "libssl3t64",
+  "libsystemd0",
+  "libtinfo6",
+  "libudev1",
+  "libzstd1",
+  "zlib1g",
+  "openssl-provider-legacy",
+]

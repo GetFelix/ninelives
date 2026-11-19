@@ -43,8 +43,11 @@ print(d)' "$@"
 
 snapshot_sources() { # snapshot_sources SNAPSHOT: apt reads the snapshot over plain http
   # apt checks the Release files against the container's own archive keyring.
-  # This is the one unpinned step: it installs the python3 and gpgv that the
-  # fetch phase runs on. The snapshot fixes what it gets.
+  # This is the one unpinned step (#92): it installs the git, python3, gpgv and
+  # xz-utils that the fetch phase runs on, so the fetch phase itself runs on
+  # code only the image's keyring vouched for. The build phase reinstalls the
+  # locked tools from the verified store; git and ca-certificates stay as
+  # installed and the build phase does not run them.
   local keyring
   keyring=$(sed -n 's/^Signed-By: //p' /etc/apt/sources.list.d/debian.sources | head -n1)
   test -s "$keyring"
@@ -132,7 +135,14 @@ write_apt_config /etc/apt
 sources "$(toml "$repo/images/tools.toml" tools release)" > /etc/apt/sources.list.d/ninelives.sources
 apt-get update
 mapfile -t tool_pkgs < <(python3 -I "$repo/scripts/image_lock.py" tools)
-apt-get install -y --no-install-recommends --allow-downgrades "${tool_pkgs[@]}"
+# --reinstall, because the bootstrap already put some of these on the machine
+# and a plain install of the same version would leave them as they are.
+apt-get install -y --no-install-recommends --allow-downgrades --reinstall "${tool_pkgs[@]}"
+tool_names=()
+for p in "${tool_pkgs[@]}"; do tool_names+=("${p%%=*}"); done
+diff <(printf '%s\n' "${tool_pkgs[@]}" | sort) \
+  <(dpkg-query -W -f '${Package}=${Version}\n' "${tool_names[@]}" | sort) \
+  || { echo "an installed tool is not the locked version" >&2; exit 1; }
 
 # mkosi, from the verified archive.
 mkosi_ver=$(toml "$repo/images/tools.toml" mkosi version)
@@ -174,11 +184,11 @@ python3 -I "$repo/scripts/image_assemble.py" --root "$root" --kernel "$kernel_di
   --commit "$COMMIT" --source-date-epoch "$SOURCE_DATE_EPOCH" --out "$out" --name "$name"
 
 python3 -I "$repo/scripts/image_inventory.py" --meta "$meta" --store "$store" --kernel-dir "$kernel_dir" \
-  --commit "$COMMIT" --source-date-epoch "$SOURCE_DATE_EPOCH" --output "$out/$name.inventory.json"
+  --commit "$COMMIT" --source-date-epoch "$SOURCE_DATE_EPOCH" --init "$init_bin" --output "$out/$name.inventory.json"
 cp "$meta/origins.json" "$out/$name.origins.json"
-if ! python3 -I "$repo/scripts/check_image.py" --image "$out/$name.raw" --meta "$meta" --commit "$COMMIT" --source-date-epoch "$SOURCE_DATE_EPOCH"; then
+if ! python3 -I "$repo/scripts/check_image.py" --image "$out/$name.raw" --meta "$meta" --commit "$COMMIT" --kernel "$kernel_dir" --source-date-epoch "$SOURCE_DATE_EPOCH"; then
   # A starting point for images/executables.toml, to review by hand.
-  python3 -I "$repo/scripts/check_image.py" --image "$out/$name.raw" --meta "$meta" --commit "$COMMIT" --source-date-epoch "$SOURCE_DATE_EPOCH" \
+  python3 -I "$repo/scripts/check_image.py" --image "$out/$name.raw" --meta "$meta" --commit "$COMMIT" --kernel "$kernel_dir" --source-date-epoch "$SOURCE_DATE_EPOCH" \
     --propose-executables > "$out/executables.proposed.toml" || true
   exit 1
 fi

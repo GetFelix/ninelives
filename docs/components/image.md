@@ -8,7 +8,8 @@ The tool and the base are fixed by [0003](../decisions/0003-mkosi-image-build.md
 verified upstream source). This page says how the build meets them. The first
 slice of the image, [#1](https://github.com/GetFelix/ninelives/issues/1), is
 built: the x86_64 qemu `production` image, fetched, built offline and checked
-in CI (parts marked "not built yet" below are still design). The CI boot [#2](https://github.com/GetFelix/ninelives/issues/2), signing and
+in CI. Where this page describes something the slice does not do yet, a
+note says so and names the issue; everything unmarked is built. The CI boot [#2](https://github.com/GetFelix/ninelives/issues/2), signing and
 secure boot [#9](https://github.com/GetFelix/ninelives/issues/9), cloud
 images [#13](https://github.com/GetFelix/ninelives/issues/13), component
 bumps [#52](https://github.com/GetFelix/ninelives/issues/52) and pinning the
@@ -275,6 +276,8 @@ missed pin shows up.
 
 CI keeps the verified store as an artifact (0006), so a later rebuild does not
 depend on snapshot.debian.org, kernel.org or GitHub releases staying up.
+*Not built yet:* the job fetches everything on every run and keeps no store
+([#102](https://github.com/GetFelix/ninelives/issues/102)).
 
 #### Bootstrap
 
@@ -313,8 +316,10 @@ need.
 ### Building the root
 
 1. mkosi installs exactly the packages in `images/packages.toml` from the
-   mirror, unprivileged, in a user namespace. Debian's maintainer scripts run
-   here, inside the build sandbox. That is code from Debian running on the
+   mirror, unprivileged, in a user namespace. *Not built yet:* the first slice
+   runs mkosi as root inside a privileged container, because the checks also
+   mount the root ([#96](https://github.com/GetFelix/ninelives/issues/96)).
+   Debian's maintainer scripts run here, inside the build sandbox. That is code from Debian running on the
    runner, accepted with Debian (T36); the checks below catch what it leaves
    behind.
 2. Felix's and felixd's archives are unpacked from the verified store. Only
@@ -325,8 +330,14 @@ need.
 3. NineLives' programs, the init's config (`/usr/lib/ninelives/init.toml`),
    its compiled seccomp filters ([Service profiles](#service-profiles)),
    `/etc/passwd` and `/etc/group` from `images/users.toml`, and the files in
-   `rootfs/` are added.
-4. Packages Debian marks essential but the image does not need (the shells,
+   `rootfs/` are added. *Built so far:* the init, `passwd`, `group`,
+   `os-release` and `nsswitch.conf`. The init has no config or filters yet
+   ([#48](https://github.com/GetFelix/ninelives/issues/48)), and `rootfs/`
+   has no files to copy.
+4. Every package that is installed has to be in `images/packages.toml` or in
+   `rootfs/removals.toml`, which gives each removal a reason; a package in
+   neither fails the build, so a new dependency is never dropped silently.
+   Packages Debian marks essential but the image does not need (the shells,
    `perl-base`, `dpkg`, `apt`, `login`, `passwd` and the like) are removed.
    The inventory and each file's origin are recorded first, from the
    verified `.deb` files themselves: the SHA-256 of every member of each
@@ -343,7 +354,9 @@ Variants: one config builds `production`, `development` (adds a serial console
 shell as an unprivileged service, S1) and `test` (adds the init design's
 inspector and fault hooks). Each has its own name in the file name and in
 `os-release` (`VARIANT_ID`), so S22's "production refuses a development
-image" has something to read. Only `production` is published.
+image" has something to read. Only `production` is published. *Not built
+yet:* the slice builds `production` only
+([#98](https://github.com/GetFelix/ninelives/issues/98)).
 
 ### Reproducibility
 
@@ -448,15 +461,18 @@ Each check fails the build on any violation. Each allowlist lives in
 | Kernel config | kernel-hardening-checker passes with the listed exceptions, and `CONFIG_MODULES` is off (0007). | S2 |
 | Init config | `init check` passes on the image's `init.toml`. | init design |
 | Actions hygiene | The workflow checks in [Actions hygiene](#actions-hygiene). | S21 |
-| Size budget | Each output is within `images/budget.toml`: the root partition, the UKI, the ESP's contents and the raw image. The budget is set from the first M0 build with a margin, the build warns at 90%, and raising it is a reviewed change that says why. Every pull request reports the size change. | S1 |
+| Size budget | Each output is within `images/budget.toml`: the root partition, the UKI, the ESP's contents and the raw image. The budget is set from the first M0 build with a margin, the build warns at 90%, and raising it is a reviewed change that says why. Every pull request reports the size change (*not built yet:* the job summary shows the sizes and the check fails over budget, but nothing compares with the target branch, [#103](https://github.com/GetFelix/ninelives/issues/103)). | S1 |
 
-The first slice runs every check above except these, which are tracked in
-[#97](https://github.com/GetFelix/ninelives/issues/97) (kernel config and
-`init check`, which the kernel job and the init's config own) and
-[#101](https://github.com/GetFelix/ninelives/issues/101) (the pin-only
-pull request check): Actions hygiene stays with
-[#65](https://github.com/GetFelix/ninelives/issues/65). The size budget in
-`images/budget.toml` was set from the first build plus 20%.
+The first slice runs every check above except three. Kernel config and
+`init check` are tracked in
+[#97](https://github.com/GetFelix/ninelives/issues/97), and Actions hygiene in
+[#65](https://github.com/GetFelix/ninelives/issues/65). The pull request check
+that a pin change touches nothing else (I12) is
+[#101](https://github.com/GetFelix/ninelives/issues/101). The size budget in
+`images/budget.toml` was set from the first build plus 20%. The ESP check also
+requires the UKI to hold exactly the sections the build writes and the kernel
+of the same run, and the partition check requires the design's sizes and an
+all-zero config partition.
 
 Each check has a test that seeds one violation into a small fixture image and
 watches the check fail ([Test plan](#test-plan)).
@@ -708,7 +724,9 @@ Each is written so a test can check it.
 ## Security
 
 **What it runs as.** CI jobs on GitHub-hosted runners. mkosi builds
-unprivileged, in user namespaces, and the build phase has no network. Build
+unprivileged, in user namespaces (*not built yet:* the slice runs it as root in
+a privileged container, [#96](https://github.com/GetFelix/ninelives/issues/96)),
+and the build phase has no network. Build
 jobs hold a read-only token and no secrets. Only the pinned signing workflow
 can reach the signer.
 
@@ -744,7 +762,7 @@ first published image.
 | Test | Where | Proves |
 |---|---|---|
 | Build twice, the second clean with varied path, user, umask, time zone, locale and CPU count; compare `SHA256SUMS` | CI, every pull request | I1 |
-| The build phase run with a step that tries to download: it fails | CI fixture | I2 |
+| The build phase run with a step that tries to download: it fails | CI fixture. The slice checks that a download fails inside a fresh network namespace, and the build itself fails if the network is reachable in its phase; a fixture that runs a whole build step that downloads is not built | I2 |
 | One fixture image per check, each seeded with one violation (a setuid file, a setgid directory, a `security.capability` attribute, a write bit, a file owned by uid 1, a FIFO, a link into `/var/lib`, an extra passwd entry, a `#!` script, a `dash` binary, an unlisted package, an orphan file, a planted test token, an oversized root, a changed command line): each check fails, and the clean fixture passes | CI, every pull request | I3 to I9 |
 | `veritysetup verify` on the built image | CI | I8 |
 | Boot the image in qemu, x86_64 and aarch64: the init reports ready on the serial console | CI, every pull request (#2) | the image boots |

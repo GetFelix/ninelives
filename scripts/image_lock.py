@@ -121,6 +121,7 @@ def entries(universe: dict, names: list[str]) -> list[dict]:
             "sha256": st["SHA256"],
             "archive": st["_archive"],
             "filename": st["Filename"],
+            "architecture": st["Architecture"],
             "source": (st.get("Source") or n).split(" ")[0],
         })
     return out
@@ -148,7 +149,7 @@ def render(snapshot: str, arch: str, sets: dict) -> str:
         for (archive, suite), digest in sorted(s["inrelease"].items()):
             lines += ["", f"[[{which}.suite]]", f"archive = {q(archive)}", f"name = {q(suite)}", f"inrelease_sha256 = {q(digest)}"]
         for e in s["packages"]:
-            lines += ["", f"[[{which}.package]]"] + [f"{k} = {q(e[k])}" for k in ("name", "version", "sha256", "archive", "filename", "source")]
+            lines += ["", f"[[{which}.package]]"] + [f"{k} = {q(e[k])}" for k in ("name", "version", "sha256", "archive", "filename", "architecture", "source")]
     return "\n".join(lines) + "\n"
 
 
@@ -201,6 +202,8 @@ def check() -> list[str]:
             fn = p.get("filename", "")
             if not re.fullmatch(r"pool/(?:updates/)?main/[a-z0-9+.-]+/[a-z0-9+.-]+/[A-Za-z0-9+._~%-]+\.deb", fn):
                 errors.append(f"{where}: bad pool path {fn!r}")
+            if p.get("architecture") not in ("amd64", "all"):
+                errors.append(f"{where}: bad architecture")
             if p.get("archive") not in ("debian", "debian-security"):
                 errors.append(f"{where}: bad archive")
         if names != sorted(names) or len(names) != len(set(names)):

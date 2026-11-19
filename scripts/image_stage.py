@@ -205,13 +205,13 @@ def main() -> int:
     for name, version in installed.items():
         if name not in locked or locked[name]["version"] != version:
             raise SystemExit(f"installed {name} {version} is not what debian.lock pins")
-    missing = keep - set(installed)
-    if missing:
-        raise SystemExit(f"packages.toml lists {sorted(missing)}, which were not installed")
+    removals = ic.load_removals(ic.ROOT / "rootfs" / "removals.toml")
+    errors = ic.package_set_errors(set(installed), keep, removals)
+    if errors:
+        raise SystemExit("\n".join(errors))
 
     # Origins come from the verified .deb files, read before dpkg's database goes.
     origins: dict[str, dict] = {}
-    inventory = []
     for name in sorted(keep):
         p = locked[name]
         deb = deb_path(store, snapshot, p)
@@ -219,8 +219,10 @@ def main() -> int:
             raise SystemExit(f"{deb.name} is not the locked file")
         for m in ic.deb_members(deb):
             origins.setdefault(m.path, {**m.as_dict(), "origin": "deb", "package": name})
-        inventory.append({k: p[k] for k in ("name", "version", "sha256", "source")})
 
+    # Everything installed, recorded before anything is removed.
+    inventory = [{**{k: locked[n][k] for k in ("name", "version", "sha256", "source", "architecture")}, "kept": n in keep}
+                 for n in sorted(installed)]
     removed = remove_packages(root, keep)
     prune_files(root, ic.load_toml(ic.ROOT / "rootfs" / "prune.toml").get("prune", []))
     write_file(root, "/etc/ld.so.conf", LD_SO_CONF)
@@ -287,7 +289,7 @@ def main() -> int:
     (args.meta / "origins.json").write_text(json.dumps(origins, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     (args.meta / "stage.json").write_text(json.dumps({
         "removed_packages": removed,
-        "packages": inventory,
+        "installed": inventory,
         "components": comp_inv,
         "snapshot": snapshot,
     }, indent=1, sort_keys=True) + "\n", encoding="utf-8")

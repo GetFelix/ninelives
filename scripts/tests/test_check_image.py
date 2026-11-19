@@ -135,22 +135,41 @@ class Checks(unittest.TestCase):
         e = with_(clean(), ci.Entry("/usr/bin/tool", "file", 0o555, content=elf(needed=("libc.so.6", "libssl.so.3"))), drop=["/usr/bin/tool"])
         self.assertTrue(ci.check_needed(e, EXECS))
 
-    def test_unlisted_package(self):
-        stage = {"packages": [{"name": "libc6", "version": "1", "sha256": "a" * 64}, {"name": "extra", "version": "1", "sha256": "b" * 64}]}
-        lock = {"root": {"package": [{"name": "libc6", "version": "1", "sha256": "a" * 64}, {"name": "extra", "version": "1", "sha256": "b" * 64}]}}
-        out = ci.check_packages(stage, [{"name": "libc6"}], lock)
-        self.assertTrue(any("extra" in o for o in out))
+    def stage_for(self, installed, keep_names):
+        return {"installed": [{"name": n, "version": "1", "sha256": "a" * 64, "kept": n in keep_names} for n in installed]}
 
-    def test_missing_package_and_lock_mismatch(self):
-        stage = {"packages": [{"name": "libc6", "version": "2", "sha256": "a" * 64}]}
-        lock = {"root": {"package": [{"name": "libc6", "version": "1", "sha256": "a" * 64}]}}
-        out = ci.check_packages(stage, [{"name": "libc6"}, {"name": "base-files"}], lock)
-        self.assertEqual(len(out), 2)
+    def lock_for(self, names):
+        return {"root": {"package": [{"name": n, "version": "1", "sha256": "a" * 64} for n in names]}}
 
-    def test_package_manager_is_refused(self):
-        stage = {"packages": [{"name": "apt", "version": "1", "sha256": "a" * 64}]}
-        lock = {"root": {"package": [{"name": "apt", "version": "1", "sha256": "a" * 64}]}}
-        self.assertTrue(any("package manager" in o for o in ci.check_packages(stage, [{"name": "apt"}], lock)))
+    def test_package_sets_that_match_pass(self):
+        stage = self.stage_for(["libc6", "dash"], {"libc6"})
+        self.assertEqual(ci.check_packages(stage, [{"name": "libc6"}], {"dash": "shell"}, self.lock_for(["libc6", "dash"])), [])
+
+    def test_new_dependency_is_not_dropped_silently(self):
+        # libc6 gained a dependency: installed, in neither list. The build used to remove it and pass.
+        stage = self.stage_for(["libc6", "dash", "libnew"], {"libc6"})
+        out = ci.check_packages(stage, [{"name": "libc6"}], {"dash": "shell"}, self.lock_for(["libc6", "dash", "libnew"]))
+        self.assertTrue(any("libnew" in o for o in out))
+
+    def test_missing_package_and_stale_removal(self):
+        stage = self.stage_for(["libc6"], {"libc6"})
+        out = ci.check_packages(stage, [{"name": "libc6"}, {"name": "base-files"}], {"dash": "shell"}, self.lock_for(["libc6"]))
+        self.assertTrue(any("base-files" in o for o in out) and any("dash" in o for o in out))
+
+    def test_lock_mismatch(self):
+        stage = self.stage_for(["libc6"], {"libc6"})
+        lock = {"root": {"package": [{"name": "libc6", "version": "2", "sha256": "a" * 64}]}}
+        self.assertTrue(ci.check_packages(stage, [{"name": "libc6"}], {}, lock))
+
+    def test_package_manager_kept_is_refused(self):
+        stage = self.stage_for(["apt"], {"apt"})
+        self.assertTrue(any("package manager" in o for o in ci.check_packages(stage, [{"name": "apt"}], {}, self.lock_for(["apt"]))))
+
+    def test_repository_removals_and_packages_are_disjoint_and_cover_the_lock(self):
+        removals = ic.load_removals(ic.ROOT / "rootfs" / "removals.toml")
+        keep = {p["name"] for p in ic.load_toml(ic.IMAGES / "packages.toml")["package"]}
+        lock = {p["name"] for p in ic.load_toml(ic.IMAGES / "debian.lock")["root"]["package"]}
+        self.assertEqual(ic.package_set_errors(lock, keep, removals), [])
 
     def origins(self, entries):
         return {e.path: {"type": e.kind, "package": "p", "sha256": e.sha256() if e.kind == "file" else "", "link": e.link}
@@ -196,12 +215,62 @@ class Checks(unittest.TestCase):
         self.assertEqual(ci.check_budget({"root_erofs": 10}, {"root_erofs": 20}), [])
         self.assertTrue(ci.check_budget({"root_erofs": 30}, {"root_erofs": 20}))
 
+    GPT_SIZES = {"esp_mib": 256, "config_mib": 1, "data_mib": 128}
+
+    def parts(self):
+        sz = {"esp": 256 << 20, "ninelives-root-a": 4 << 20, "ninelives-verity-a": 1 << 20, "ninelives-root-b": 4 << 20,
+              "ninelives-verity-b": 1 << 20, "ninelives-config": 1 << 20, "ninelives-data": 128 << 20}
+        return [{"name": n, "type": t, "size": sz[n]} for n, t in ci.GPT_PARTITIONS]
+
+    def test_partition_table(self):
+        self.assertEqual(ci.check_gpt(self.parts(), self.GPT_SIZES, True), [])
+
     def test_wrong_partition_table(self):
-        parts = [{"name": n, "type": t} for n, t in ci.GPT_PARTITIONS]
-        self.assertEqual(ci.check_gpt(parts, 0), [])
-        self.assertTrue(ci.check_gpt(parts[:-1], 0))
-        parts[1] = {"name": parts[1]["name"], "type": "0" * 8 + "-0000-0000-0000-000000000000"}
-        self.assertTrue(ci.check_gpt(parts, 0))
+        parts = self.parts()
+        self.assertTrue(ci.check_gpt(parts[:-1], self.GPT_SIZES, True))
+        parts[1] = {**parts[1], "type": "0" * 8 + "-0000-0000-0000-000000000000"}
+        self.assertTrue(ci.check_gpt(parts, self.GPT_SIZES, True))
+
+    def test_esp_and_config_sizes_are_fixed(self):
+        for name in ("esp", "ninelives-config"):
+            parts = [{**p, "size": p["size"] * 2} if p["name"] == name else p for p in self.parts()]
+            self.assertTrue(any(name in o for o in ci.check_gpt(parts, self.GPT_SIZES, True)), name)
+
+    def test_b_slot_must_match_a(self):
+        parts = [{**p, "size": 5 << 20} if p["name"] == "ninelives-root-b" else p for p in self.parts()]
+        self.assertTrue(ci.check_gpt(parts, self.GPT_SIZES, True))
+
+    def test_config_partition_must_be_zeros(self):
+        self.assertTrue(any("zeros" in o for o in ci.check_gpt(self.parts(), self.GPT_SIZES, False)))
+
+    def uki(self, **extra):
+        return {".linux": b"kernel", ".cmdline": b"x", ".osrel": b"y", ".sbat": b"z", ".text": b"", ".uname": b"6", **extra}
+
+    def test_uki_sections(self):
+        import hashlib
+        k = hashlib.sha256(b"kernel").hexdigest()
+        self.assertEqual(ci.check_uki_sections(self.uki(), k), [])
+        for sec in (".initrd", ".ucode", ".dtb", ".profile", ".pcrsig"):
+            self.assertTrue(ci.check_uki_sections(self.uki(**{sec: b"x"}), k), sec)
+        self.assertTrue(ci.check_uki_sections({k_: v for k_, v in self.uki().items() if k_ != ".sbat"}, k))
+
+    def test_uki_kernel_must_be_the_artifacts(self):
+        self.assertTrue(ci.check_uki_sections(self.uki(), "0" * 64))
+
+    def test_glob_star_stops_at_slash(self):
+        self.assertTrue(ci.glob_match("/usr/lib/x.so", "/usr/lib/*.so"))
+        self.assertFalse(ci.glob_match("/usr/lib/sub/x.so", "/usr/lib/*.so"))
+
+    def test_nested_file_is_not_let_in_by_a_star(self):
+        e = with_(clean(), ci.Entry("/usr/lib/deep/er.so.1", "file", 0o444, content=elf(needed=())))
+        out = ci.check_executables(e, EXECS)
+        self.assertTrue(any("not in images/executables.toml" in o for o in out))
+
+    def test_interpreter_matched_by_a_pattern_is_refused(self):
+        for name in ("python3.13", "bash", "perl5.40.1", "busybox", "sh", "mawk"):
+            e = with_(clean(), ci.Entry("/usr/bin/" + name, "file", 0o555, content=elf()))
+            out = ci.check_executables(e, EXECS + [{"path": "/usr/bin/*"}])
+            self.assertTrue(any("shell or interpreter: /usr/bin/" + name in o for o in out), name)
 
 
 class Formats(unittest.TestCase):

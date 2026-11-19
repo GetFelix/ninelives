@@ -14,6 +14,7 @@ def main() -> int:
     ap.add_argument("--meta", type=pathlib.Path, required=True)
     ap.add_argument("--store", type=pathlib.Path, required=True)
     ap.add_argument("--kernel-dir", type=pathlib.Path, required=True)
+    ap.add_argument("--init", type=pathlib.Path, required=True)
     ap.add_argument("--commit", required=True)
     ap.add_argument("--source-date-epoch", type=int, required=True)
     ap.add_argument("--output", type=pathlib.Path, required=True)
@@ -25,7 +26,7 @@ def main() -> int:
         "commit": args.commit,
         "source_date_epoch": args.source_date_epoch,
         "snapshot": stage["snapshot"],
-        "packages": stage["packages"],
+        "packages": stage["installed"],
         "components": stage["components"],
         "kernel": {
             "version": kernel["version"],
@@ -33,6 +34,10 @@ def main() -> int:
             "image_sha256": ic.sha256_file(args.kernel_dir / "bzImage"),
             "config_sha256": ic.sha256_file(args.kernel_dir / ".config"),
         },
+        "init": {"sha256": ic.sha256_file(args.init)},
+        # NineLives' own programs are built with this toolchain (init/rust-toolchain.toml).
+        "toolchain": {"rust": ic.load_toml(ic.ROOT / "init" / "rust-toolchain.toml")["toolchain"]["channel"],
+                      "pinned_by_hash": False},
         "mkosi": {"version": tools["mkosi"]["version"], "sha256": tools["mkosi"]["sha256"]},
         "bootstrap_image": tools["bootstrap"]["image"],
     }

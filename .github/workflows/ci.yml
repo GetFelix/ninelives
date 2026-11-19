@@ -293,8 +293,9 @@ jobs:
       - name: git and python3 from the pinned snapshot
         run: |
           # apt checks the snapshot's Release files against the image's own
-          # Debian archive keyring. This is the only unpinned step: the build
-          # re-verifies everything else against images/keys/debian/.
+          # Debian archive keyring. This is the one unpinned step (#92): the
+          # fetch phase runs on what it installs. The build phase reinstalls
+          # the locked tools from the verified store and checks their versions.
           keyring=$(sed -n 's/^Signed-By: //p' /etc/apt/sources.list.d/debian.sources | head -n1)
           test -s "$keyring"
           rm /etc/apt/sources.list.d/debian.sources
@@ -329,15 +330,39 @@ jobs:
           chmod +x /__w/_temp/image/init/init
           scripts/image-build.sh --kernel /__w/_temp/image/kernel --init /__w/_temp/image/init/init \
             --out /__w/_temp/image/out --work /__w/_temp/image/work
-      - name: Sizes
+      - name: Sizes against the budget
         if: always()
-        run: ls -l /__w/_temp/image/out || true
+        run: |
+          {
+            echo '### Image sizes'
+            echo '```'
+            ls -l /__w/_temp/image/out || true
+            echo '```'
+            echo "Budget: images/budget.toml. The check fails above it and warns at 90%."
+          } >> "$GITHUB_STEP_SUMMARY"
+      # The build phase has no network (I2): a download from inside a fresh
+      # network namespace must fail, and the same download outside must work.
+      - name: Fixture, a download in the build phase's namespace fails
+        run: |
+          fetch='import urllib.request; urllib.request.urlopen("https://github.com", timeout=10)'
+          python3 -I -c "$fetch"
+          if unshare --net -- python3 -I -c "$fetch" 2>/dev/null; then
+            echo "a download worked inside the network namespace" >&2
+            exit 1
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: always()
+        if: success()
         with:
           name: image-qemu-x86_64
           path: /__w/_temp/image/out/
           if-no-files-found: error
+      # A failed build never uploads under the name a good one has.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: image-qemu-x86_64-FAILED-checks
+          path: /__w/_temp/image/out/
+          if-no-files-found: ignore
 
   # The one check main requires, so a job added later is covered without
   # changing the ruleset. A job skipped by its own condition counts as passed.

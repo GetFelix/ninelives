@@ -325,3 +325,23 @@ class Elf:
                 start = strtab_off + val
                 names.append(data[start:data.index(b"\0", start)].decode("ascii"))
         return names
+
+
+def load_removals(path: pathlib.Path) -> dict[str, str]:
+    """package -> reason, from rootfs/removals.toml."""
+    out = {}
+    for r in load_toml(path).get("remove", []):
+        if not r.get("reason"):
+            raise ValueError("rootfs/removals.toml: an entry has no reason")
+        for n in r["names"]:
+            out[n] = r["reason"]
+    return out
+
+
+def package_set_errors(installed: set[str], keep: set[str], removals: dict[str, str]) -> list[str]:
+    """The installed set has to be exactly the kept packages plus the reviewed removals."""
+    errors = [f"package: {n} is installed and in neither packages.toml nor rootfs/removals.toml" for n in sorted(installed - keep - set(removals))]
+    errors += [f"package: {n} is in packages.toml and not installed" for n in sorted(keep - installed)]
+    errors += [f"package: {n} is in rootfs/removals.toml and not installed" for n in sorted(set(removals) - installed)]
+    errors += [f"package: {n} is in both packages.toml and rootfs/removals.toml" for n in sorted(keep & set(removals))]
+    return errors

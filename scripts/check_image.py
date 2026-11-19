@@ -14,7 +14,6 @@ tools (veritysetup, mcopy).
 """
 import argparse
 import contextlib
-import fnmatch
 import json
 import os
 import pathlib
@@ -32,8 +31,9 @@ import check_kernel_config as kc  # noqa: E402
 import image_assemble as asm  # noqa: E402
 import image_common as ic  # noqa: E402
 
-BANNED_NAMES = {"sh", "bash", "dash", "ash", "zsh", "csh", "ksh", "fish", "busybox", "perl", "python", "python3", "awk", "gawk",
-                "mawk", "lua", "tclsh", "ruby", "node", "php"}
+# Shells and interpreters by name, with version suffixes (python3.13, perl5.40.1, bash-static).
+BANNED_NAME = re.compile(r"^(a?sh|bash|dash|zsh|t?csh|ksh\d*|fish|busybox|perl[\d.]*|python[\d.]*|g?awk|mawk|nawk|lua[\d.]*|"
+                         r"tclsh[\d.]*|wish[\d.]*|ruby[\d.]*|node|nodejs|php[\d.]*|pwsh)(-.*)?$")
 BANNED_PACKAGES = {"apt", "dpkg", "aptitude", "gcc", "g++", "clang", "make", "openssh-server", "openssh-client", "bash", "dash",
                    "perl", "perl-base", "python3", "sudo", "login", "passwd"}
 SECRET_PATTERNS = [
@@ -122,6 +122,12 @@ def check_ownership(entries):
     return out
 
 
+def glob_match(path: str, pattern: str) -> bool:
+    """* matches within one path segment, never across a /."""
+    rx = "".join("[^/]*" if c == "*" else "[^/]" if c == "?" else re.escape(c) for c in pattern)
+    return re.fullmatch(rx, path) is not None
+
+
 def check_special(entries, allowed_links: dict[str, str]):
     out = []
     paths = {e.path for e in entries}
@@ -173,24 +179,21 @@ def is_exec_candidate(e: Entry) -> bool:
 
 def check_executables(entries, allowlist: list[dict]):
     out = []
-    names = set()
     for item in allowlist:
-        names.add(posixpath.basename(item["path"]))
-        base = posixpath.basename(item["path"])
-        if base in BANNED_NAMES:
+        if BANNED_NAME.match(posixpath.basename(item["path"])):
             out.append(f"executables.toml: {item['path']} is a shell or interpreter")
     used = [0] * len(allowlist)
     for e in entries:
         if e.kind != "file":
             continue
-        head = e.content()[:2]
-        if head == b"#!":
+        if e.content()[:2] == b"#!":
             out.append(f"script: {e.path} starts with #!")
         if not is_exec_candidate(e):
             continue
-        if posixpath.basename(e.path) in BANNED_NAMES:
+        # Every file that is actually there, whatever pattern lets it in.
+        if BANNED_NAME.match(posixpath.basename(e.path)):
             out.append(f"shell or interpreter: {e.path}")
-        hits = [i for i, item in enumerate(allowlist) if fnmatch.fnmatchcase(e.path, item["path"])]
+        hits = [i for i, item in enumerate(allowlist) if glob_match(e.path, item["path"])]
         for i in hits:
             used[i] += 1
         if not hits:
@@ -223,7 +226,7 @@ def check_needed(entries, allowlist: list[dict]):
         if "needed" not in item:
             continue
         for e in entries:
-            if e.kind == "file" and fnmatch.fnmatchcase(e.path, item["path"]):
+            if e.kind == "file" and glob_match(e.path, item["path"]):
                 got = sorted(ic.Elf(e.content()).needed)
                 if got != sorted(item["needed"]):
                     out.append(f"DT_NEEDED: {e.path} needs {got}, images/executables.toml says {sorted(item['needed'])}")
@@ -242,21 +245,17 @@ def check_needed_resolve(entries):
     return out
 
 
-def check_packages(stage: dict, keep: list[dict], lock: dict):
-    out = []
-    have = {p["name"]: p for p in stage["packages"]}
-    want = {p["name"] for p in keep}
-    for n in sorted(set(have) - want):
-        out.append(f"package: {n} is installed and not in packages.toml")
-    for n in sorted(want - set(have)):
-        out.append(f"package: {n} is in packages.toml and not installed")
+def check_packages(stage: dict, keep: list[dict], removals: dict[str, str], lock: dict):
+    out = ic.package_set_errors({p["name"] for p in stage["installed"]}, {p["name"] for p in keep}, removals)
     locked = {p["name"]: p for p in lock["root"]["package"]}
-    for n, p in have.items():
-        l = locked.get(n)
+    for p in stage["installed"]:
+        l = locked.get(p["name"])
         if l is None or (l["version"], l["sha256"]) != (p["version"], p["sha256"]):
-            out.append(f"package: {n} does not match debian.lock")
-        if n in BANNED_PACKAGES:
-            out.append(f"package: {n} is a package manager, compiler, shell or interpreter")
+            out.append(f"package: {p['name']} does not match debian.lock")
+        if p["name"] in BANNED_PACKAGES and p["kept"]:
+            out.append(f"package: {p['name']} is a package manager, compiler, shell or interpreter")
+    if {p["name"] for p in stage["installed"] if p["kept"]} != {p["name"] for p in keep}:
+        out.append("package: the kept packages are not packages.toml")
     return out
 
 
@@ -350,6 +349,12 @@ def read_gpt(path: pathlib.Path) -> list[dict]:
     return out
 
 
+def config_bytes(path: pathlib.Path, part: dict) -> bytes:
+    with path.open("rb") as f:
+        f.seek(part["offset"])
+        return f.read(part["size"])
+
+
 def cut(path: pathlib.Path, part: dict, dest: pathlib.Path, limit: int | None = None) -> None:
     with path.open("rb") as f, dest.open("wb") as o:
         f.seek(part["offset"])
@@ -360,15 +365,26 @@ def cut(path: pathlib.Path, part: dict, dest: pathlib.Path, limit: int | None = 
             left -= len(chunk)
 
 
-def check_gpt(parts: list[dict], root_size: int):
-    out = []
+def check_gpt(parts: list[dict], sizes: dict, config_is_zero: bool):
+    """Names, types and the sizes the design fixes: ESP 256 MiB, config 1 MiB, A and B slots alike."""
     names = [p["name"] for p in parts]
     want = [n for n, _ in GPT_PARTITIONS]
     if names != want:
         return [f"GPT: partitions are {names}, expected {want}"]
+    out = []
     for p, (n, t) in zip(parts, GPT_PARTITIONS):
         if p["type"] != t:
             out.append(f"GPT: {n} has type {p['type']}, expected {t}")
+    by = {p["name"]: p for p in parts}
+    for name, mib in (("esp", sizes["esp_mib"]), ("ninelives-config", sizes["config_mib"])):
+        if by[name]["size"] != mib * (1 << 20):
+            out.append(f"GPT: {name} is {by[name]['size']} bytes, the design fixes {mib} MiB")
+    if by["ninelives-root-a"]["size"] != by["ninelives-root-b"]["size"] or by["ninelives-verity-a"]["size"] != by["ninelives-verity-b"]["size"]:
+        out.append("GPT: the B slot is not the size of the A slot")
+    if by["ninelives-data"]["size"] < sizes["data_mib"] * (1 << 20):
+        out.append("GPT: the data partition is smaller than the image's minimum")
+    if not config_is_zero:
+        out.append("GPT: the config partition is not all zeros")
     return out
 
 
@@ -387,6 +403,25 @@ def pe_sections(data: bytes) -> dict[str, bytes]:
         name = s[:8].rstrip(b"\0").decode("ascii")
         vsize, _, rawsize, rawptr = struct.unpack_from("<IIII", s, 8)
         out[name] = data[rawptr:rawptr + min(vsize, rawsize)] if vsize else data[rawptr:rawptr + rawsize]
+    return out
+
+
+UKI_REQUIRED = {".linux", ".cmdline", ".osrel", ".sbat"}
+# What the systemd stub itself carries, plus .uname which ukify adds from --uname.
+UKI_STUB = {".text", ".data", ".rdata", ".rodata", ".reloc", ".pdata", ".sdmagic", ".uname"}
+
+
+def check_uki_sections(sections: dict[str, bytes], kernel_sha256: str):
+    """Exactly the sections the build puts in, and the kernel is the one the kernel job built."""
+    import hashlib
+
+    out = []
+    for name in sorted(UKI_REQUIRED - set(sections)):
+        out.append(f"UKI: missing section {name}")
+    for name in sorted(set(sections) - UKI_REQUIRED - UKI_STUB):
+        out.append(f"UKI: unexpected section {name} (no initrd, microcode, devicetree or profile is allowed)")
+    if ".linux" in sections and hashlib.sha256(sections[".linux"]).hexdigest() != kernel_sha256:
+        out.append("UKI: .linux is not the kernel artifact of this run")
     return out
 
 
@@ -432,6 +467,7 @@ def main() -> int:
     ap.add_argument("--meta", type=pathlib.Path, required=True)
     ap.add_argument("--target", type=pathlib.Path, default=ic.IMAGES / "qemu-x86_64" / "target.toml")
     ap.add_argument("--commit", required=True)
+    ap.add_argument("--kernel", type=pathlib.Path, required=True, help="the kernel artifact directory")
     ap.add_argument("--source-date-epoch", type=int, required=True)
     ap.add_argument("--propose-executables", action="store_true")
     args = ap.parse_args()
@@ -444,6 +480,7 @@ def main() -> int:
     lock = ic.load_toml(ic.IMAGES / "debian.lock")
     keep = ic.load_toml(ic.IMAGES / "packages.toml")["package"]
     users = ic.load_toml(ic.IMAGES / "users.toml")
+    removals = ic.load_removals(ic.ROOT / "rootfs" / "removals.toml")
     execs = ic.load_toml(ic.IMAGES / "executables.toml").get("executable", []) if (ic.IMAGES / "executables.toml").exists() else []
     links = {l["path"]: l["target"] for l in (ic.load_toml(ic.IMAGES / "symlinks.toml").get("symlink", [])
                                               if (ic.IMAGES / "symlinks.toml").exists() else [])}
@@ -451,13 +488,15 @@ def main() -> int:
 
     errors: list[str] = []
     parts = read_gpt(args.image)
-    errors += check_gpt(parts, 0)
+    sizes_cfg = target["sizes"]
     by_name = {p["name"]: p for p in parts}
     with tempfile.TemporaryDirectory() as d:
         d = pathlib.Path(d)
         erofs, verity, esp = d / "root.erofs", d / "root.verity", d / "esp.img"
         uki_path = pathlib.Path(base + ".efi")
+        errors += check_gpt(parts, sizes_cfg, set(config_bytes(args.image, by_name["ninelives-config"])) <= {0})
         sections = pe_sections(uki_path.read_bytes())
+        errors += check_uki_sections(sections, ic.sha256_file(args.kernel / "bzImage"))
         line = sections[".cmdline"].rstrip(b"\0").decode("ascii")
         dm = dm_create(line)
         sizes = dm["sectors"] * 512
@@ -499,7 +538,7 @@ def main() -> int:
             errors += check_setuid(entries) + check_times(entries, args.source_date_epoch) + check_xattrs(entries) + check_ownership(entries)
             errors += check_special(entries, links) + check_users(entries, users)
             errors += check_executables(entries, execs) + check_elf(entries) + check_needed(entries, execs) + check_needed_resolve(entries)
-            errors += check_packages(stage, keep, lock) + check_origins(entries, origins) + check_secrets(entries)
+            errors += check_packages(stage, keep, removals, lock) + check_origins(entries, origins) + check_secrets(entries)
             files = [{"path": e.path, "type": e.kind, "mode": e.mode, "uid": e.uid, "gid": e.gid, "size": e.size,
                       **({"sha256": e.sha256()} if e.kind == "file" else {}), **({"link": e.link} if e.link else {})}
                      for e in entries]

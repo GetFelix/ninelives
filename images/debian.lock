@@ -32,6 +32,7 @@ version = "13.8+deb13u7"
 sha256 = "fcd42bb5cb63f7bfc4326a92541247872206d60a192fdff65ca14eb83ed408b9"
 archive = "debian"
 filename = "pool/main/b/base-files/base-files_13.8+deb13u7_amd64.deb"
+architecture = "amd64"
 source = "base-files"
 
 [[root.package]]
@@ -40,6 +41,7 @@ version = "3.6.7"
 sha256 = "cf31c6956ab5f65815d9d9ea1615c4f78ecd2893c31119658248a4756cee83e7"
 archive = "debian"
 filename = "pool/main/b/base-passwd/base-passwd_3.6.7_amd64.deb"
+architecture = "amd64"
 source = "base-passwd"
 
 [[root.package]]
@@ -48,6 +50,7 @@ version = "5.2.37-2+b10"
 sha256 = "2fd7b04f1b7caa29c4e683f5216e6af354a41e3cdcf6e75394d7cda680f9ab82"
 archive = "debian"
 filename = "pool/main/b/bash/bash_5.2.37-2+b10_amd64.deb"
+architecture = "amd64"
 source = "bash"
 
 [[root.package]]
@@ -56,6 +59,7 @@ version = "1:2.41.5-0+deb13u1"
 sha256 = "d935a5102752a1108bdf1e815c89a84ac88d1949bf049a784178f946a09b14da"
 archive = "debian"
 filename = "pool/main/u/util-linux/bsdutils_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "util-linux"
 
 [[root.package]]
@@ -64,6 +68,7 @@ version = "9.7-3"
 sha256 = "1299ab6f9389a288eb2f5f3dd222c26cc777b9a2d5ecb6ee4cbd340cebcdada2"
 archive = "debian"
 filename = "pool/main/c/coreutils/coreutils_9.7-3_amd64.deb"
+architecture = "amd64"
 source = "coreutils"
 
 [[root.package]]
@@ -72,6 +77,7 @@ version = "0.5.12-12"
 sha256 = "a8902cb6d8650134764a25fb80aec8589d858ef71ece1680a62e84816c37bb04"
 archive = "debian"
 filename = "pool/main/d/dash/dash_0.5.12-12_amd64.deb"
+architecture = "amd64"
 source = "dash"
 
 [[root.package]]
@@ -80,6 +86,7 @@ version = "1.5.91"
 sha256 = "1ddc7e6c5925f748eefb7ca811d98e049f18c158bb21fbc7e122262ce6011e49"
 archive = "debian"
 filename = "pool/main/d/debconf/debconf_1.5.91_all.deb"
+architecture = "all"
 source = "debconf"
 
 [[root.package]]
@@ -88,6 +95,7 @@ version = "5.23.2"
 sha256 = "720e43fda316676076498b4224ad3318049deafe60cc7c601011048de03ee97d"
 archive = "debian"
 filename = "pool/main/d/debianutils/debianutils_5.23.2_amd64.deb"
+architecture = "amd64"
 source = "debianutils"
 
 [[root.package]]
@@ -96,6 +104,7 @@ version = "1:3.10-4"
 sha256 = "d3412669f7ae53ba895c3a509620ea7494ec1a36faa204c5215442ced381a479"
 archive = "debian"
 filename = "pool/main/d/diffutils/diffutils_3.10-4_amd64.deb"
+architecture = "amd64"
 source = "diffutils"
 
 [[root.package]]
@@ -104,6 +113,7 @@ version = "1.22.22"
 sha256 = "3e800c6d75e8e709007ed1c356e5fa8509a75c1694fb0a1183709abc9cfdc1f3"
 archive = "debian"
 filename = "pool/main/d/dpkg/dpkg_1.22.22_amd64.deb"
+architecture = "amd64"
 source = "dpkg"
 
 [[root.package]]
@@ -112,6 +122,7 @@ version = "4.10.0-3"
 sha256 = "3edf02b016456b6a98cefdbab99c5ce6f829b786f63affe970badea221aecfc7"
 archive = "debian"
 filename = "pool/main/f/findutils/findutils_4.10.0-3_amd64.deb"
+architecture = "amd64"
 source = "findutils"
 
 [[root.package]]
@@ -120,6 +131,7 @@ version = "14.2.0-19"
 sha256 = "5b6825de4263824b78c4c51f6476414f3b4e89c2ab63e81dc8b9b5501e867cf6"
 archive = "debian"
 filename = "pool/main/g/gcc-14/gcc-14-base_14.2.0-19_amd64.deb"
+architecture = "amd64"
 source = "gcc-14"
 
 [[root.package]]
@@ -128,6 +140,7 @@ version = "3.11-4"
 sha256 = "2d78ed07d86a530ebf538f05cb2415f37c8daf908596bc32fc2563cc7e88c55a"
 archive = "debian"
 filename = "pool/main/g/grep/grep_3.11-4_amd64.deb"
+architecture = "amd64"
 source = "grep"
 
 [[root.package]]
@@ -136,6 +149,7 @@ version = "1.13-1+deb13u1"
 sha256 = "74cf12212beee4ab8d473bdc0107abf9e8cef737492198e2f4944a19f142b0ac"
 archive = "debian"
 filename = "pool/main/g/gzip/gzip_1.13-1+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "gzip"
 
 [[root.package]]
@@ -144,6 +158,7 @@ version = "3.25"
 sha256 = "9c2a27e5d4d87137211fe46631b05b2ee8892ec76aae926304e4485ba02e1015"
 archive = "debian"
 filename = "pool/main/h/hostname/hostname_3.25_amd64.deb"
+architecture = "amd64"
 source = "hostname"
 
 [[root.package]]
@@ -152,6 +167,7 @@ version = "1.69~deb13u1"
 sha256 = "addf78073e1cbc5a5508937e11d2571055e29835e00ee8fab52a66775649378f"
 archive = "debian"
 filename = "pool/main/i/init-system-helpers/init-system-helpers_1.69~deb13u1_all.deb"
+architecture = "all"
 source = "init-system-helpers"
 
 [[root.package]]
@@ -160,6 +176,7 @@ version = "2.3.2-2+b1"
 sha256 = "08074f01e384bc07c0c2d79a58cf4a6523f71cf75d1808101c79617656c9a39d"
 archive = "debian"
 filename = "pool/main/a/acl/libacl1_2.3.2-2+b1_amd64.deb"
+architecture = "amd64"
 source = "acl"
 
 [[root.package]]
@@ -168,6 +185,7 @@ version = "1:2.5.2-3"
 sha256 = "606b5ee12ea2786be607a17f40c1fb5e65c76ceaff66665bdf8f8c6c1b71d1fb"
 archive = "debian"
 filename = "pool/main/a/attr/libattr1_2.5.2-3_amd64.deb"
+architecture = "amd64"
 source = "attr"
 
 [[root.package]]
@@ -176,6 +194,7 @@ version = "1:4.0.2-2+deb13u1"
 sha256 = "b9d32e5ff04fd747aacb7d6b3ebbbbf734ddefb2f1695f0b1b2a4b5e51b1052e"
 archive = "debian"
 filename = "pool/main/a/audit/libaudit-common_4.0.2-2+deb13u1_all.deb"
+architecture = "all"
 source = "audit"
 
 [[root.package]]
@@ -184,6 +203,7 @@ version = "1:4.0.2-2+deb13u1"
 sha256 = "3d1dd3f031a56f01b747e2acc0e14575212580e6fa63d800c44cb0a31f1edfd7"
 archive = "debian"
 filename = "pool/main/a/audit/libaudit1_4.0.2-2+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "audit"
 
 [[root.package]]
@@ -192,6 +212,7 @@ version = "2.41.5-0+deb13u1"
 sha256 = "81535f3c2c0efc732965907c8749103a0a26377c761622c9ce39b4c92dcde52f"
 archive = "debian"
 filename = "pool/main/u/util-linux/libblkid1_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "util-linux"
 
 [[root.package]]
@@ -200,6 +221,7 @@ version = "1.0.8-6"
 sha256 = "cba4cda04244b5e481bb15524bc3c983a7d1b6f330013b9b381706a2fcb65310"
 archive = "debian"
 filename = "pool/main/b/bzip2/libbz2-1.0_1.0.8-6_amd64.deb"
+architecture = "amd64"
 source = "bzip2"
 
 [[root.package]]
@@ -208,6 +230,7 @@ version = "2.41-12+deb13u4"
 sha256 = "dc8c79647fe3a5f37f72a400414f70263d0212f010ff2c09f990e30d91e38d1c"
 archive = "debian"
 filename = "pool/main/g/glibc/libc-bin_2.41-12+deb13u4_amd64.deb"
+architecture = "amd64"
 source = "glibc"
 
 [[root.package]]
@@ -216,6 +239,7 @@ version = "2.41-12+deb13u4"
 sha256 = "967aa62605721081c3eb2a17650611a792aa802d76a6511d1840242623d204c9"
 archive = "debian"
 filename = "pool/main/g/glibc/libc6_2.41-12+deb13u4_amd64.deb"
+architecture = "amd64"
 source = "glibc"
 
 [[root.package]]
@@ -224,6 +248,7 @@ version = "0.8.5-4+b1"
 sha256 = "20a9e4b0619a3eb2566338223bed135dde5a601eaa2f8fdd5f20b94506addcac"
 archive = "debian"
 filename = "pool/main/libc/libcap-ng/libcap-ng0_0.8.5-4+b1_amd64.deb"
+architecture = "amd64"
 source = "libcap-ng"
 
 [[root.package]]
@@ -232,6 +257,7 @@ version = "1:2.75-10+deb13u1+b3"
 sha256 = "89fc4d34fc7a28ad6f0fcd0c561ab253b9dedf6f77f5a000b47c276c8295bf67"
 archive = "debian"
 filename = "pool/main/libc/libcap2/libcap2_2.75-10+deb13u1+b3_amd64.deb"
+architecture = "amd64"
 source = "libcap2"
 
 [[root.package]]
@@ -240,6 +266,7 @@ version = "1:4.4.38-1"
 sha256 = "0ebc144d662e3197982d1bf3a7b8b35ca845e54c68811de0328b1f0d7c67585c"
 archive = "debian"
 filename = "pool/main/libx/libxcrypt/libcrypt1_4.4.38-1_amd64.deb"
+architecture = "amd64"
 source = "libxcrypt"
 
 [[root.package]]
@@ -248,6 +275,7 @@ version = "5.3.28+dfsg2-9"
 sha256 = "18d02510ee78b67e4504ba050176797a200ff24214a7cd318082ab60ad7bf3fc"
 archive = "debian"
 filename = "pool/main/d/db5.3/libdb5.3t64_5.3.28+dfsg2-9_amd64.deb"
+architecture = "amd64"
 source = "db5.3"
 
 [[root.package]]
@@ -256,6 +284,7 @@ version = "0.280"
 sha256 = "25acadc8b394bc86d05df16e70975e523f8f839a7d8d6d5e22c1cafdcef741aa"
 archive = "debian"
 filename = "pool/main/c/cdebconf/libdebconfclient0_0.280_amd64.deb"
+architecture = "amd64"
 source = "cdebconf"
 
 [[root.package]]
@@ -264,6 +293,7 @@ version = "14.2.0-19"
 sha256 = "3c71917b490d1a17aed43196a2787a256ecf060526cdb20216a74bedc061b150"
 archive = "debian"
 filename = "pool/main/g/gcc-14/libgcc-s1_14.2.0-19_amd64.deb"
+architecture = "amd64"
 source = "gcc-14"
 
 [[root.package]]
@@ -272,6 +302,7 @@ version = "2:6.3.0+dfsg-3"
 sha256 = "d0d0265eb01770f17afd0f7c8c0622f80479dcfbbe13653a0debeec61464e622"
 archive = "debian"
 filename = "pool/main/g/gmp/libgmp10_6.3.0+dfsg-3_amd64.deb"
+architecture = "amd64"
 source = "gmp"
 
 [[root.package]]
@@ -280,6 +311,7 @@ version = "2.41.5-0+deb13u1"
 sha256 = "abb76aecbf51479e6e193873dfddaa1b88667dc0b1db82a11286a67550ba1557"
 archive = "debian"
 filename = "pool/main/u/util-linux/liblastlog2-2_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "util-linux"
 
 [[root.package]]
@@ -288,6 +320,7 @@ version = "5.8.1-1+deb13u2"
 sha256 = "b38acab30f295bf1066a6632e31cbd0a1980f2924b38040cda131d5dea5384ec"
 archive = "debian-security"
 filename = "pool/updates/main/x/xz-utils/liblzma5_5.8.1-1+deb13u2_amd64.deb"
+architecture = "amd64"
 source = "xz-utils"
 
 [[root.package]]
@@ -296,6 +329,7 @@ version = "1.1.0-2+b1"
 sha256 = "7244ec3839b61fac0c1884fe08aaa040f26e8f1f35f1f5d3482eacefd30d1b44"
 archive = "debian"
 filename = "pool/main/libm/libmd/libmd0_1.1.0-2+b1_amd64.deb"
+architecture = "amd64"
 source = "libmd"
 
 [[root.package]]
@@ -304,6 +338,7 @@ version = "2.41.5-0+deb13u1"
 sha256 = "6d00f45f2e80e078e906e3eedecd3ba6913e39fef49bff361ee583f17f00ec05"
 archive = "debian"
 filename = "pool/main/u/util-linux/libmount1_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "util-linux"
 
 [[root.package]]
@@ -312,6 +347,7 @@ version = "1.7.0-5"
 sha256 = "9679ade117f8775ac0471f48a92652ab8e8dcda4e2ff06de75158cded9cfd83c"
 archive = "debian"
 filename = "pool/main/p/pam/libpam-modules_1.7.0-5_amd64.deb"
+architecture = "amd64"
 source = "pam"
 
 [[root.package]]
@@ -320,6 +356,7 @@ version = "1.7.0-5"
 sha256 = "cc72066d008444317738e8e931d6131b301466b4e2dd5ef5baa75fb1a45d61a7"
 archive = "debian"
 filename = "pool/main/p/pam/libpam-modules-bin_1.7.0-5_amd64.deb"
+architecture = "amd64"
 source = "pam"
 
 [[root.package]]
@@ -328,6 +365,7 @@ version = "1.7.0-5"
 sha256 = "b02792c9ed6174db695a653b95ef3629fdac3a73ba1eff1754ab161b5711bfbf"
 archive = "debian"
 filename = "pool/main/p/pam/libpam-runtime_1.7.0-5_all.deb"
+architecture = "all"
 source = "pam"
 
 [[root.package]]
@@ -336,6 +374,7 @@ version = "1.7.0-5"
 sha256 = "4f5bde27d8df2de6ea8990319b42d9974f56a3ba9907ce7296fd0f8964fc9fb1"
 archive = "debian"
 filename = "pool/main/p/pam/libpam0g_1.7.0-5_amd64.deb"
+architecture = "amd64"
 source = "pam"
 
 [[root.package]]
@@ -344,6 +383,7 @@ version = "10.46-1~deb13u3"
 sha256 = "e226f661d918f04daf38cdbc4806b7ed7d6ef95c7eb0ade692fc350e31970040"
 archive = "debian-security"
 filename = "pool/updates/main/p/pcre2/libpcre2-8-0_10.46-1~deb13u3_amd64.deb"
+architecture = "amd64"
 source = "pcre2"
 
 [[root.package]]
@@ -352,6 +392,7 @@ version = "3.8.1-1"
 sha256 = "68bb8d32bd8d6d7d2f5952a169db03d1484b46ae1e52abccdec42a19dccea5d5"
 archive = "debian"
 filename = "pool/main/libs/libselinux/libselinux1_3.8.1-1_amd64.deb"
+architecture = "amd64"
 source = "libselinux"
 
 [[root.package]]
@@ -360,6 +401,7 @@ version = "2.41.5-0+deb13u1"
 sha256 = "d96bac9c8805685f2734885098a214b82950da6ebb182c27a6b7a124a0323392"
 archive = "debian"
 filename = "pool/main/u/util-linux/libsmartcols1_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "util-linux"
 
 [[root.package]]
@@ -368,6 +410,7 @@ version = "3.46.1-7+deb13u2"
 sha256 = "0a459adaffd901109f7811ab65f58e7a957b4907d05539cf3d1184efdcde0468"
 archive = "debian"
 filename = "pool/main/s/sqlite3/libsqlite3-0_3.46.1-7+deb13u2_amd64.deb"
+architecture = "amd64"
 source = "sqlite3"
 
 [[root.package]]
@@ -376,6 +419,7 @@ version = "3.5.7-1~deb13u3"
 sha256 = "ff16bc048bcd7d1b256094450b79c77947d8e76fe2a24bd99b91021d591fa074"
 archive = "debian-security"
 filename = "pool/updates/main/o/openssl/libssl3t64_3.5.7-1~deb13u3_amd64.deb"
+architecture = "amd64"
 source = "openssl"
 
 [[root.package]]
@@ -384,6 +428,7 @@ version = "257.13-1~deb13u1"
 sha256 = "ab0d4127b5e46e6f8c015a1db15a62ba9ae274cdefa150083adf90ada0600ea1"
 archive = "debian"
 filename = "pool/main/s/systemd/libsystemd0_257.13-1~deb13u1_amd64.deb"
+architecture = "amd64"
 source = "systemd"
 
 [[root.package]]
@@ -392,6 +437,7 @@ version = "6.5+20250216-2"
 sha256 = "8b9f6a7983e9418564e48a627518de4c03917b56efe68d7f3e93bd8fffa1cc10"
 archive = "debian"
 filename = "pool/main/n/ncurses/libtinfo6_6.5+20250216-2_amd64.deb"
+architecture = "amd64"
 source = "ncurses"
 
 [[root.package]]
@@ -400,6 +446,7 @@ version = "257.13-1~deb13u1"
 sha256 = "5d41c284f5a93b05bc7d648b61a02dd2bb9ff05b2261ad1a8b7d96044a0cfa88"
 archive = "debian"
 filename = "pool/main/s/systemd/libudev1_257.13-1~deb13u1_amd64.deb"
+architecture = "amd64"
 source = "systemd"
 
 [[root.package]]
@@ -408,6 +455,7 @@ version = "2.41.5-0+deb13u1"
 sha256 = "c1bf4c4c3ff48c57fabf93307dfb56996b60cfa33927afc4158b5db36fb2721e"
 archive = "debian"
 filename = "pool/main/u/util-linux/libuuid1_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "util-linux"
 
 [[root.package]]
@@ -416,6 +464,7 @@ version = "1.5.7+dfsg-1"
 sha256 = "2f6a2aeacfc925eba8b00ac9139bc4bfccf8cacb09eb93de067074b26948eef9"
 archive = "debian"
 filename = "pool/main/libz/libzstd/libzstd1_1.5.7+dfsg-1_amd64.deb"
+architecture = "amd64"
 source = "libzstd"
 
 [[root.package]]
@@ -424,6 +473,7 @@ version = "1.3.4.20250131-1"
 sha256 = "ade14470c4dff8921bca6ca8b1ea20eadc0f2178b48caff3c74534b17a633292"
 archive = "debian"
 filename = "pool/main/m/mawk/mawk_1.3.4.20250131-1_amd64.deb"
+architecture = "amd64"
 source = "mawk"
 
 [[root.package]]
@@ -432,6 +482,7 @@ version = "6.5+20250216-2"
 sha256 = "190e775260a38973c415a36ae99f33ad1b37ea6ca99929d7c5d53843fc23e914"
 archive = "debian"
 filename = "pool/main/n/ncurses/ncurses-base_6.5+20250216-2_all.deb"
+architecture = "all"
 source = "ncurses"
 
 [[root.package]]
@@ -440,6 +491,7 @@ version = "6.5+20250216-2"
 sha256 = "40a525f4761e9ed4b8adcd1783cb9a6467ff8008215ae99b3597825bdefc61e4"
 archive = "debian"
 filename = "pool/main/n/ncurses/ncurses-bin_6.5+20250216-2_amd64.deb"
+architecture = "amd64"
 source = "ncurses"
 
 [[root.package]]
@@ -448,6 +500,7 @@ version = "3.5.7-1~deb13u3"
 sha256 = "c12e0266c4780749a4702b8959ac979689f4182e18eed85a8a5eb90ed0e16eab"
 archive = "debian-security"
 filename = "pool/updates/main/o/openssl/openssl-provider-legacy_3.5.7-1~deb13u3_amd64.deb"
+architecture = "amd64"
 source = "openssl"
 
 [[root.package]]
@@ -456,6 +509,7 @@ version = "5.40.1-6+deb13u1"
 sha256 = "b795464137a0f4d443fc9284f4b93e883fb83883cb533adf300ac660807a352a"
 archive = "debian"
 filename = "pool/main/p/perl/perl-base_5.40.1-6+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "perl"
 
 [[root.package]]
@@ -464,6 +518,7 @@ version = "4.9-2+deb13u1"
 sha256 = "7071270ed4f6adda55bc4f926347fb847bacaffbdee3dff917bc6006ed7e3775"
 archive = "debian"
 filename = "pool/main/s/sed/sed_4.9-2+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "sed"
 
 [[root.package]]
@@ -472,6 +527,7 @@ version = "3.14-4"
 sha256 = "c7e957360dff89675b491e501b00047cf750695178cabab167c92fc260d358ec"
 archive = "debian"
 filename = "pool/main/s/sysvinit/sysvinit-utils_3.14-4_amd64.deb"
+architecture = "amd64"
 source = "sysvinit"
 
 [[root.package]]
@@ -480,6 +536,7 @@ version = "1.35+dfsg-3.1"
 sha256 = "214c02e1aa291076a3147b8a4c4cae02fadf4c67df629186e3e313726faef1de"
 archive = "debian"
 filename = "pool/main/t/tar/tar_1.35+dfsg-3.1_amd64.deb"
+architecture = "amd64"
 source = "tar"
 
 [[root.package]]
@@ -488,6 +545,7 @@ version = "2.41.5-0+deb13u1"
 sha256 = "7d5b1176cc3d8cc6b290b3ec17af458f362d9200845f30da22057a8198744430"
 archive = "debian"
 filename = "pool/main/u/util-linux/util-linux_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "util-linux"
 
 [[root.package]]
@@ -496,6 +554,7 @@ version = "1:1.3.dfsg+really1.3.1-1+deb13u1"
 sha256 = "8c27c342230503b73dfde629642c3b352e87b554e06d60cf58772f236a305ceb"
 archive = "debian-security"
 filename = "pool/updates/main/z/zlib/zlib1g_1.3.dfsg+really1.3.1-1+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "zlib"
 
 [tools]
@@ -522,6 +581,7 @@ version = "3.0.4"
 sha256 = "15c2030e0fb46580af4f1b4cc303f4bd26da781b004e99763bc9eff7cf8e19b8"
 archive = "debian-security"
 filename = "pool/updates/main/a/apt/apt_3.0.4_amd64.deb"
+architecture = "amd64"
 source = "apt"
 
 [[tools.package]]
@@ -530,6 +590,7 @@ version = "3.6.7"
 sha256 = "cf31c6956ab5f65815d9d9ea1615c4f78ecd2893c31119658248a4756cee83e7"
 archive = "debian"
 filename = "pool/main/b/base-passwd/base-passwd_3.6.7_amd64.deb"
+architecture = "amd64"
 source = "base-passwd"
 
 [[tools.package]]
@@ -538,6 +599,7 @@ version = "2:2.7.5-2"
 sha256 = "b77b192cf1c35f96da02134300bb227ab92c49eec2444268049fa1ce84fb9bc7"
 archive = "debian"
 filename = "pool/main/c/cryptsetup/cryptsetup-bin_2.7.5-2_amd64.deb"
+architecture = "amd64"
 source = "cryptsetup"
 
 [[tools.package]]
@@ -546,6 +608,7 @@ version = "1.5.91"
 sha256 = "1ddc7e6c5925f748eefb7ca811d98e049f18c158bb21fbc7e122262ce6011e49"
 archive = "debian"
 filename = "pool/main/d/debconf/debconf_1.5.91_all.deb"
+architecture = "all"
 source = "debconf"
 
 [[tools.package]]
@@ -554,6 +617,7 @@ version = "2025.1"
 sha256 = "9ea7778e443144ca490668737a8ab22dd3e748bb99e805e22ec055abeb3c7fac"
 archive = "debian"
 filename = "pool/main/d/debian-archive-keyring/debian-archive-keyring_2025.1_all.deb"
+architecture = "all"
 source = "debian-archive-keyring"
 
 [[tools.package]]
@@ -562,6 +626,7 @@ version = "2:1.02.205-2"
 sha256 = "4771f7ab0a907a8e5d02a6358ff016ae7cb49124906bada02fa882e141b615a0"
 archive = "debian"
 filename = "pool/main/l/lvm2/dmsetup_1.02.205-2_amd64.deb"
+architecture = "amd64"
 source = "lvm2"
 
 [[tools.package]]
@@ -570,6 +635,7 @@ version = "4.2-1.2"
 sha256 = "628551496a02e80eee83054b9c696b06ba8177159bf0afe9a5b4ab2fb94b1b41"
 archive = "debian"
 filename = "pool/main/d/dosfstools/dosfstools_4.2-1.2_amd64.deb"
+architecture = "amd64"
 source = "dosfstools"
 
 [[tools.package]]
@@ -578,6 +644,7 @@ version = "1.22.22"
 sha256 = "3e800c6d75e8e709007ed1c356e5fa8509a75c1694fb0a1183709abc9cfdc1f3"
 archive = "debian"
 filename = "pool/main/d/dpkg/dpkg_1.22.22_amd64.deb"
+architecture = "amd64"
 source = "dpkg"
 
 [[tools.package]]
@@ -586,6 +653,7 @@ version = "1.47.2-3+b12"
 sha256 = "e9e638eb3e22b5f14d01ce0b28aa512a5a22fcc0e70d1c733444579b67ea236b"
 archive = "debian"
 filename = "pool/main/e/e2fsprogs/e2fsprogs_1.47.2-3+b12_amd64.deb"
+architecture = "amd64"
 source = "e2fsprogs"
 
 [[tools.package]]
@@ -594,6 +662,7 @@ version = "1.8.6-1"
 sha256 = "81042b8c0c3eb63699aa7d0763dceedc675a747d9f5cfebf914b4160233f411e"
 archive = "debian"
 filename = "pool/main/e/erofs-utils/erofs-utils_1.8.6-1_amd64.deb"
+architecture = "amd64"
 source = "erofs-utils"
 
 [[tools.package]]
@@ -602,6 +671,7 @@ version = "14.2.0-19"
 sha256 = "5b6825de4263824b78c4c51f6476414f3b4e89c2ab63e81dc8b9b5501e867cf6"
 archive = "debian"
 filename = "pool/main/g/gcc-14/gcc-14-base_14.2.0-19_amd64.deb"
+architecture = "amd64"
 source = "gcc-14"
 
 [[tools.package]]
@@ -610,6 +680,7 @@ version = "2.4.7-21+deb13u1+b5"
 sha256 = "104e4c57b98f0b883aa94c68fbe7ec7b48bcdec7c0f9dedf2a51a5054aaeb5ae"
 archive = "debian"
 filename = "pool/main/g/gnupg2/gpgv_2.4.7-21+deb13u1+b5_amd64.deb"
+architecture = "amd64"
 source = "gnupg2"
 
 [[tools.package]]
@@ -618,6 +689,7 @@ version = "2.3.2-2+b1"
 sha256 = "08074f01e384bc07c0c2d79a58cf4a6523f71cf75d1808101c79617656c9a39d"
 archive = "debian"
 filename = "pool/main/a/acl/libacl1_2.3.2-2+b1_amd64.deb"
+architecture = "amd64"
 source = "acl"
 
 [[tools.package]]
@@ -626,6 +698,7 @@ version = "4.1.0-1"
 sha256 = "4158976c77038b93021967f425b4cc505df18c4f5e3f444732399e7ed4af4419"
 archive = "debian"
 filename = "pool/main/a/apparmor/libapparmor1_4.1.0-1_amd64.deb"
+architecture = "amd64"
 source = "apparmor"
 
 [[tools.package]]
@@ -634,6 +707,7 @@ version = "3.0.4"
 sha256 = "577eb8f489de419290102364892dbd13ca256297b61f96d61b114fd4ac18be41"
 archive = "debian-security"
 filename = "pool/updates/main/a/apt/libapt-pkg7.0_3.0.4_amd64.deb"
+architecture = "amd64"
 source = "apt"
 
 [[tools.package]]
@@ -642,6 +716,7 @@ version = "1:4.0.2-2+deb13u1"
 sha256 = "b9d32e5ff04fd747aacb7d6b3ebbbbf734ddefb2f1695f0b1b2a4b5e51b1052e"
 archive = "debian"
 filename = "pool/main/a/audit/libaudit-common_4.0.2-2+deb13u1_all.deb"
+architecture = "all"
 source = "audit"
 
 [[tools.package]]
@@ -650,6 +725,7 @@ version = "1:4.0.2-2+deb13u1"
 sha256 = "3d1dd3f031a56f01b747e2acc0e14575212580e6fa63d800c44cb0a31f1edfd7"
 archive = "debian"
 filename = "pool/main/a/audit/libaudit1_4.0.2-2+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "audit"
 
 [[tools.package]]
@@ -658,6 +734,7 @@ version = "2.41.5-0+deb13u1"
 sha256 = "81535f3c2c0efc732965907c8749103a0a26377c761622c9ce39b4c92dcde52f"
 archive = "debian"
 filename = "pool/main/u/util-linux/libblkid1_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "util-linux"
 
 [[tools.package]]
@@ -666,6 +743,7 @@ version = "1.0.8-6"
 sha256 = "cba4cda04244b5e481bb15524bc3c983a7d1b6f330013b9b381706a2fcb65310"
 archive = "debian"
 filename = "pool/main/b/bzip2/libbz2-1.0_1.0.8-6_amd64.deb"
+architecture = "amd64"
 source = "bzip2"
 
 [[tools.package]]
@@ -674,6 +752,7 @@ version = "2.41-12+deb13u4"
 sha256 = "967aa62605721081c3eb2a17650611a792aa802d76a6511d1840242623d204c9"
 archive = "debian"
 filename = "pool/main/g/glibc/libc6_2.41-12+deb13u4_amd64.deb"
+architecture = "amd64"
 source = "glibc"
 
 [[tools.package]]
@@ -682,6 +761,7 @@ version = "0.8.5-4+b1"
 sha256 = "20a9e4b0619a3eb2566338223bed135dde5a601eaa2f8fdd5f20b94506addcac"
 archive = "debian"
 filename = "pool/main/libc/libcap-ng/libcap-ng0_0.8.5-4+b1_amd64.deb"
+architecture = "amd64"
 source = "libcap-ng"
 
 [[tools.package]]
@@ -690,6 +770,7 @@ version = "1:2.75-10+deb13u1+b3"
 sha256 = "89fc4d34fc7a28ad6f0fcd0c561ab253b9dedf6f77f5a000b47c276c8295bf67"
 archive = "debian"
 filename = "pool/main/libc/libcap2/libcap2_2.75-10+deb13u1+b3_amd64.deb"
+architecture = "amd64"
 source = "libcap2"
 
 [[tools.package]]
@@ -698,6 +779,7 @@ version = "1.47.2-3+b12"
 sha256 = "bd43e020b8fed399db3eebf098111f10fba4c436fff99ccad72cc7e27c9764ec"
 archive = "debian"
 filename = "pool/main/e/e2fsprogs/libcom-err2_1.47.2-3+b12_amd64.deb"
+architecture = "amd64"
 source = "e2fsprogs"
 
 [[tools.package]]
@@ -706,6 +788,7 @@ version = "1:4.4.38-1"
 sha256 = "0ebc144d662e3197982d1bf3a7b8b35ca845e54c68811de0328b1f0d7c67585c"
 archive = "debian"
 filename = "pool/main/libx/libxcrypt/libcrypt1_4.4.38-1_amd64.deb"
+architecture = "amd64"
 source = "libxcrypt"
 
 [[tools.package]]
@@ -714,6 +797,7 @@ version = "2:2.7.5-2"
 sha256 = "84f6596296c346c1c8f6bb16b0d4d485215b7a23a23ff21e9c28e35822d45a7b"
 archive = "debian"
 filename = "pool/main/c/cryptsetup/libcryptsetup12_2.7.5-2_amd64.deb"
+architecture = "amd64"
 source = "cryptsetup"
 
 [[tools.package]]
@@ -722,6 +806,7 @@ version = "5.3.28+dfsg2-9"
 sha256 = "18d02510ee78b67e4504ba050176797a200ff24214a7cd318082ab60ad7bf3fc"
 archive = "debian"
 filename = "pool/main/d/db5.3/libdb5.3t64_5.3.28+dfsg2-9_amd64.deb"
+architecture = "amd64"
 source = "db5.3"
 
 [[tools.package]]
@@ -730,6 +815,7 @@ version = "0.280"
 sha256 = "25acadc8b394bc86d05df16e70975e523f8f839a7d8d6d5e22c1cafdcef741aa"
 archive = "debian"
 filename = "pool/main/c/cdebconf/libdebconfclient0_0.280_amd64.deb"
+architecture = "amd64"
 source = "cdebconf"
 
 [[tools.package]]
@@ -738,6 +824,7 @@ version = "1.23-2"
 sha256 = "5fe37fb79d53f5c91da6ba3ac4c1a8453e1f2b1ff0e0ea45189c5338bbfdbf82"
 archive = "debian"
 filename = "pool/main/libd/libdeflate/libdeflate0_1.23-2_amd64.deb"
+architecture = "amd64"
 source = "libdeflate"
 
 [[tools.package]]
@@ -746,6 +833,7 @@ version = "2:1.02.205-2"
 sha256 = "e924e0df8823987f271b7d3a375dc2f8adcd76db66f09d0273043c885edb0af0"
 archive = "debian"
 filename = "pool/main/l/lvm2/libdevmapper1.02.1_1.02.205-2_amd64.deb"
+architecture = "amd64"
 source = "lvm2"
 
 [[tools.package]]
@@ -754,6 +842,7 @@ version = "2.9.0-1~deb13u1"
 sha256 = "feff874772cae904ae4d24e917b35664952bec4b4ae9100a4edda5a7fa746832"
 archive = "debian-security"
 filename = "pool/updates/main/e/expat/libexpat1_2.9.0-1~deb13u1_amd64.deb"
+architecture = "amd64"
 source = "expat"
 
 [[tools.package]]
@@ -762,6 +851,7 @@ version = "1.47.2-3+b12"
 sha256 = "9f5783fa48239e42260d41846fbc6c8b19c233251063524456096195660eaa09"
 archive = "debian"
 filename = "pool/main/e/e2fsprogs/libext2fs2t64_1.47.2-3+b12_amd64.deb"
+architecture = "amd64"
 source = "e2fsprogs"
 
 [[tools.package]]
@@ -770,6 +860,7 @@ version = "2.41.5-0+deb13u1"
 sha256 = "7f96d173cc01787201691f80ca9b335b8c7d6cdcc6fb81011302d4a005ff5089"
 archive = "debian"
 filename = "pool/main/u/util-linux/libfdisk1_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "util-linux"
 
 [[tools.package]]
@@ -778,6 +869,7 @@ version = "3.4.8-2"
 sha256 = "0ebdc340de33333639c3c63874cd4b15ac2e83dfa1ef3053b7eefaf4919f4f68"
 archive = "debian"
 filename = "pool/main/libf/libffi/libffi8_3.4.8-2_amd64.deb"
+architecture = "amd64"
 source = "libffi"
 
 [[tools.package]]
@@ -786,6 +878,7 @@ version = "14.2.0-19"
 sha256 = "3c71917b490d1a17aed43196a2787a256ecf060526cdb20216a74bedc061b150"
 archive = "debian"
 filename = "pool/main/g/gcc-14/libgcc-s1_14.2.0-19_amd64.deb"
+architecture = "amd64"
 source = "gcc-14"
 
 [[tools.package]]
@@ -794,6 +887,7 @@ version = "1.11.0-7+deb13u1"
 sha256 = "f0eb41f8cb40896e0822e9ab65611e8383c12b721c76c54764f744abb4a8c247"
 archive = "debian"
 filename = "pool/main/libg/libgcrypt20/libgcrypt20_1.11.0-7+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "libgcrypt20"
 
 [[tools.package]]
@@ -802,6 +896,7 @@ version = "2:6.3.0+dfsg-3"
 sha256 = "d0d0265eb01770f17afd0f7c8c0622f80479dcfbbe13653a0debeec61464e622"
 archive = "debian"
 filename = "pool/main/g/gmp/libgmp10_6.3.0+dfsg-3_amd64.deb"
+architecture = "amd64"
 source = "gmp"
 
 [[tools.package]]
@@ -810,6 +905,7 @@ version = "1.51-4"
 sha256 = "22b95570fd41c113ef6f5651563b4d748292844baab1278a46eb940c1dec2322"
 archive = "debian"
 filename = "pool/main/libg/libgpg-error/libgpg-error0_1.51-4_amd64.deb"
+architecture = "amd64"
 source = "libgpg-error"
 
 [[tools.package]]
@@ -818,6 +914,7 @@ version = "3.10.1-1"
 sha256 = "b059ed155115ac09da295322de48ee1ed58ef5fa45edcc9e12ff0e94636ef25f"
 archive = "debian"
 filename = "pool/main/n/nettle/libhogweed6t64_3.10.1-1_amd64.deb"
+architecture = "amd64"
 source = "nettle"
 
 [[tools.package]]
@@ -826,6 +923,7 @@ version = "0.18+ds-1"
 sha256 = "4fbd5fb4d54c626f05d68abf38a31533fbf1bf4a87068696abe041ee9c974fe0"
 archive = "debian"
 filename = "pool/main/j/json-c/libjson-c5_0.18+ds-1_amd64.deb"
+architecture = "amd64"
 source = "json-c"
 
 [[tools.package]]
@@ -834,6 +932,7 @@ version = "2.41.5-0+deb13u1"
 sha256 = "abb76aecbf51479e6e193873dfddaa1b88667dc0b1db82a11286a67550ba1557"
 archive = "debian"
 filename = "pool/main/u/util-linux/liblastlog2-2_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "util-linux"
 
 [[tools.package]]
@@ -842,6 +941,7 @@ version = "1.10.0-4"
 sha256 = "c31ec4c7c82755a38b2f3fe066fc0c5518cc91a601a268fbcd19bdacb1f22e1e"
 archive = "debian"
 filename = "pool/main/l/lz4/liblz4-1_1.10.0-4_amd64.deb"
+architecture = "amd64"
 source = "lz4"
 
 [[tools.package]]
@@ -850,6 +950,7 @@ version = "5.8.1-1+deb13u2"
 sha256 = "b38acab30f295bf1066a6632e31cbd0a1980f2924b38040cda131d5dea5384ec"
 archive = "debian-security"
 filename = "pool/updates/main/x/xz-utils/liblzma5_5.8.1-1+deb13u2_amd64.deb"
+architecture = "amd64"
 source = "xz-utils"
 
 [[tools.package]]
@@ -858,6 +959,7 @@ version = "1.1.0-2+b1"
 sha256 = "7244ec3839b61fac0c1884fe08aaa040f26e8f1f35f1f5d3482eacefd30d1b44"
 archive = "debian"
 filename = "pool/main/libm/libmd/libmd0_1.1.0-2+b1_amd64.deb"
+architecture = "amd64"
 source = "libmd"
 
 [[tools.package]]
@@ -866,6 +968,7 @@ version = "2.41.5-0+deb13u1"
 sha256 = "6d00f45f2e80e078e906e3eedecd3ba6913e39fef49bff361ee583f17f00ec05"
 archive = "debian"
 filename = "pool/main/u/util-linux/libmount1_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "util-linux"
 
 [[tools.package]]
@@ -874,6 +977,7 @@ version = "6.5+20250216-2"
 sha256 = "47baa2e11579583654583a066b69bd5a5d2f22423081f707ed6c0c3ba6d538b7"
 archive = "debian"
 filename = "pool/main/n/ncurses/libncursesw6_6.5+20250216-2_amd64.deb"
+architecture = "amd64"
 source = "ncurses"
 
 [[tools.package]]
@@ -882,6 +986,7 @@ version = "3.10.1-1"
 sha256 = "1b03d4a9cd9c8143ba50fe6396f36937e901a317d492d179f4596862c1731cfe"
 archive = "debian"
 filename = "pool/main/n/nettle/libnettle8t64_3.10.1-1_amd64.deb"
+architecture = "amd64"
 source = "nettle"
 
 [[tools.package]]
@@ -890,6 +995,7 @@ version = "1.7.0-5"
 sha256 = "9679ade117f8775ac0471f48a92652ab8e8dcda4e2ff06de75158cded9cfd83c"
 archive = "debian"
 filename = "pool/main/p/pam/libpam-modules_1.7.0-5_amd64.deb"
+architecture = "amd64"
 source = "pam"
 
 [[tools.package]]
@@ -898,6 +1004,7 @@ version = "1.7.0-5"
 sha256 = "cc72066d008444317738e8e931d6131b301466b4e2dd5ef5baa75fb1a45d61a7"
 archive = "debian"
 filename = "pool/main/p/pam/libpam-modules-bin_1.7.0-5_amd64.deb"
+architecture = "amd64"
 source = "pam"
 
 [[tools.package]]
@@ -906,6 +1013,7 @@ version = "1.7.0-5"
 sha256 = "b02792c9ed6174db695a653b95ef3629fdac3a73ba1eff1754ab161b5711bfbf"
 archive = "debian"
 filename = "pool/main/p/pam/libpam-runtime_1.7.0-5_all.deb"
+architecture = "all"
 source = "pam"
 
 [[tools.package]]
@@ -914,6 +1022,7 @@ version = "1.7.0-5"
 sha256 = "4f5bde27d8df2de6ea8990319b42d9974f56a3ba9907ce7296fd0f8964fc9fb1"
 archive = "debian"
 filename = "pool/main/p/pam/libpam0g_1.7.0-5_amd64.deb"
+architecture = "amd64"
 source = "pam"
 
 [[tools.package]]
@@ -922,6 +1031,7 @@ version = "10.46-1~deb13u3"
 sha256 = "e226f661d918f04daf38cdbc4806b7ed7d6ef95c7eb0ade692fc350e31970040"
 archive = "debian-security"
 filename = "pool/updates/main/p/pcre2/libpcre2-8-0_10.46-1~deb13u3_amd64.deb"
+architecture = "amd64"
 source = "pcre2"
 
 [[tools.package]]
@@ -930,6 +1040,7 @@ version = "1.19+dfsg-2"
 sha256 = "07f649b706852af937654295697dcfc7858f3295718ec18681dce1704663e4f2"
 archive = "debian"
 filename = "pool/main/p/popt/libpopt0_1.19+dfsg-2_amd64.deb"
+architecture = "amd64"
 source = "popt"
 
 [[tools.package]]
@@ -938,6 +1049,7 @@ version = "3.13.5-1"
 sha256 = "7e142ed64a81ccdd39714f213467bd365736ef341adb2be11be981f638b9175f"
 archive = "debian"
 filename = "pool/main/p/python3-defaults/libpython3-stdlib_3.13.5-1_amd64.deb"
+architecture = "amd64"
 source = "python3-defaults"
 
 [[tools.package]]
@@ -946,6 +1058,7 @@ version = "3.13.5-2+deb13u5"
 sha256 = "a4aa6a9a8c77f87bfe545e1d14ec42c001d189ace90e3aa75deec882b39dee49"
 archive = "debian"
 filename = "pool/main/p/python3.13/libpython3.13-minimal_3.13.5-2+deb13u5_amd64.deb"
+architecture = "amd64"
 source = "python3.13"
 
 [[tools.package]]
@@ -954,6 +1067,7 @@ version = "3.13.5-2+deb13u5"
 sha256 = "db161322a3481d2c0c3b9a3b9a03c3ab0e2b1718f54b88755fb4a3f939165b84"
 archive = "debian"
 filename = "pool/main/p/python3.13/libpython3.13-stdlib_3.13.5-2+deb13u5_amd64.deb"
+architecture = "amd64"
 source = "python3.13"
 
 [[tools.package]]
@@ -962,6 +1076,7 @@ version = "8.2-6"
 sha256 = "eeadf2b5e755c9f183883feea2d9b5b28560284275d5f54d3e55d0923b1d0967"
 archive = "debian"
 filename = "pool/main/r/readline/libreadline8t64_8.2-6_amd64.deb"
+architecture = "amd64"
 source = "readline"
 
 [[tools.package]]
@@ -970,6 +1085,7 @@ version = "2.6.0-2"
 sha256 = "89d5138e05fb6a86b9afd8b54dc0fb4b14f4c27c05e6c5f767c2132bdf808531"
 archive = "debian"
 filename = "pool/main/libs/libseccomp/libseccomp2_2.6.0-2_amd64.deb"
+architecture = "amd64"
 source = "libseccomp"
 
 [[tools.package]]
@@ -978,6 +1094,7 @@ version = "3.8.1-1"
 sha256 = "68bb8d32bd8d6d7d2f5952a169db03d1484b46ae1e52abccdec42a19dccea5d5"
 archive = "debian"
 filename = "pool/main/libs/libselinux/libselinux1_3.8.1-1_amd64.deb"
+architecture = "amd64"
 source = "libselinux"
 
 [[tools.package]]
@@ -986,6 +1103,7 @@ version = "2.41.5-0+deb13u1"
 sha256 = "d96bac9c8805685f2734885098a214b82950da6ebb182c27a6b7a124a0323392"
 archive = "debian"
 filename = "pool/main/u/util-linux/libsmartcols1_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "util-linux"
 
 [[tools.package]]
@@ -994,6 +1112,7 @@ version = "3.46.1-7+deb13u2"
 sha256 = "0a459adaffd901109f7811ab65f58e7a957b4907d05539cf3d1184efdcde0468"
 archive = "debian"
 filename = "pool/main/s/sqlite3/libsqlite3-0_3.46.1-7+deb13u2_amd64.deb"
+architecture = "amd64"
 source = "sqlite3"
 
 [[tools.package]]
@@ -1002,6 +1121,7 @@ version = "1.47.2-3+b12"
 sha256 = "c5d38d71984c1bf774c1254238636e605fc4e0dc24d853f709921eb740327f4a"
 archive = "debian"
 filename = "pool/main/e/e2fsprogs/libss2_1.47.2-3+b12_amd64.deb"
+architecture = "amd64"
 source = "e2fsprogs"
 
 [[tools.package]]
@@ -1010,6 +1130,7 @@ version = "3.5.7-1~deb13u3"
 sha256 = "ff16bc048bcd7d1b256094450b79c77947d8e76fe2a24bd99b91021d591fa074"
 archive = "debian-security"
 filename = "pool/updates/main/o/openssl/libssl3t64_3.5.7-1~deb13u3_amd64.deb"
+architecture = "amd64"
 source = "openssl"
 
 [[tools.package]]
@@ -1018,6 +1139,7 @@ version = "14.2.0-19"
 sha256 = "ab1fa05837aa7a92aae748fd07a18a35f7d18bb4a71c4724fe2bbf0e32089de0"
 archive = "debian"
 filename = "pool/main/g/gcc-14/libstdc++6_14.2.0-19_amd64.deb"
+architecture = "amd64"
 source = "gcc-14"
 
 [[tools.package]]
@@ -1026,6 +1148,7 @@ version = "257.13-1~deb13u1"
 sha256 = "2d349824e57f88507e2a33360610d8afc143a4ad5e80ee4bf8f37b826d6f37f9"
 archive = "debian"
 filename = "pool/main/s/systemd/libsystemd-shared_257.13-1~deb13u1_amd64.deb"
+architecture = "amd64"
 source = "systemd"
 
 [[tools.package]]
@@ -1034,6 +1157,7 @@ version = "257.13-1~deb13u1"
 sha256 = "ab0d4127b5e46e6f8c015a1db15a62ba9ae274cdefa150083adf90ada0600ea1"
 archive = "debian"
 filename = "pool/main/s/systemd/libsystemd0_257.13-1~deb13u1_amd64.deb"
+architecture = "amd64"
 source = "systemd"
 
 [[tools.package]]
@@ -1042,6 +1166,7 @@ version = "6.5+20250216-2"
 sha256 = "8b9f6a7983e9418564e48a627518de4c03917b56efe68d7f3e93bd8fffa1cc10"
 archive = "debian"
 filename = "pool/main/n/ncurses/libtinfo6_6.5+20250216-2_amd64.deb"
+architecture = "amd64"
 source = "ncurses"
 
 [[tools.package]]
@@ -1050,6 +1175,7 @@ version = "257.13-1~deb13u1"
 sha256 = "5d41c284f5a93b05bc7d648b61a02dd2bb9ff05b2261ad1a8b7d96044a0cfa88"
 archive = "debian"
 filename = "pool/main/s/systemd/libudev1_257.13-1~deb13u1_amd64.deb"
+architecture = "amd64"
 source = "systemd"
 
 [[tools.package]]
@@ -1058,6 +1184,7 @@ version = "2.41.5-0+deb13u1"
 sha256 = "c1bf4c4c3ff48c57fabf93307dfb56996b60cfa33927afc4158b5db36fb2721e"
 archive = "debian"
 filename = "pool/main/u/util-linux/libuuid1_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "util-linux"
 
 [[tools.package]]
@@ -1066,6 +1193,7 @@ version = "0.8.3-2"
 sha256 = "81da7064d56fc044f5db4bb3c1e80ff50a4986dcbbf80d958eeca565b44c157f"
 archive = "debian"
 filename = "pool/main/x/xxhash/libxxhash0_0.8.3-2_amd64.deb"
+architecture = "amd64"
 source = "xxhash"
 
 [[tools.package]]
@@ -1074,6 +1202,7 @@ version = "1.5.7+dfsg-1"
 sha256 = "2f6a2aeacfc925eba8b00ac9139bc4bfccf8cacb09eb93de067074b26948eef9"
 archive = "debian"
 filename = "pool/main/libz/libzstd/libzstd1_1.5.7+dfsg-1_amd64.deb"
+architecture = "amd64"
 source = "libzstd"
 
 [[tools.package]]
@@ -1082,6 +1211,7 @@ version = "1.47.2-3+b12"
 sha256 = "aa028720743b79bd054749af34c501c093f0ab5e044e4dc44273765be5e95de5"
 archive = "debian"
 filename = "pool/main/e/e2fsprogs/logsave_1.47.2-3+b12_amd64.deb"
+architecture = "amd64"
 source = "e2fsprogs"
 
 [[tools.package]]
@@ -1090,6 +1220,7 @@ version = "13.0.0"
 sha256 = "0788e4b0b72db1bcf74a19cb24c3511e7770ad0b341f0f30e361701c3072f53e"
 archive = "debian"
 filename = "pool/main/m/media-types/media-types_13.0.0_all.deb"
+architecture = "all"
 source = "media-types"
 
 [[tools.package]]
@@ -1098,6 +1229,7 @@ version = "2.41.5-0+deb13u1"
 sha256 = "eb70a615114ac40123768beb20e302554d5cb7edb33290be7e418ebe1075c878"
 archive = "debian"
 filename = "pool/main/u/util-linux/mount_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "util-linux"
 
 [[tools.package]]
@@ -1106,6 +1238,7 @@ version = "4.0.48-1"
 sha256 = "e7069109ce49f5a450caeca681e454f24dc412f9fdb289cde54e115162203760"
 archive = "debian"
 filename = "pool/main/m/mtools/mtools_4.0.48-1_amd64.deb"
+architecture = "amd64"
 source = "mtools"
 
 [[tools.package]]
@@ -1114,6 +1247,7 @@ version = "6.5"
 sha256 = "76bafa92947ebd37b0a6f9ec6570412041f56edebc1c66d323731216d318471e"
 archive = "debian"
 filename = "pool/main/n/netbase/netbase_6.5_all.deb"
+architecture = "all"
 source = "netbase"
 
 [[tools.package]]
@@ -1122,6 +1256,7 @@ version = "3.5.7-1~deb13u3"
 sha256 = "c12e0266c4780749a4702b8959ac979689f4182e18eed85a8a5eb90ed0e16eab"
 archive = "debian-security"
 filename = "pool/updates/main/o/openssl/openssl-provider-legacy_3.5.7-1~deb13u3_amd64.deb"
+architecture = "amd64"
 source = "openssl"
 
 [[tools.package]]
@@ -1130,6 +1265,7 @@ version = "3.13.5-1"
 sha256 = "c1388174dc7140e6c19a6dd39f8a0dcb38a835cd66c65644e0dded43d5223cb0"
 archive = "debian"
 filename = "pool/main/p/python3-defaults/python3_3.13.5-1_amd64.deb"
+architecture = "amd64"
 source = "python3-defaults"
 
 [[tools.package]]
@@ -1138,6 +1274,7 @@ version = "1.17.1-3"
 sha256 = "7cfe53f3eff772127fd22e503876e3dd2b34b4c2a68fe9a524ce214e5bb7927a"
 archive = "debian"
 filename = "pool/main/p/python-cffi/python3-cffi-backend_1.17.1-3_amd64.deb"
+architecture = "amd64"
 source = "python-cffi"
 
 [[tools.package]]
@@ -1146,6 +1283,7 @@ version = "3.13.5-1"
 sha256 = "a5d2371bebf3689f676e3f3bae800371bcc4392a8a51269e23d528249b399615"
 archive = "debian"
 filename = "pool/main/p/python3-defaults/python3-minimal_3.13.5-1_amd64.deb"
+architecture = "amd64"
 source = "python3-defaults"
 
 [[tools.package]]
@@ -1154,6 +1292,7 @@ version = "2024.8.26-2.1"
 sha256 = "2100cbd75b5dfd8a8ed5a8fe6ee7adf174e78b34004dcbb5885661834d2f972e"
 archive = "debian"
 filename = "pool/main/p/python-pefile/python3-pefile_2024.8.26-2.1_all.deb"
+architecture = "all"
 source = "python-pefile"
 
 [[tools.package]]
@@ -1162,6 +1301,7 @@ version = "0.23.0-4"
 sha256 = "f1c14068258a19023e7b265c6673b0cbcd915c01a27e6cd77775b0408eca9b98"
 archive = "debian"
 filename = "pool/main/p/python-zstandard/python3-zstandard_0.23.0-4_amd64.deb"
+architecture = "amd64"
 source = "python-zstandard"
 
 [[tools.package]]
@@ -1170,6 +1310,7 @@ version = "3.13.5-2+deb13u5"
 sha256 = "460c1fd72845516ac3ce9d1686916f3ab2e4c86f8a9746e14d26243a47e2b98d"
 archive = "debian"
 filename = "pool/main/p/python3.13/python3.13_3.13.5-2+deb13u5_amd64.deb"
+architecture = "amd64"
 source = "python3.13"
 
 [[tools.package]]
@@ -1178,6 +1319,7 @@ version = "3.13.5-2+deb13u5"
 sha256 = "c1fda9e7b1bf15b2fa75a238d8a8710e142fe14c722fc650c5fc614f078c9073"
 archive = "debian"
 filename = "pool/main/p/python3.13/python3.13-minimal_3.13.5-2+deb13u5_amd64.deb"
+architecture = "amd64"
 source = "python3.13"
 
 [[tools.package]]
@@ -1186,6 +1328,7 @@ version = "8.2-6"
 sha256 = "f77e8aa0bf0de618f11cb0b21658a4ed60f177d63b3cf26d7fc3706b6d0eaaa9"
 archive = "debian"
 filename = "pool/main/r/readline/readline-common_8.2-6_all.deb"
+architecture = "all"
 source = "readline"
 
 [[tools.package]]
@@ -1194,6 +1337,7 @@ version = "1.3.0-3+b2"
 sha256 = "97760aa17acceee0cace13d9edbed781d891b43e0dec0d6ddc4bd5e4c3ac65aa"
 archive = "debian"
 filename = "pool/main/r/rust-sequoia-sqv/sqv_1.3.0-3+b2_amd64.deb"
+architecture = "amd64"
 source = "rust-sequoia-sqv"
 
 [[tools.package]]
@@ -1202,6 +1346,7 @@ version = "257.13-1~deb13u1"
 sha256 = "ee81302a1d5b7434762b6e784a572854d4b6cf6235e33e2d104ad4e1cae71ab4"
 archive = "debian"
 filename = "pool/main/s/systemd/systemd_257.13-1~deb13u1_amd64.deb"
+architecture = "amd64"
 source = "systemd"
 
 [[tools.package]]
@@ -1210,6 +1355,7 @@ version = "257.13-1~deb13u1"
 sha256 = "390ecdcef9bbb753f51bb6d8f696bdae2f1dbedde7239c49ccb2512f137a8933"
 archive = "debian"
 filename = "pool/main/s/systemd/systemd-boot-efi_257.13-1~deb13u1_amd64.deb"
+architecture = "amd64"
 source = "systemd"
 
 [[tools.package]]
@@ -1218,6 +1364,7 @@ version = "257.13-1~deb13u1"
 sha256 = "06c6f2c285eb81c8ab1dbcc8f5f8721dd96a2228bc9e6a85beaa22460e0599e1"
 archive = "debian"
 filename = "pool/main/s/systemd/systemd-repart_257.13-1~deb13u1_amd64.deb"
+architecture = "amd64"
 source = "systemd"
 
 [[tools.package]]
@@ -1226,6 +1373,7 @@ version = "257.13-1~deb13u1"
 sha256 = "78e1f7921f39d07512d848244b8b3e320e93e77d0b5778c211809e9f3b8b8284"
 archive = "debian"
 filename = "pool/main/s/systemd/systemd-ukify_257.13-1~deb13u1_all.deb"
+architecture = "all"
 source = "systemd"
 
 [[tools.package]]
@@ -1234,6 +1382,7 @@ version = "1.35+dfsg-3.1"
 sha256 = "214c02e1aa291076a3147b8a4c4cae02fadf4c67df629186e3e313726faef1de"
 archive = "debian"
 filename = "pool/main/t/tar/tar_1.35+dfsg-3.1_amd64.deb"
+architecture = "amd64"
 source = "tar"
 
 [[tools.package]]
@@ -1242,6 +1391,7 @@ version = "2026f-0+deb13u1"
 sha256 = "2c1c561091402883430d0d47c57a3c0aa00b44afc8a6239265065a87211a5c11"
 archive = "debian"
 filename = "pool/main/t/tzdata/tzdata_2026f-0+deb13u1_all.deb"
+architecture = "all"
 source = "tzdata"
 
 [[tools.package]]
@@ -1250,6 +1400,7 @@ version = "2.41.5-0+deb13u1"
 sha256 = "7d5b1176cc3d8cc6b290b3ec17af458f362d9200845f30da22057a8198744430"
 archive = "debian"
 filename = "pool/main/u/util-linux/util-linux_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "util-linux"
 
 [[tools.package]]
@@ -1258,6 +1409,7 @@ version = "5.8.1-1+deb13u2"
 sha256 = "66b060ef2f09722c947ba019da5e9a63f6bac9d7bf90b32339a72c0390acc53f"
 archive = "debian-security"
 filename = "pool/updates/main/x/xz-utils/xz-utils_5.8.1-1+deb13u2_amd64.deb"
+architecture = "amd64"
 source = "xz-utils"
 
 [[tools.package]]
@@ -1266,4 +1418,5 @@ version = "1:1.3.dfsg+really1.3.1-1+deb13u1"
 sha256 = "8c27c342230503b73dfde629642c3b352e87b554e06d60cf58772f236a305ceb"
 archive = "debian-security"
 filename = "pool/updates/main/z/zlib/zlib1g_1.3.dfsg+really1.3.1-1+deb13u1_amd64.deb"
+architecture = "amd64"
 source = "zlib"

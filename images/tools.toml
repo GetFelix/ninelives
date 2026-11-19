@@ -11,8 +11,9 @@ sha256 = "33520d662e151d6c43e910c3840ac971fd6023e4488d9c10599e199a07f77d8b"
 
 # The container the fetch phase and the build run in. The runner supplies only
 # its kernel, container runtime and network. Debian 13 trixie-20261104-slim.
-# The official Debian images are built reproducibly from snapshot.debian.org
-# (debuerreotype), which is why the digest is the trust root.
+# The official Debian images are built with debuerreotype, whose stated aim is
+# reproducible builds from snapshot.debian.org. We do not rebuild the image;
+# the digest is the trust root.
 #
 # What the fetch phase runs on is not in that image. scripts/bootstrap.sh
 # installs these packages into it, each .deb checked against the SHA-256 in

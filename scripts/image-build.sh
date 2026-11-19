@@ -49,6 +49,9 @@ print(d)' "$@"
 }
 
 if [[ ${NL_IMAGE_PHASE:-fetch} == fetch ]]; then
+  # The container has no git, so these come from the caller. Both end up in the image.
+  [[ ${COMMIT:-} =~ ^[0-9a-f]{40}$ ]] || { echo "COMMIT must be a 40-digit lowercase hex commit id (the container has no git)" >&2; exit 2; }
+  [[ ${SOURCE_DATE_EPOCH:-} =~ ^[0-9]+$ ]] || { echo "SOURCE_DATE_EPOCH must be a number of seconds (the container has no git)" >&2; exit 2; }
   if ! command -v python3 >/dev/null; then
     # What the container holds before the bootstrap touches it, so the build
     # phase can tell what the bootstrap added or changed.
@@ -57,7 +60,6 @@ if [[ ${NL_IMAGE_PHASE:-fetch} == fetch ]]; then
     # debian.lock before dpkg unpacks it. No apt resolution, no keyring.
     "$repo/scripts/bootstrap.sh" "$repo/images/debian.lock"
   fi
-  [[ -n ${COMMIT:-} && -n ${SOURCE_DATE_EPOCH:-} ]] || { echo "COMMIT and SOURCE_DATE_EPOCH must be set: the container has no git" >&2; exit 2; }
 
   python3 -I "$repo/scripts/image_lock.py" check
   # The lock must be what resolution gives for the pins, so a hand edit cannot add a package.

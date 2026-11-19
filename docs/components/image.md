@@ -300,7 +300,7 @@ repository; changing one is a reviewed pull request
 | **Felix and felixd** | `images/components.toml` | As 0004: SHA-256, and for felixd the Sigstore bundle on `SHA256SUMS` against the identity and issuer in the manifest, verified offline against a Sigstore trusted root pinned in `images/keys/sigstore/`. Felix has no signature ([felix#2796](https://github.com/GetFelix/felix/issues/2796)) and is checked by hash only. *Not built yet:* the first slice checks the SHA-256 only, not felixd's Sigstore bundle ([#93](https://github.com/GetFelix/ninelives/issues/93)). | Build fails |
 | **NineLives' own programs** (init, join, the firewall loader) | This commit, `Cargo.lock`, and the Rust toolchain by exact version in `rust-toolchain.toml` | Cargo checks each crate's checksum against `Cargo.lock`. The toolchain archives are checked against SHA-256s committed in `images/tools.toml`, because rustup does not enforce its signatures. *Not built yet:* the toolchain archives are not checked against SHA-256s; CI runs `rustup toolchain install` ([#95](https://github.com/GetFelix/ninelives/issues/95)). | Build fails |
 | **mkosi** | `images/tools.toml`: an exact release, its source archive URL and SHA-256 | SHA-256. mkosi needs only Python's standard library, so it runs from the archive with nothing resolved from PyPI. The version is chosen in #1. | Build fails |
-| **Bootstrap container** | `images/tools.toml`: the official Debian 13 slim container image by digest, plus the `bootstrap` set of `images/debian.lock` (python3, `gpgv`, xz-utils, ca-certificates and their dependencies) | The container runtime checks the digest. `scripts/bootstrap.sh` checks each bootstrap `.deb` against the lock's SHA-256 with `sha256sum` before `dpkg` unpacks it, and the lock is then regenerated against the signed archive ([Bootstrap](#bootstrap)). | Build fails |
+| **Bootstrap container** | `images/tools.toml`: the official Debian 13 slim container image by digest, plus the `bootstrap` set of `images/debian.lock` (python3, `gpgv`, xz-utils, ca-certificates and their dependencies) | The container runtime checks the digest. `scripts/bootstrap.sh` checks each bootstrap `.deb` against the lock's SHA-256 with `sha256sum` before `dpkg` unpacks it, and the lock is then regenerated against the signed archive, which catches drift but not a tampered lock ([Bootstrap](#bootstrap)). | Build fails |
 | **Build tools** (`mkfs.erofs`, `veritysetup`, `ukify`, `sbsign`, Clang (the kernel's compiler, [kernel design](kernel.md)), the Sigstore verifier, diffoscope) | mkosi's tools tree, built from the same Debian snapshot and listed in the lock; the Sigstore verifier, if not in Debian 13, by SHA-256 in `images/tools.toml` | As Debian packages *Built so far:* `mkfs.erofs`, `veritysetup`, `ukify`, `systemd-repart` and their dependencies from Debian, in the lock. *Not built yet:* `sbsign`, Clang in the image job, the Sigstore verifier and diffoscope; the tools are installed straight from the verified store, not through mkosi's tools tree. | Build fails |
 | **CI runner** | The `ubuntu-24.04` label, never `ubuntu-latest`. The image version GitHub reports is recorded in the provenance. | Nothing can verify a hosted runner. The bootstrap container and tools tree keep it to its kernel, its container runtime and the network. *Not built yet:* the runner image version is not recorded in provenance (no provenance yet, [#100](https://github.com/GetFelix/ninelives/issues/100)). | See [Open questions](#open-questions) |
 | **GitHub Actions** | Each by full commit SHA, with the tag in a comment | The workflow checks in [Actions hygiene](#actions-hygiene) (S21, #65) | PR fails |
@@ -360,13 +360,20 @@ needs. `scripts/bootstrap.sh` adds the rest, with no network resolution:
    the pinned snapshot over plain http, and compares its SHA-256 with the
    lock using `sha256sum`. One mismatch stops the run before `dpkg` sees
    any of them.
-3. `dpkg -i` unpacks and configures them together, and the script checks that
-   each is installed at the locked version.
+3. `dpkg -i` runs on all of them. A Pre-Depends is checked when the
+   dependent is unpacked, so python3 is refused until python3-minimal is
+   configured, while dpkg carries on with the rest. The script calls dpkg
+   again with what is left, as long as that set keeps shrinking, and fails
+   when a call gets nowhere. It then checks that each package is installed
+   at the locked version.
 
 A package the container already has is left as it is: the digest vouches for
-it. The fetch phase then regenerates the lock from the signed `InRelease`
-files and fails on any difference, so the hashes `bootstrap.sh` trusted are the
-archive's own. The build phase still fails if the bootstrap upgraded a package
+it. The bootstrap hashes are a reviewed pin, like the rest of the lock: nothing
+checks them before the packages run. The fetch phase then regenerates the lock
+from the signed `InRelease` files and fails on any difference. That runs on
+the python3 and `gpgv` just installed, so it cannot vouch for itself. It
+catches honest drift between the lock and the archive, not a tampered lock or
+a tampered package that the lock names. The build phase still fails if the bootstrap upgraded a package
 the container had, purges what it added beyond the locked tools, reinstalls
 the tools from the verified store and checks that the installed set is the
 container's plus the locked tools.

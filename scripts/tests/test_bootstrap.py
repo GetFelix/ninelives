@@ -40,6 +40,14 @@ done
 echo "$@" >> "$FIXTURE_STATE/dpkg-calls"
 exit $rc
 """
+CHAIN_DPKG = """#!/bin/sh
+# installs only the first .deb of each call
+f=$1
+sha=$(basename "$f" .deb)
+grep "^$sha " "$FIXTURE_NAMES" | cut -d' ' -f2- >> "$FIXTURE_STATE/installed"
+echo "$@" >> "$FIXTURE_STATE/dpkg-calls"
+exit 1
+"""
 QUERY = """#!/bin/sh
 # dpkg-query -W -f FMT NAME: "ii  <version>" for an installed name
 name=$4
@@ -142,7 +150,7 @@ class Bootstrap(unittest.TestCase):
         (self.tmp / "bin" / "dpkg").write_text("#!/bin/sh\nexit 0\n")
         r = self.run_script()
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn("is not installed", r.stderr)
+        self.assertIn("made no progress", r.stderr)
 
     def test_a_pre_depends_is_retried_in_a_later_call(self):
         self.package("python3", "3.13.5-1")
@@ -152,6 +160,15 @@ class Bootstrap(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(len(self.dpkg_calls()), 2)
         self.assertEqual(len(self.dpkg_calls()[1].split()), 1)
+
+    def test_retries_continue_while_the_set_shrinks(self):
+        # a chain: each call installs one more package, so three calls are needed
+        for n in ("a", "b", "c"):
+            self.package(n, "1")
+        (self.tmp / "bin" / "dpkg").write_text(CHAIN_DPKG)
+        r = self.run_script()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(len(self.dpkg_calls()), 3)
 
     def test_a_lock_without_bootstrap_packages_fails(self):
         r = self.run_script()
@@ -163,6 +180,36 @@ class Bootstrap(unittest.TestCase):
         r = self.run_script()
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("bad lock entry", r.stderr)
+
+
+
+@unittest.skipUnless(bash_ok(), "needs bash 4.4+")
+class BuildInputs(unittest.TestCase):
+    """image-build.sh refuses a bad COMMIT or SOURCE_DATE_EPOCH before it touches the machine."""
+
+    BUILD = SCRIPT.parent / "image-build.sh"
+
+    def run_build(self, **env):
+        with tempfile.TemporaryDirectory() as d:
+            d = pathlib.Path(d)
+            (d / "init").write_text("")
+            (d / "k").mkdir()
+            e = {k: v for k, v in os.environ.items() if k not in ("COMMIT", "SOURCE_DATE_EPOCH", "NL_IMAGE_PHASE")}
+            e.update(env)
+            return subprocess.run([BASH, str(self.BUILD), "--kernel", str(d / "k"), "--init", str(d / "init"),
+                                   "--out", str(d / "out"), "--work", str(d / "work")], env=e, capture_output=True, text=True)
+
+    def test_bad_commit_is_refused(self):
+        for bad in ("", "abc", "G" * 40, "A" * 40, "a" * 39, "a" * 41):
+            r = self.run_build(COMMIT=bad, SOURCE_DATE_EPOCH="1")
+            self.assertEqual(r.returncode, 2, bad)
+            self.assertIn("COMMIT must be", r.stderr)
+
+    def test_bad_epoch_is_refused(self):
+        for bad in ("", "-1", "1.5", "now", "1 2"):
+            r = self.run_build(COMMIT="a" * 40, SOURCE_DATE_EPOCH=bad)
+            self.assertEqual(r.returncode, 2, bad)
+            self.assertIn("SOURCE_DATE_EPOCH must be", r.stderr)
 
 
 if __name__ == "__main__":

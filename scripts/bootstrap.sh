@@ -87,15 +87,21 @@ done
 
 # A Pre-Depends is checked when the dependent is unpacked, so python3 cannot go
 # in beside python3-minimal in one call. dpkg carries on past it and configures
-# the rest, so a second call with what is left finds it satisfied. What is still
-# missing after that fails the check below.
-for round in 1 2 3; do
+# the rest, so another call with what is left finds it satisfied. Calls repeat
+# while the left-over set shrinks; a call that gets nowhere is an error.
+prev=-1
+while :; do
   todo=()
   for i in "${!want[@]}"; do
     [[ $(installed_version "${want[$i]%%=*}") == "${want[$i]#*=}" ]] || todo+=("${debs[$i]}")
   done
   [[ ${#todo[@]} -gt 0 ]] || break
-  install_debs "${todo[@]}" || echo "bootstrap: dpkg round $round did not finish, retrying what is left" >&2
+  if [[ $prev -ge 0 && ${#todo[@]} -ge $prev ]]; then
+    echo "bootstrap: dpkg made no progress, ${#todo[@]} packages are still not installed" >&2
+    exit 1
+  fi
+  prev=${#todo[@]}
+  install_debs "${todo[@]}" || echo "bootstrap: dpkg did not finish, retrying what is left" >&2
 done
 for w in "${want[@]}"; do
   [[ $(installed_version "${w%%=*}") == "${w#*=}" ]] || { echo "bootstrap: $w is not installed" >&2; exit 1; }

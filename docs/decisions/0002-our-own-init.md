@@ -32,9 +32,9 @@ what a NineLives machine needs:
 6. Shut down in order: stop services in reverse start order, give each the
    time its contract says it needs (felixd's is about 130 s with its
    default settings, see [felixd-contract.md](../felixd-contract.md)), kill
-   what is still running at its deadline, then `sync`, unmount, and power
-   off or reboot. A service killed at its deadline is reported, and the
-   shutdown still finishes.
+   what is still running at its deadline, then `syncfs` the data partition
+   and power off or reboot. A service killed at its deadline is reported,
+   and the shutdown still finishes.
 7. Report each service's state.
 
 Network configuration and time sync are small services the init starts,
@@ -51,6 +51,26 @@ reviewed before its code
 The init talks to the kernel through standard system calls and the cgroup
 v2 filesystem, so it does not tie NineLives to Linux more than
 [0001](0001-linux-kernel.md) already does.
+
+### Amended by the init's design, 2026-11-18
+
+The design review changed the list in four places:
+
+- **Launchers.** Before dropping root, PID 1 forks one small process per
+  service at that service's uid, which starts the service when PID 1 asks.
+  This is the price of no root after early boot: starting processes under
+  several uids from PID 1 would need `CAP_SETUID`, which is root in all but
+  name.
+- **`syncfs` instead of unmount** (item 6). `syncfs` on an fd opened at
+  mount reports every writeback error since the mount, because the kernel
+  samples errors when a file is opened. An unmount fails with `EBUSY` behind
+  a stuck process and needs `CAP_SYS_ADMIN` in PID 1.
+- **The power button** (item 5). It is how qemu and every cloud ask a guest
+  to stop; without it every cloud stop is a power cut instead of an ordered
+  shutdown.
+- **The packet filter** is not part of PID 1. A separate loader runs once
+  in phase 0, before the drop, like the helpers in item 3; the init only
+  starts it earlier, so no running service needs netfilter access.
 
 ## Options considered
 

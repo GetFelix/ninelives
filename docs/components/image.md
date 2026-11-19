@@ -61,20 +61,28 @@ SBOM, source or provenance outputs
 
 The `boot` job runs after `image` in the same workflow run and boots the
 `image-qemu-x86_64` artifact of that run. A failed build uploads under another
-name, so a failed image is never booted. It runs `scripts/boot-run.sh` in the
-bootstrap container and starts `qemu-system-x86_64` with UEFI firmware,
+name, so a failed image is never booted. `tools/boot.sh` runs
+`scripts/boot-run.sh` in the bootstrap container, which gets `/dev/kvm` when the
+runner has it and no other privilege. The script starts `qemu-system-x86_64` with UEFI firmware,
 no display, the serial port written to a log file and a hard timeout. It uses
 KVM if the runner has `/dev/kvm` (180 s) and falls back to emulation
 otherwise (900 s). The `.raw` is the virtio disk.
 
 - **Pass:** the init's ready line (`"machine":"up"`) appears on the serial
-  console, and nothing on it is a kernel panic, an oops or a dm-verity error.
+  console, qemu is still running 3 s later, and nothing on the console is a
+  kernel panic, an oops, a dm-verity error or an init record whose machine
+  state is not `up` after the ready line.
 - **Fail:** any of those, the UEFI shell (the firmware found nothing to boot),
   the timeout, or a missing ready line.
 - **Corruption.** The job boots two copies of the image, one with a byte
   flipped in block 0 of the root partition and one in block 0 of the hash tree.
-  Both are read on every boot. Each must end in a dm-verity error and a panic,
-  with the VM rebooting (`panic=10`), and the ready line must never appear.
+  Both are read on every boot. Each must log a `data block` (root) or
+  `metadata block` (hash tree) `is corrupted` line from dm-verity, then exactly
+  `Kernel panic - not syncing: dm-verity device corrupted`, then qemu must exit
+  (it runs with `-no-reboot`, so a guest reset ends it). Any other panic, a
+  failed root mount or an oops fails the case, as does the ready line. Without
+  `panic_on_corruption` the kernel would return `EIO` and panic on the mount
+  instead, which this does not accept.
 
 The serial logs and the verdicts are uploaded as `boot-serial-logs` on every
 outcome. `tools/boot.sh` runs the same three boots on a Linux host with docker

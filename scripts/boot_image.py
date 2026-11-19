@@ -47,6 +47,12 @@ SETTLE = 3  # seconds to keep watching after the ready line, for a late panic
 REBOOT_WAIT = 40  # panic=10 reboots after 10 s; the rest is slack for TCG
 
 
+# What dm-verity prints with panic_on_corruption: the block, then this panic.
+# A root that fails to mount some other way (EIO, a missing device) must not pass.
+VERITY_BLOCK = re.compile(r"device-mapper: verity: \S+: (data|metadata) block \d+ is corrupted")
+VERITY_PANIC = re.compile(r"^(\[[^\]]*\]\s*)?Kernel panic - not syncing: dm-verity device corrupted$")
+
+
 def lines(log: str) -> list[str]:
     return [l.rstrip("\r") for l in log.split("\n")]
 
@@ -55,14 +61,29 @@ def ready_line(log: str) -> str | None:
     return next((l for l in lines(log) if READY.match(l)), None)
 
 
+def record_state(line: str) -> str | None:
+    """The machine state of an init record, None if the line has none."""
+    try:
+        rec = json.loads(line[len("ninelives-init "):])
+    except ValueError:
+        return None
+    return rec.get("machine") if isinstance(rec, dict) else None
+
+
 def failures(log: str) -> list[tuple[str, str]]:
     """(kind, line) for every console line that is a failure, in log order."""
     out = []
+    up = False
     for l in lines(log):
         if l.startswith("ninelives-init {"):
-            # The init's own records are not kernel output, except its panic hook's.
+            # The init's own records are not kernel output, except its panic hook's
+            # and a machine state other than up once it has been up.
             if '"panic"' in l:
                 out.append(("init panic", l))
+            elif READY.match(l):
+                up = True
+            elif up and (state := record_state(l)) not in (None, "up"):
+                out.append(("init state", l))
             continue
         for kind, rx in FAILURES:
             if rx.search(l):
@@ -86,9 +107,13 @@ def verdict(log: str, expect: str) -> list[str]:
     errors = []
     if ready is not None:
         errors.append("the init reported ready on a corrupted image")
-    errors += [f"{kind} on the console: {line}" for kind, line in bad if kind == "firmware"]
-    if not any(kind == "verity" for kind, _ in bad):
-        errors.append("no dm-verity failure on the console")
+    # Only dm-verity's own panic is the expected end; any other failure is a different problem.
+    errors += [f"{kind} on the console: {line}" for kind, line in bad
+               if not (kind == "verity" or (kind == "panic" and VERITY_PANIC.match(line)))]
+    if not any(VERITY_BLOCK.search(l) for l in lines(log)):
+        errors.append("no dm-verity corrupted-block line on the console")
+    if not any(VERITY_PANIC.match(l) for l in lines(log)):
+        errors.append("no 'Kernel panic - not syncing: dm-verity device corrupted' line on the console")
     return errors
 
 
@@ -153,13 +178,20 @@ def watch(proc: subprocess.Popen, log: pathlib.Path, expect: str, timeout: float
         elapsed = time.monotonic() - start
         text = read_log(log)
         if proc.poll() is not None:
-            return "qemu exited", elapsed
+            # -no-reboot: a guest reset ends qemu, so this is the reboot after the panic.
+            reset = expect == "verity" and any(VERITY_PANIC.match(l) for l in lines(text))
+            if reset:
+                return "rebooted", elapsed
+            return ("exited after ready" if ready_line(text) else "qemu exited"), elapsed
         if elapsed > timeout:
             return "timeout", elapsed
         if expect == "ready" and (ready_line(text) or failures(text)):
             if ready_line(text):
                 time.sleep(SETTLE)
-            return "ready" if ready_line(text) else "failure", elapsed
+                if proc.poll() is not None:
+                    return "exited after ready", elapsed
+                return "ready", elapsed
+            return "failure", elapsed
         if any(k == "firmware" for k, _ in failures(text)):
             return "failure", elapsed
         if expect == "verity" and ready_line(text):
@@ -215,8 +247,11 @@ def main() -> int:
 
     text = read_log(args.log)
     errors = verdict(text, expect)
-    if why in ("timeout", "no reboot") or (why == "qemu exited" and expect == "ready"):
-        errors.append({"timeout": f"no answer within {timeout:.0f}s", "no reboot": "the panic did not reboot the VM"}.get(why, "qemu exited before the init was ready"))
+    if why in ("timeout", "no reboot", "exited after ready") or (why == "qemu exited" and expect == "ready"):
+        errors.append({"timeout": f"no answer within {timeout:.0f}s", "no reboot": "the panic did not reboot the VM",
+                       "exited after ready": "qemu exited after the ready line"}.get(why, "qemu exited before the init was ready"))
+    if expect == "verity" and why not in ("rebooted", "no reboot", "timeout"):
+        errors.append(f"the VM did not reset after the panic (stopped: {why})")
     if stderr:
         print("qemu stderr:\n" + stderr)
     result = {"expect": expect, "accel": accel, "stopped": why, "seconds": round(secs, 1), "corruption": note,

@@ -121,6 +121,7 @@ run_case() { # run_case NAME [root|hash]
   local name=$1 args=()
   [[ -n ${2:-} ]] && args=(--corrupt "$2")
   mkdir -p "$out"
+  trap 'chmod -R a+rX "$out"' RETURN  # the container runs as root; the host reads the logs
   python3 -I "$repo/scripts/boot_image.py" --image "$image" \
     --ovmf-code /usr/share/OVMF/OVMF_CODE_4M.fd --ovmf-vars /usr/share/OVMF/OVMF_VARS_4M.fd \
     --log "$out/serial-$name.log" "${args[@]}" 2>&1 | tee "$out/boot-$name.txt"

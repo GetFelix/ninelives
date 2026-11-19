@@ -30,6 +30,14 @@ VERITY_PANIC = "\n".join([
     "[    0.70] device-mapper: verity: 253:0: data block 0 is corrupted",
     "[    0.71] Kernel panic - not syncing: dm-verity device corrupted",
 ])
+# What the kernel prints without panic_on_corruption: EIO to the reader, then the mount fails.
+VERITY_EIO = "\n".join([
+    HEALTHY.split("\n")[0], HEALTHY.split("\n")[1],
+    "[    0.70] device-mapper: verity: 253:0: data block 0 is corrupted",
+    "[    0.71] EROFS (device dm-0): cannot read erofs superblock",
+    "[    0.72] VFS: Cannot open root device \"dm-0\" or unknown-block(253,0): error -5",
+    "[    0.73] Kernel panic - not syncing: VFS: Unable to mount root fs on unknown-block(253,0)",
+])
 
 
 class Verdicts(unittest.TestCase):
@@ -70,6 +78,33 @@ class Verdicts(unittest.TestCase):
         self.assertEqual(bi.verdict(VERITY_PANIC, "verity"), [])
         self.assertTrue(bi.verdict(HEALTHY, "verity"))
         self.assertTrue(any("ready" in e for e in bi.verdict(VERITY_PANIC + "\n" + READY, "verity")))
+
+    def test_eio_then_a_root_mount_panic_is_not_the_verity_panic(self):
+        errors = bi.verdict(VERITY_EIO, "verity")
+        self.assertTrue(any("dm-verity device corrupted" in e for e in errors), errors)
+        self.assertTrue(any("VFS" in e for e in errors), errors)
+
+    def test_a_verity_line_without_the_panic_fails(self):
+        log = "\n".join(VERITY_PANIC.split("\n")[:-1])
+        self.assertTrue(any("device corrupted" in e for e in bi.verdict(log, "verity")))
+
+    def test_a_metadata_block_line_counts(self):
+        log = VERITY_PANIC.replace("data block 0", "metadata block 0")
+        self.assertEqual(bi.verdict(log, "verity"), [])
+
+    def test_the_panic_without_a_block_line_fails(self):
+        log = "\n".join(l for l in VERITY_PANIC.split("\n") if "is corrupted" not in l)
+        self.assertTrue(any("corrupted-block" in e for e in bi.verdict(log, "verity")))
+
+    def test_an_init_state_other_than_up_after_up_fails_a_clean_boot(self):
+        for state in ("emergency", "degraded"):
+            rec = READY.replace('"up"', f'"{state}"')
+            errors = bi.verdict(HEALTHY + "\n" + READY + "\n" + rec, "ready")
+            self.assertTrue(any("init state" in e for e in errors), (state, errors))
+
+    def test_records_before_up_and_repeated_up_are_fine(self):
+        booting = READY.replace('"up"', '"booting"')
+        self.assertEqual(bi.verdict(HEALTHY + "\n" + booting + "\n" + READY + "\n" + READY, "ready"), [])
 
     def test_an_unrelated_panic_is_not_a_verity_failure(self):
         log = HEALTHY + "\n[ 1.0] Kernel panic - not syncing: Fatal exception"
@@ -193,6 +228,23 @@ class Run(unittest.TestCase):
         code, out, _ = self.run_boot([*VERITY_PANIC.split("\n"), "exit"], "--corrupt", "root")
         self.assertEqual(code, 0, out)
         self.assertIn("flipped one byte", out)
+
+    def test_corrupted_boot_with_eio_and_a_mount_panic_fails(self):
+        code, out, _ = self.run_boot([*VERITY_EIO.split("\n"), "exit"], "--corrupt", "root")
+        self.assertEqual(code, 1)
+        self.assertIn("VFS", out)
+
+    def test_clean_boot_fails_if_qemu_exits_after_ready(self):
+        code, out, _ = self.run_boot([*HEALTHY.split("\n"), READY, "exit"])
+        self.assertEqual(code, 1)
+        self.assertIn("qemu exited after the ready line", out)
+
+    def test_clean_boot_fails_on_a_later_emergency_record(self):
+        late = READY.replace('"up"', '"emergency"')
+        with mock.patch.object(bi, "SETTLE", 2):
+            code, out, _ = self.run_boot([*HEALTHY.split("\n"), READY, "sleep 0.3", late, "sleep 30"])
+        self.assertEqual(code, 1)
+        self.assertIn("init state", out)
 
     def test_corrupted_boot_fails_if_the_vm_does_not_reboot(self):
         with mock.patch.object(bi, "REBOOT_WAIT", 1):

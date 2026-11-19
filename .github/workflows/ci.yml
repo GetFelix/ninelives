@@ -368,18 +368,16 @@ jobs:
 
   # Boots the image of this run in qemu with UEFI, headless, serial to a log,
   # and a hard timeout (image.md, "Boot test"). qemu and the firmware come from
-  # the lock's boot set, in the same container the image was built in. It takes
-  # the image-qemu-x86_64 artifact only: a failed build uploads under another
-  # name, and a skipped or failed image job means this job does not run.
+  # the lock's boot set, installed in the same pinned container the image was
+  # built in. It takes the image-qemu-x86_64 artifact only: a failed build
+  # uploads under another name, and a skipped or failed image job means this
+  # job does not run. The container is started by tools/boot.sh, not by the
+  # job, so it gets only /dev/kvm (when the runner has it) and not privileges.
   boot:
     needs: [kernel-changes, image]
     if: needs.kernel-changes.outputs.run == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    container:
-      image: debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 # trixie-20261104-slim
-      # Privileged so /dev/kvm is there when the runner has it.
-      options: --privileged
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -387,45 +385,28 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: image-qemu-x86_64
-          path: /__w/_temp/boot/image
-      - name: Pinned qemu and firmware
-        id: prepare
-        run: scripts/boot-run.sh prepare --work /__w/_temp/boot/work
+          path: ${{ runner.temp }}/boot/image
       - name: Accelerator
         run: |
-          if [[ -r /dev/kvm && -w /dev/kvm ]]; then echo "/dev/kvm is usable: KVM"; else echo "no /dev/kvm: TCG, with the longer timeout"; fi
-      - name: Boot, the init reports ready
-        id: clean
-        if: always() && steps.prepare.outcome == 'success'
+          if [[ -e /dev/kvm ]]; then echo "/dev/kvm is there: the container gets it, KVM"; else echo "no /dev/kvm: TCG, with the longer timeout"; fi
+      - name: Boot the image, then two corrupted copies
         run: |
-          scripts/boot-run.sh run --work /__w/_temp/boot/work --out /__w/_temp/boot/out \
-            --image "$(ls /__w/_temp/boot/image/*-production-x86_64.raw)"
-      - name: Boot with one byte flipped in the root
-        id: root
-        if: always() && steps.prepare.outcome == 'success'
-        run: |
-          scripts/boot-run.sh run --work /__w/_temp/boot/work --out /__w/_temp/boot/out --corrupt root \
-            --image "$(ls /__w/_temp/boot/image/*-production-x86_64.raw)"
-      - name: Boot with one byte flipped in the hash tree
-        id: hash
-        if: always() && steps.prepare.outcome == 'success'
-        run: |
-          scripts/boot-run.sh run --work /__w/_temp/boot/work --out /__w/_temp/boot/out --corrupt hash \
-            --image "$(ls /__w/_temp/boot/image/*-production-x86_64.raw)"
+          tools/boot.sh --out "$RUNNER_TEMP/boot/out" \
+            --image "$(ls "$RUNNER_TEMP"/boot/image/*-production-x86_64.raw)"
       - name: Summary
         if: always()
         run: |
           {
             echo '### Boot'
             echo '```'
-            grep -h '^boot-result' /__w/_temp/boot/out/boot-*.txt || true
+            grep -h '^boot-result' "$RUNNER_TEMP"/boot/out/boot-*.txt || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: boot-serial-logs
-          path: /__w/_temp/boot/out/
+          path: ${{ runner.temp }}/boot/out/
           if-no-files-found: warn
 
   # The one check main requires, so a job added later is covered without

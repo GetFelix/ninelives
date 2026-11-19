@@ -30,12 +30,17 @@ pub(crate) fn run() -> Booted {
     let mut emergency = None;
     // Step 1, failing closed: the first failure ends the mounts.
     for m in &mounts::EARLY {
-        if let Err(e) = mount_one(m) {
+        let mounted = mount_one(m);
+        if m.target == "/dev" {
+            // Even without /dev, fd 1 may be a console the kernel opened,
+            // and the failure has to be reported somewhere.
+            console = Console::open(console::fill_stdio());
+        }
+        if let Err(e) = mounted {
             emergency = Some(failure(m.step, e));
             break;
         }
         match m.target {
-            "/dev" => console = Console::open(console::fill_stdio()),
             "/proc" => {
                 console.set_boot_id(read_boot_id());
                 console.write(&Record::new(MachineState::Booting));

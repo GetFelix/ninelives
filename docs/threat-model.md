@@ -96,7 +96,7 @@ also has a kernel exploit.
 | # | Boundary | Between | What enforces it |
 |---|---|---|---|
 | B1 | **Machine** | One machine and the network, and so every other machine | Ports open only as listed (S7), authenticated transport (S10), per-machine credentials (S19), limited egress (S18) |
-| B2 | **Service** | Services on one machine, and each service and the kernel | Per-service user, cgroup, seccomp, Landlock, no capabilities (S6); hardened kernel without modules (S2); read-only root (S3) |
+| B2 | **Service** | Services on one machine, and each service and the kernel | Per-service user, cgroup, seccomp, Landlock, no capabilities beyond each service's listed ones (S6); no root after early boot (S24); hardened kernel without modules (S2); read-only root (S3) |
 | B3 | **Workload sandbox** | A WebAssembly workload and felixd's process | felixd's Wasm runtime, fuel and memory limits; no effects in felixd 0.1 |
 | B4 | **Felix tenant** | Tenants, and inside felixd's tenant the namespace and its `.sys` namespace | Felix tokens carry a tenant and permissions, checked by every broker; felixd's grants |
 | B5 | **Control plane** | Who may mint credentials, change RBAC and membership, and place shards, versus everyone else | Raft peer token and mTLS on the core machines, `felix-controlplane` audience tokens, the join (S20) |
@@ -172,18 +172,37 @@ What narrows each row:
 ## No root after early boot
 
 Nothing on a NineLives machine runs as root once early boot is over, PID 1
-included: the no-root rule (requirement pending, see the init design). The init drops to its own uid and keeps
+included: the no-root rule (S24). The init drops to its own uid and keeps
 only a few capabilities, each with a stated reason. There are no setuid
 binaries, no file capabilities, no root login or root shell, and no service
 gets a capability that amounts to root.
 
 What that buys: getting root back after the drop takes a kernel bug. There is
 no setuid program to exploit, no root daemon to send input to, and no file
-that grants capabilities when executed. The checks that make this true belong
-to the init design: securebits `NOROOT` and `NO_SETUID_FIXUP` set and locked,
-so uid 0 confers nothing even if a process reaches it; an empty bounding set
-and `no_new_privs` for every service; and an image build that fails on any
-file with a setuid bit or a `security.capability` attribute.
+that grants capabilities when executed.
+
+Locked securebits (`NOROOT`, `NO_SETUID_FIXUP`) are not enough on their own.
+They stop a process gaining capabilities when it executes a program, but uid
+0 still matters: root-owned files and several `/proc/sys` checks key on the
+effective uid. A PID 1 that kept `CAP_SETUID` could `setuid(0)`, write
+`kernel.core_pattern` as a pipe to a program of its choosing, and the kernel
+would run that program as full root on the next crash. So:
+
+- **PID 1 keeps no `CAP_SETUID`, `CAP_SETGID` or `CAP_SYS_ADMIN`.** Before the
+  drop it forks one launcher per service, already running as that service's
+  uid and holding only that service's listed capabilities. After the drop
+  PID 1 cannot change uid, and a qemu test checks that `setuid(0)` from PID 1
+  fails.
+- **Capabilities are listed per service** (S6). The DHCP and time clients get
+  theirs as ambient capabilities from their launchers, since with no file
+  capabilities that is the only way to hold one across `exec`. Every other
+  service holds none, and each service's bounding set holds only its list,
+  with `no_new_privs` set.
+- **Nothing a root-owned check guards stays writable.** `/proc/sys` is
+  read-only after boot, `kernel.core_pattern` is fixed on the kernel command
+  line at build, and no root-owned file is writable after the drop.
+- **The image build fails** on any file with a setuid bit or a
+  `security.capability` attribute.
 
 ### What a compromised service still reaches
 
@@ -194,16 +213,17 @@ Each row is X3: code execution as that service's uid, without a kernel bug.
 | Felix broker | Its data directory, so every record of the shards it holds, in plaintext; its TLS key and node credential; client tokens presented to it; the ports S18 allows. This is the storage row of the next section. | The control plane's store and Raft token, even on a core machine; felixd's token; the packet filter, the clock, other services' memory |
 | Felix control plane (core) | The Raft store, so every tenant's signing-key seeds and the Raft peer token. **This is the whole cluster** (T24, T25); the no-root rule does not narrow it. | Other services' files on the machine, which it does not need |
 | felixd | Its node and refresh tokens, and the workloads it runs: the worker row of the next section | The broker's records on disk, the control plane's store |
-| DHCP client | `CAP_NET_ADMIN` on the machine's network: addresses, routes, and the packet filter that enforces S7 and S18. It can open ports, lift egress limits and send this machine's traffic anywhere. TLS keeps that traffic unreadable (T2). | Credentials, records, the clock |
-| Time client | `CAP_SYS_TIME`: the machine's clock. On a core machine, the control plane then mints tokens whose `iat` and `exp` follow that clock, and other brokers accept them until `exp` by their own clocks, so a clock set a day ahead yields tokens valid for a day. Revocation cutoffs move the same way. | Credentials, records, the packet filter |
-| Join | The join token, and write access to the directories where it puts each service's credentials | Running as another service's uid; it writes credentials without `CAP_DAC_OVERRIDE` or `CAP_CHOWN`, into directories made for it |
+| DHCP client | `CAP_NET_ADMIN` (ambient, listed in S6) on the machine's network: addresses, routes, and the packet filter that enforces S7 and S18. It can open ports, lift egress limits and send this machine's traffic anywhere. TLS keeps that traffic unreadable (T2). | Credentials, records, the clock |
+| Time client | `CAP_SYS_TIME` (ambient, listed in S6): the machine's clock. On a core machine, the control plane then mints tokens whose `iat` and `exp` follow that clock, and other brokers accept them until `exp` by their own clocks, so a clock set a day ahead yields tokens valid for a day. Revocation cutoffs move the same way. | Credentials, records, the packet filter |
+| Join | The join token, and write access to every service's credential directory. That includes the CA bundles felixd and the broker trust, so it can install an attacker's CA and let a fake broker or control plane collect their tokens (T2), and on a core machine the Raft peer token. **This is the machine's whole identity** (T71). | Running as another service's uid; it writes credentials without `CAP_DAC_OVERRIDE` or `CAP_CHOWN`, into directories made for it |
 | Diagnostics interface | Every service's captured output, and kernel crash dumps, which hold credentials (T22) | Writing anything |
-| PID 1, after the drop | It starts every service, so it can run code as any service's uid: the union of every row above. On a core machine, the cluster. | Root, once the securebits are locked |
+| PID 1, after the drop | Starting, stopping and signalling every service through its launcher; every service's captured output; the cgroup tree; reboot. Each launcher runs only its own service's program from the read-only root, with settings fixed before the drop, so PID 1 cannot run other code as a service's uid. If the init design cannot hold that, this row is the union of every row above, and on a core machine the cluster. | Root or any other uid: it keeps no `CAP_SETUID`, `CAP_SETGID` or `CAP_SYS_ADMIN` |
 
 So the rule turns most service compromises into that service's reach and no
 more. It does not help where the service's own reach is already large: the
-control plane, and PID 1. Those two must take the least untrusted input, which
-is why the join config is parsed outside PID 1 (T21). The network helpers keep
+control plane, the join, and PID 1 if its launchers take orders. Those must
+take the least untrusted input, which is why the join config is parsed outside
+PID 1 (T21) and the join runs only on first boot (T71). The network helpers keep
 capabilities that undo other requirements: `CAP_NET_ADMIN` can switch off S7
 and S18, and `CAP_SYS_TIME` can defeat S15 from inside the machine (T69, T70).
 
@@ -218,9 +238,10 @@ nothing to escalate. What it handles there:
   replaced the init itself (T46). From M3 they are signed and verified (S13).
 - **The data partition**, which PID 1 mounts. The filesystem metadata is
   parsed by the kernel and can be crafted by anyone who wrote the disk offline
-  (X7). Encryption at rest (S16) makes crafting it need the key, if the
-  encryption is authenticated, which S16's design must settle. PID 1 reads no
-  file from the data partition before the drop.
+  (X7). S16 requires authenticated encryption, so a block changed offline is
+  refused before the filesystem parses it. That does not cover root on the
+  running machine, which writes through the decrypted device (T19). PID 1
+  reads no file from the data partition before the drop.
 - **Devices** as they appear. A hostile device attacks the kernel's driver,
   not PID 1 (T54).
 - **Its own code.** A bug in the early-boot path runs as root. That path stays
@@ -229,8 +250,8 @@ nothing to escalate. What it handles there:
 
 The init design has to list everything PID 1 does before the drop and the
 capabilities it keeps after it, and a qemu test checks `/proc/1/status` after
-boot: uid not 0, and only the listed capabilities effective and permitted
-(T67, T68).
+boot: uid not 0, only the listed capabilities effective and permitted, and
+`setuid(0)` refused (T67, T68).
 
 ## Credentials: blast radius and rotation
 
@@ -239,12 +260,12 @@ revoked. "Not built" means NineLives has no code for it yet.
 
 | Credential | Held by | Lifetime | Stolen, it gives | Rotation | Revocation |
 |---|---|---|---|---|---|
-| Join token | The config partition or cloud metadata, until used | Single use, short expiry (S20) | A machine's credentials for the role the token names. For a core role, the cluster. | One per machine | Refused once used or expired (S20). Not built: Felix has nothing that accepts a join token and mints node credentials. |
-| felixd node token (broker audience) | Every machine | 900 s access token | The worker row above, until it expires | felixd re-reads the file on every use; something on the machine has to refresh it before expiry. Not built. | Felix revokes a principal and ends its broker streams, so revoking one machine needs one principal per machine (S19). On a broker that cannot reach the control plane, revocation fails open: a revoked token works until it expires, and open streams stay open until the feed returns. |
+| Join token | The config partition or cloud metadata, until used | Single use, short expiry (S20) | A machine's credentials for the role the token names. For a core role, the cluster. | One per machine | Refused once used or expired (S20). Not built: Felix has nothing that accepts a join token and mints node credentials ([#73](https://github.com/GetFelix/ninelives/issues/73)). |
+| felixd node token (broker audience) | Every machine | 900 s access token | The worker row above, until it expires | felixd re-reads the file on every use; something on the machine has to refresh it before expiry. Not built ([felixd#276](https://github.com/GetFelix/felixd/issues/276)). | Felix revokes a principal and ends its broker streams, so revoking one machine needs one principal per machine (S19). On a broker that cannot reach the control plane, revocation fails open: a revoked token works until it expires, and open streams stay open until the feed returns. |
 | Refresh token | Every machine | 30 days, single use | A chain of fresh node tokens. Using it once revokes the chain when the genuine holder refreshes next, so theft is detected rather than silent, except within the 30 s reuse window | Every refresh replaces it | Ends with the principal's revocation |
 | Broker node credential (`felix-controlplane` audience) | Core and storage | 900 s, refreshed by the broker | The cluster's catalog, nodes and placement: reconnaissance, not writes | Broker's own refresh loop | As above |
 | Broker TLS certificate and key | Core and storage | Set by the issuing CA; not decided | Speaking as that broker to peers and clients | Files re-read every 30 s | Felix documents no revocation list, so only expiry ends one. Short lifetimes are the only revocation (S19). |
-| Raft TLS certificate and key | Core | Not decided | Any certificate from the Raft CA can speak for any member; Felix does not bind it to a member id | Files re-read every 30 s | Expiry only |
+| Raft TLS certificate and key | Core | Not decided | The control-plane Raft listener checks only that a client certificate chains to the Raft CA, not which member it names, so any Raft certificate can speak for any member ([felix#2802](https://github.com/GetFelix/felix/issues/2802)). Broker replication certificates, unlike these, are bound to node ids. | Files re-read every 30 s | Expiry only |
 | Raft peer token | Every core machine, shared | Static | Cluster admin over metadata, including replacing the store | No rolling rotation documented by Felix | None short of rotating it on every member |
 | Tenant signing keys | The Raft store on every core machine | Until rotated | Any token for that tenant | Stage, activate, retire through the control plane ([Felix](https://github.com/GetFelix/felix/blob/v0.7.2/docs/auth.md#rotating-signing-keys)) | A retired key keeps verifying on a broker for about 10 minutes, and for up to 24 hours on a broker that cannot reach the control plane |
 | Bootstrap token | The core machine forming the cluster | Static, while bootstrap is on | Initialising tenants; with dev tokens on, any token | Felix accepts a previous token alongside the current one | Turn bootstrap off (S20) |
@@ -253,11 +274,12 @@ revoked. "Not built" means NineLives has no code for it yet.
 | CA keys (broker, Raft) | Not decided ([#16](https://github.com/GetFelix/ninelives/issues/16)) | Long | A certificate for any node id | Not designed | Not designed |
 | Image signing keys | Outside CI's reach (S13) | Long | Images every machine boots | Written down with S13; not designed | Through the firmware's key database; not designed |
 
-The rule NineLives holds itself to (S19): one machine's credentials let an
-attacker do no more than that machine's role does, each machine's credentials
-are its own, and every secret two machines share is listed here with how it
-is rotated. Today the Raft peer token is shared by design in Felix, and the
-core role holds far more than its job needs.
+S19 makes each machine's credentials its own and short-lived, and lists every
+secret two machines share with how it is rotated. Today the Raft peer token is
+shared by design in Felix. The further goal, that one machine's credentials
+let it do no more than its role needs, cannot be met or tested yet: it is
+blocked upstream (T24, T25, T27), and the core role holds far more than its
+job needs.
 
 ## Supply chain
 
@@ -265,7 +287,7 @@ From source to a booted machine, every input and what checks it.
 
 | Step | Input | Checked by | What the check does not stop | Status |
 |---|---|---|---|---|
-| Source | This repository | `main` requires a pull request and `CI ok`, and squash merges | The ruleset requires zero approving reviews, and repository admins can bypass it through a pull request. CONTRIBUTING's independent review is a rule people follow, not one GitHub enforces. | S21, gap today |
+| Source | This repository | `main` requires a pull request and `CI ok`, and squash merges | The ruleset requires zero approving reviews, and repository admins can bypass it through a pull request. CONTRIBUTING's independent review is a rule people follow, not one GitHub enforces, and enforcing it needs a second GitHub identity. | gap, decision open |
 | CI tools | GitHub Actions, linters, Zola, mkosi, the runner image | Actions pinned by commit; Zola by SHA-256 | `actionlint` is installed by piping a script fetched from a tag into bash, unhashed. mkosi is not installed yet. `ubuntu-latest` moves. | S21, gap today |
 | Components | Felix and felixd releases | Hash in `components.toml`, and the upstream's Sigstore signature where it signs (S4, [0004](decisions/0004-components-from-pinned-releases.md)) | felixd: a valid signature means felixd's release workflow ran at that tag, so whoever can push a felixd tag can ship a signed release. Felix: no signature ([felix#2796](https://github.com/GetFelix/felix/issues/2796)), so the hash is trusted only because a reviewer checked it; its server build is not checked as reproducible ([felix#2799](https://github.com/GetFelix/felix/issues/2799)). NineLives does not rebuild either to compare. | S4, S23; Felix is an upstream gap |
 | Packages | Debian 13 from snapshot.debian.org at a pinned timestamp | The archive signature; the timestamp moves only in a reviewed pull request (S4, [0006](decisions/0006-debian-base.md)) | A malicious package or maintainer, or a compromised archive key | Accepted: we trust Debian, and S1 keeps the package list short |
@@ -285,10 +307,17 @@ mounted filesystem, not root writing the block device. That is accepted for
 M1 and M2, which run development clusters and publish no images.
 
 From M3 (S13): the firmware checks a signed unified kernel image, so the
-kernel command line is signed too; the kernel checks the root against a
+kernel command line is signed too. The firmware's key database holds only
+NineLives keys: a cloud's default database trusts the Microsoft UEFI CA, and
+any shim it signed boots anything its distribution signed. Then the kernel checks the root against a
 dm-verity hash; and the machine refuses an image older than its minimum
 version. The data partition is the one writable place, so S3 also requires
-that nothing on it can be executed. A production machine refuses a
+that nothing on it can be executed. That does not stop root on a running
+machine (X4) from persisting through it: configs, CA bundles and the join's
+output are read at every start, and crafted filesystem metadata is parsed
+before the drop. Verified boot cannot tell a machine that had root from one
+that did not, so a machine found compromised is wiped and rejoins with new
+credentials (S25). A production machine refuses a
 development image, which carries a serial console shell (S22). The minimum
 version has to live somewhere an attacker with the disk cannot reset, which
 with S16 means sealed with the disk key; that is the design's to settle (#9).
@@ -321,9 +350,9 @@ mitigation, and what checks it. Rows are numbered so designs can cite them.
 | # | Threat | X | B | Mitigation | Check |
 |---|---|---|---|---|---|
 | T1 | Read or change traffic between machines | X1 | B1 | QUIC is always TLS 1.3. Felix's control-plane API, Raft peer port and bootstrap listener are plain HTTP unless configured; the image configures TLS on every one. | S10 |
-| T2 | Pose as a broker to felixd and collect bearer tokens. Felix's default is a self-signed `localhost` certificate that clients cannot verify. | X1 | B1 | The image sets real broker certificates and `FELIX_TLS_REQUIRE_CERT`, and gives felixd the cluster CA and server name from the join | S10, S20 |
+| T2 | Pose as a broker to felixd and collect bearer tokens. Felix's default is a self-signed `localhost` certificate that clients cannot verify. | X1 | B1 | The image sets real broker certificates and `FELIX_TLS_REQUIRE_CERT`, and gives felixd the cluster CA and server name from the join | gap: S10, S20 |
 | T3 | Pose as a peer broker and inject records through replication | X1 | B1 | Felix refuses to start without peer mTLS unless `FELIX_INTERNAL_ALLOW_UNAUTHENTICATED=true`; the image never sets it. Certificates are bound to node ids. | S10 |
-| T4 | Pose as a control-plane member | X1 | B5 | Felix requires the Raft peer token, and mTLS on top when configured. Raft certificates are not bound to member ids, so the Raft CA must issue only to core machines. | S10, S19; upstream gap (Felix: no member binding) |
+| T4 | Pose as a control-plane member | X1 | B5 | Felix requires the Raft peer token, and mTLS on top when configured. Broker replication binds peer certificates to node ids; the control-plane Raft listener checks only that a certificate chains to the Raft CA, so any Raft certificate can speak for any member and the Raft CA must issue only to core machines. | S10, S19; upstream gap ([felix#2802](https://github.com/GetFelix/felix/issues/2802)) |
 | T5 | Steal the join token, or answer a joining machine as a fake core machine | X1 | B1, B5 | Join token single use, short lived and bound to a role; the machine checks the core machines against a CA fingerprint in its join config before sending it | gap: S20 |
 | T6 | Spoof DHCP or DNS to redirect a machine's connections | X1 | B1 | TLS verification turns redirection into a failed connection (T2). Denial of service remains. | S10; DoS accepted on a hostile local network |
 | T7 | Move a machine's clock: tokens accepted past expiry, revocations missed, leases expiring early | X1 | B1 | Time from an authenticated source only | gap: S15 |
@@ -345,33 +374,35 @@ mitigation, and what checks it. Rows are numbered so designs can cite them.
 
 | # | Threat | X | B | Mitigation | Check |
 |---|---|---|---|---|---|
-| T16 | Become root from a service, through a kernel bug, a capability or a setuid program | X3 | B2 | No root process to attack, no setuid binaries or file capabilities, no capability that amounts to root; seccomp and Landlock per service; no shell or compiler; hardened kernel with lockdown and no modules; patch deadline. A kernel bug still wins. | the no-root rule (requirement pending, see the init design), S6, S1, S2, S9; kernel bugs accepted ([0001](decisions/0001-linux-kernel.md)) |
+| T16 | Become root from a service, through a kernel bug, a capability or a setuid program | X3 | B2 | No root process to attack, no setuid binaries or file capabilities, no capability that amounts to root; seccomp and Landlock per service; no shell or compiler; hardened kernel with lockdown and no modules; patch deadline. A kernel bug still wins. | the no-root rule (S24), S6, S1, S2, S9; kernel bugs accepted ([0001](decisions/0001-linux-kernel.md)) |
 | T17 | Read another service's credentials | X3 | B2 | Credentials readable only by their service; Landlock limits each service to its own files | S8, S6 |
 | T18 | Call out from a compromised service: exfiltrate, fetch tools, reach cloud metadata | X3 | B1 | Each service connects only where its role needs; cloud metadata only from the join | gap: S18 |
-| T19 | Persist across a reboot | X3, X4 | B2, B6 | Read-only root; nothing on the data partition can be executed; from M3, dm-verity | S3, S13 |
-| T20 | Exploit the DHCP or time client, which parse network input and need some privilege | X1, X3 | B2 | Clients chosen without shell hooks ([0006](decisions/0006-debian-base.md)); each runs as its own uid with only the capability it needs. Those capabilities are still large (T69, T70). | the no-root rule (requirement pending, see the init design), S6, S1 |
+| T19 | Persist across a reboot | X3, X4 | B2, B6 | Read-only root; nothing on the data partition can be executed; from M3, dm-verity. Against X4 this is partial: root writes the data partition through the mounted filesystem or the decrypted device, including configs, CA bundles and join output read at every start, and filesystem metadata parsed before the drop. | S3, S13 for X3; partial for X4: S25 (wipe and rejoin) |
+| T20 | Exploit the DHCP or time client, which parse network input and need some privilege | X1, X3 | B2 | Clients chosen without shell hooks ([0006](decisions/0006-debian-base.md)); each runs as its own uid with only the capability it needs. Those capabilities are still large (T69, T70). | the no-root rule (S24), S6, S1 |
 | T21 | Exploit PID 1 through the join config, which comes from cloud metadata or a config partition | X1, X7 | B2 | The join runs as its own isolated service, not inside PID 1. The init and join designs must hold to this. | gap: init and join designs ([#46](https://github.com/GetFelix/ninelives/issues/46), [#5](https://github.com/GetFelix/ninelives/issues/5)) |
 | T22 | Read secrets out of the diagnostics interface: a kernel crash dump holds memory, credentials included | X3, X4 | B1 | Crash dumps are treated as secrets: reading one needs more than reading service output | S11, S8 |
 | T23 | Secrets written to service output or to the log | X3 | B2, B4 | felixd formats tokens as placeholders and tests for leaks; Felix's output is not tested by us; S8's test scans everything captured | S8 |
-| T67 | Take over PID 1 after the drop: it can run code as any service's uid | X3, X1 | B2 | PID 1 takes no network input and does not parse the join config; securebits locked so uid 0 confers nothing; only listed capabilities kept | the no-root rule (requirement pending, see the init design); gap: init design ([#46](https://github.com/GetFelix/ninelives/issues/46)) lists them |
-| T68 | Subvert PID 1 before the drop, while it is uid 0 with every capability | X7, X6 | B2, B6 | A small early path that reads no network input, no join config and no data partition files; signed kernel, command line and root from M3; a crafted data partition needs the disk key (S16) | the no-root rule (requirement pending, see the init design), S13, S16; accepted before M3 (T46) |
+| T67 | Take over PID 1 after the drop: it can run code as any service's uid | X3, X1 | B2 | PID 1 takes no network input and does not parse the join config; it keeps no `CAP_SETUID`, `CAP_SETGID` or `CAP_SYS_ADMIN`; launchers run only their fixed program; `/proc/sys` read-only after boot | the no-root rule (S24); gap: init design ([#46](https://github.com/GetFelix/ninelives/issues/46)) lists them |
+| T68 | Subvert PID 1 before the drop, while it is uid 0 with every capability | X7, X6 | B2, B6 | A small early path that reads no network input, no join config and no data partition files; signed kernel, command line and root from M3; a crafted data partition needs the disk key (S16) | the no-root rule (S24), S13, S16; accepted before M3 (T46) |
 | T69 | A compromised time client sets the clock; on a core machine, minted tokens outlive their TTL on every broker | X1, X3 | B2, B5 | Authenticated time stops a network attacker, not the client itself. Nothing bounds what a process with `CAP_SYS_TIME` sets. | S15; gap: init design must bound or cross-check clock changes |
 | T70 | A compromised DHCP client uses `CAP_NET_ADMIN` to open ports, lift egress limits or reroute traffic | X1, X3 | B2, B1 | TLS keeps rerouted traffic unreadable. Nothing stops it rewriting the packet filter. | S10; gap: init design must keep the DHCP parser apart from the capability (an unprivileged parser handing a typed lease to a small applier), or configure networking statically from the join |
+| T71 | A compromised join installs an attacker's CA or credentials for every service, or takes the Raft peer token on a core machine | X1, X7 | B2, B5 | The join runs only on first boot and its uid never runs again; it writes each service's directory without being able to read the others afterwards; the CA it installs must match the fingerprint in the join config | gap: join design ([#5](https://github.com/GetFelix/ninelives/issues/5)), S20 |
 
 ### One machine to the cluster
 
 | # | Threat | X | B | Mitigation | Check |
 |---|---|---|---|---|---|
-| T24 | Forge any tenant's tokens from a core machine's Raft store | X4, X7 | B5, B4 | None today. Encryption at rest (S16) covers only a disk read offline. | gap: upstream (Felix keeps signing-key seeds in every member's store; no issue yet) |
-| T25 | Replace or rewrite control-plane metadata with the shared Raft peer token | X4 | B5 | None beyond holding the token only on core machines | gap: upstream (Felix: one shared cluster-admin token; no issue yet), S19 lists it |
-| T26 | Inject records into shards a compromised broker replicates, or serve readers wrong data | X4 | B1, B4 | Felix compares replicated bytes, so existing records on honest replicas cannot be rewritten, and refuses bootstrap over a follower that holds records. Appends past the tail are accepted. | gap: upstream (Felix has no record signatures) |
+| T24 | Forge any tenant's tokens from a core machine's Raft store | X4, X7 | B5, B4 | None today. Encryption at rest (S16) covers only a disk read offline. | gap: upstream ([felix#2801](https://github.com/GetFelix/felix/issues/2801): signing-key seeds in every member's store) |
+| T25 | Replace or rewrite control-plane metadata with the shared Raft peer token | X4 | B5 | None beyond holding the token only on core machines | gap: upstream ([felix#2802](https://github.com/GetFelix/felix/issues/2802): one shared cluster-admin token), S19 lists it |
+| T26 | Inject records into shards a compromised broker replicates, or serve readers wrong data | X4 | B1, B4 | Felix compares replicated bytes, so existing records on honest replicas cannot be rewritten, and refuses bootstrap over a follower that holds records. Appends past the tail are accepted. | gap: upstream ([felix#2803](https://github.com/GetFelix/felix/issues/2803): no record signatures) |
 | T27 | Forge any workload's output, take any lease, mark workloads failed, read all of felixd's namespace, from any machine | X4, X2 | B4 | The epoch fence stops a stale owner, not a hostile one. `felixd check --complete` finds outputs that do not match a replay. | gap: upstream ([felixd#74](https://github.com/GetFelix/felixd/issues/74), [felix#1625](https://github.com/GetFelix/felix/issues/1625)) |
 | T28 | Erase history with a node's trim grant | X4 | B4 | `felixd init --grant-trim` gives every node trim over the whole namespace. The image's cluster formation does not pass it. Nothing checks that yet. | gap: join design ([#5](https://github.com/GetFelix/ninelives/issues/5)) |
 | T29 | Attack other machines through their open ports with crafted input | X4 | B1 | As T8: listed ports, isolated and patched services | S7, S6, S9 |
-| T30 | Use a stolen machine credential from another host | X4, X7 | B1 | Felix bearer tokens are not bound to the machine. Felix can bind a client certificate to a token's subject, but felixd presents no client certificate. Short lifetimes bound it. | S19; upstream gap (felixd client certificates) |
+| T72 | Attack a core machine's broker through the input it parses after login (publish, subscribe, cache, Kafka and MQTT frames), with any tenant's client token or a stolen worker token. This moves from a worker to a core machine with no workload on the core machine. | X4, X2 | B1, B4 | As T29. A broker exploit gets the broker's uid, which does not reach the control plane's store on the same machine (S6, S24); a kernel exploit from there gets the cluster. | S6, S9, S24; gap: whether core brokers serve tenant clients ([Open questions](#open-questions)) |
+| T30 | Use a stolen machine credential from another host | X4, X7 | B1 | Felix bearer tokens are not bound to the machine on their own. Felix's Rust client presents a client certificate and the broker binds it to the token's subject (`FELIX_TLS_CLIENT_CERT_BIND_SUBJECT`); felixd does not present one. Short lifetimes bound it. | S19; upstream gap in felixd, not Felix ([felixd#275](https://github.com/GetFelix/felixd/issues/275)) |
 | T31 | Keep working after the machine is found and revoked | X4 | B1, B5 | Per-machine principal so revocation hits one machine; short-lived certificates. Felix fails open on a broker cut off from the control plane, and certificates have no revocation. | S19; fail-open accepted (Felix chose availability, and alerts on the feed's age) |
 | T32 | Pose as another machine in felixd's `nodes` cache or take its node id | X4 | B4 | Broker identity is certificate-bound. felixd's `nodes` cache is writable by every node. | S19; upstream gap ([felixd#74](https://github.com/GetFelix/felixd/issues/74), [felixd#82](https://github.com/GetFelix/felixd/issues/82)) |
-| T33 | Delete, patch or trim any workload stream from the machine that runs admission | X4 | B4 | Felix has no create-only stream action, so admission's grant includes delete. The image runs admission only on a core machine, which is already the most trusted. | accepted until Felix has a create-only grant |
+| T33 | Delete, patch or trim any workload stream from the machine that runs admission | X4 | B4 | Felix has no create-only stream action, so admission's grant includes delete. The image runs admission only on a core machine, which is already the most trusted. | accepted until Felix has a create-only grant ([felix#2805](https://github.com/GetFelix/felix/issues/2805)) |
 
 ### Supply chain and pipeline
 
@@ -383,9 +414,9 @@ mitigation, and what checks it. Rows are numbered so designs can cite them.
 | T37 | The Debian pin falls behind security fixes | X5 | B6 | Advisory feeds open pull requests; rebuild on deadline | S9 |
 | T38 | Tampered kernel source, or a malicious upstream commit | X5 | B6 | Signature against pinned fingerprints; a malicious accepted commit is not caught | S4; accepted for upstream commits |
 | T39 | Compromised mkosi, CI tool, Action or runner image | X5, X6 | B6 | Everything CI runs is pinned by commit or hash. A compromise common to both reproducible builds is not caught by S5. | gap: S21; common mode accepted until S12 lets others rebuild |
-| T40 | `actionlint` fetched by an unhashed script today | X5 | B6 | Pin by hash. The lint job has a read-only token and no secrets, which limits it now. | gap: S21 |
+| T40 | `actionlint` fetched by an unhashed script today | X5 | B6 | Pin by hash. The lint job has a read-only token and no secrets, which limits it now. | gap: S21 ([#70](https://github.com/GetFelix/ninelives/issues/70)) |
 | T41 | A malicious release of a Rust crate we depend on | X5 | B6 | `Cargo.lock`, `cargo deny`, few dependencies | accepted |
-| T42 | A malicious change merged to `main` | X6 | B6 | Pull request and `CI ok` required; an approving review by someone other than the author is not enforced | gap: S21 |
+| T42 | A malicious change merged to `main` | X6 | B6 | Pull request and `CI ok` required. An approving review by someone other than the author is not enforced, and cannot be with one maintainer account, which is also the identity agents act through. | gap, decision open ([#71](https://github.com/GetFelix/ninelives/issues/71)) |
 | T43 | A pull request workflow that steals secrets or writes to the repository | X6 | B6 | Workflows run with `contents: read` and no secrets. Publishing credentials only in the release workflow on a protected tag. | S21 |
 | T44 | Theft of the image signing key | X6 | B6 | Kept outside CI's reach, rotation written down | S13 (M3) |
 | T45 | Users cannot tell what an image contains or where it came from | X5, X6 | B6 | SBOM, provenance, source | S12 |
@@ -394,7 +425,7 @@ mitigation, and what checks it. Rows are numbered so designs can cite them.
 
 | # | Threat | X | B | Mitigation | Check |
 |---|---|---|---|---|---|
-| T46 | Replace the kernel or root on disk | X7, X4 | B6 | Signed kernel image and dm-verity root. Before M3, none. | S13; accepted before M3 (no published images) |
+| T46 | Replace the kernel or root on disk, or boot another signed loader | X7, X4 | B6 | Signed kernel image and dm-verity root; a key database with only NineLives keys, so a stock signed shim does not boot. Before M3, none. | S13; accepted before M3 (no published images) |
 | T47 | Change the kernel command line (`init=`, `mitigations=off`, lockdown off) | X7, X4 | B6 | The command line is inside the signed kernel image | S13, S17 |
 | T48 | Boot an older signed image with known holes | X6, X7 | B6 | Minimum version | S13 |
 | T49 | A production machine boots a development image with a console shell | X6, X7 | B6 | Production refuses development images | gap: S22 |
@@ -411,7 +442,7 @@ mitigation, and what checks it. Rows are numbered so designs can cite them.
 | # | Threat | X | B | Mitigation | Check |
 |---|---|---|---|---|---|
 | T57 | Flood a machine's ports | X1 | B1 | Felix caps client connections per address, and peer connections at 512 total and 16 per source; listed ports only | S7; volumetric floods accepted (the network's job) |
-| T58 | Fill a broker's disk by publishing: Felix has publish rate caps but no storage quotas | X4, X2 | B4 | Service output and crash dumps are bounded and kept apart from Felix's data, so they cannot fill it. Felix's own data can still fill. | S11; upstream gap (Felix storage quotas) |
+| T58 | Fill a broker's disk by publishing: Felix has publish rate caps but no storage quotas | X4, X2 | B4 | Service output and crash dumps are bounded and kept apart from Felix's data, so they cannot fill it. Felix's own data can still fill. | S11; upstream gap ([felix#2804](https://github.com/GetFelix/felix/issues/2804): per-tenant quotas) |
 | T59 | A busy workload slows the log on a shared machine | X2 | B2 | Felix's reserved share | N4 |
 | T60 | Take every lease or mark every workload failed from one machine | X4 | B4 | None: lease tokens still let a node take a lease | upstream gap ([felixd#74](https://github.com/GetFelix/felixd/issues/74)) |
 | T61 | Take down a majority of core machines | X1, X4 | B5 | Inherent in a majority quorum. Five core machines tolerate two. | accepted |
@@ -423,32 +454,36 @@ mitigation, and what checks it. Rows are numbered so designs can cite them.
 
 ## Gaps
 
+All of these are tracked from [#74](https://github.com/GetFelix/ninelives/issues/74).
+
 Closed by new requirements on this repository:
 
-- **S15** authenticated time (T7, T63)
-- **S16** encryption at rest (T24 offline, T52)
-- **S17** CPU microcode and mitigations (T47, T56)
-- **S18** egress limited per service (T18)
-- **S19** credentials per machine, short-lived, shared secrets listed (T4, T30, T31, T32)
-- **S20** authenticated join and bootstrap (T2, T5, T10, T65)
-- **S21** the pipeline's own inputs and merges (T39, T40, T42, T43)
-- **S22** authenticated, fresh, safe updates (T49, T50, T51)
-- **S23** independent rebuild of reproducible components (T34)
-- PID 1 does not parse the join config (T21) and the image never grants node trims (T28): rules for the init and join designs.
-- The no-root rule (requirement pending, see the init design), with its checks: locked securebits, no setuid or file capabilities in the image, `/proc/1/status` after boot (T16, T67, T68).
-- The time and DHCP clients keep capabilities that can undo S15, S7 and S18 from inside the machine (T69, T70). The init design decides how to narrow them.
+- **S15** ([#59](https://github.com/GetFelix/ninelives/issues/59)) authenticated time (T7, T63)
+- **S16** ([#60](https://github.com/GetFelix/ninelives/issues/60)) encryption at rest (T24 offline, T52)
+- **S17** ([#61](https://github.com/GetFelix/ninelives/issues/61)) CPU microcode and mitigations (T47, T56)
+- **S18** ([#62](https://github.com/GetFelix/ninelives/issues/62)) egress limited per service (T18)
+- **S19** ([#63](https://github.com/GetFelix/ninelives/issues/63)) credentials per machine, short-lived, shared secrets listed (T4, T30, T31, T32). Narrowing a machine to its role's needs is blocked upstream.
+- **S20** ([#64](https://github.com/GetFelix/ninelives/issues/64)) authenticated join and bootstrap (T2, T5, T10, T65, T71)
+- **S21** ([#65](https://github.com/GetFelix/ninelives/issues/65)) the pipeline's own inputs pinned (T39, T40, T43). Required review by a second identity (T42) is open.
+- **S22** ([#66](https://github.com/GetFelix/ninelives/issues/66)) authenticated, fresh, safe updates (T49, T50, T51)
+- **S23** ([#67](https://github.com/GetFelix/ninelives/issues/67)) independent rebuild of reproducible components (T34)
+- **S24** ([#68](https://github.com/GetFelix/ninelives/issues/68)) no root after early boot (T16, T67, T68, T72)
+- **S25** a compromised machine is wiped and rejoins with new credentials (T19)
+- PID 1 does not parse the join config (T21), the join runs only on first boot (T71), and the image never grants node trims (T28): rules for the init and join designs.
+- The time and DHCP clients keep capabilities that can undo S15, S7 and S18 from inside the machine (T69, T70): [#69](https://github.com/GetFelix/ninelives/issues/69). The init design decides how to narrow them.
 
 Upstream, where only Felix or felixd can fix it:
 
-- Signing-key seeds in every control-plane member's store (T24). No issue yet.
-- One shared Raft peer token, and Raft certificates not bound to member ids (T4, T25). No issue yet.
-- No record signatures, so a broker can inject records (T26). No issue yet.
+- Signing-key seeds in every control-plane member's store (T24): [felix#2801](https://github.com/GetFelix/felix/issues/2801).
+- One shared Raft peer token, and control-plane Raft certificates not bound to member ids; broker replication certificates are bound (T4, T25): [felix#2802](https://github.com/GetFelix/felix/issues/2802).
+- No record signatures, so a broker can inject records (T26): [felix#2803](https://github.com/GetFelix/felix/issues/2803).
 - Any node can write any output and take any lease ([felixd#74](https://github.com/GetFelix/felixd/issues/74), [felix#1625](https://github.com/GetFelix/felix/issues/1625)) (T27, T32, T60).
-- felixd presents no client certificate, so tokens are not bound to machines (T30). No issue yet.
+- felixd presents no client certificate, so its tokens are not bound to machines (T30): [felixd#275](https://github.com/GetFelix/felixd/issues/275). Felix's Rust client already does.
+- Nothing refreshes felixd's node token on the machine: [felixd#276](https://github.com/GetFelix/felixd/issues/276).
 - Felix checksums unsigned and its server not checked as reproducible ([felix#2796](https://github.com/GetFelix/felix/issues/2796), [felix#2799](https://github.com/GetFelix/felix/issues/2799)) (T35).
-- No storage quotas per tenant (T58). No issue yet.
-- No create-only stream grant, so admission can delete streams (T33). No issue yet.
-- No audit log of who did what, so an attacker's writes look like the node's they came from. No issue yet.
+- No storage quotas per tenant (T58): [felix#2804](https://github.com/GetFelix/felix/issues/2804).
+- No create-only stream grant, so admission can delete streams (T33): [felix#2805](https://github.com/GetFelix/felix/issues/2805).
+- No audit log of who did what, so an attacker's writes look like the node's they came from: [felix#2806](https://github.com/GetFelix/felix/issues/2806).
 
 ## Accepted
 
@@ -465,8 +500,10 @@ Upstream, where only Felix or felixd can fix it:
 
 | Question | Needed by | Proposal |
 |---|---|---|
-| Do production clusters run workloads on core machines? A core machine is the whole cluster today (T24, T25), and a workload escape there reaches it. | M2 | No workloads on core machines in production; the smallest cluster is a development or demo one |
-| Where do the CA keys and the join's minting live? ([#16](https://github.com/GetFelix/ninelives/issues/16)) | M1 | Not on a machine that runs workloads; short-lived certificates renewed by each machine |
+| Does a change to `main` need an approving review from a second identity (T42, [#71](https://github.com/GetFelix/ninelives/issues/71))? All work, agents included, goes through one maintainer account. | First published image | Options: a second maintainer; a separate reviewer bot identity whose approval the ruleset requires; or accept the risk and say why |
+| Do core machines' brokers serve tenant clients (T72)? Every client token is a way into a core machine's broker. | M2 | In larger clusters, clients connect to storage brokers only |
+| Do production clusters run workloads on core machines? A core machine is the whole cluster today (T24, T25), and a workload escape there reaches it. | M2 ([#72](https://github.com/GetFelix/ninelives/issues/72)) | No workloads on core machines in production; the smallest cluster is a development or demo one |
+| Where do the CA keys and the join's minting live? ([#16](https://github.com/GetFelix/ninelives/issues/16), [#73](https://github.com/GetFelix/ninelives/issues/73)) | M1 | Not on a machine that runs workloads; short-lived certificates renewed by each machine |
 | Who rebuilds a published image outside GitHub, so a common-mode build compromise is caught (T39)? | First published image | Anyone, from the S12 provenance; a scheduled rebuild on a second CI provider |
 
 ## Keeping this current

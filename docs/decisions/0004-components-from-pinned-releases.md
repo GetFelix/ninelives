@@ -69,9 +69,10 @@ visible in review.
 - This record covers what NineLives takes from its own upstreams. The rest
   of the root (glibc, the kernel if it comes from the distribution, the
   tools the init uses) comes from the base distribution's signed package
-  repositories. How those are pinned is part of choosing the base
-  distribution ([open question](../design.md#the-base-distribution)), and
-  the image's inventory lists every package with its version either way.
+  repositories, pinned to a snapshot ([0006](0006-debian-base.md)). The
+  kernel is built from verified upstream source
+  ([0007](0007-kernel-from-upstream-source.md)). The image's inventory
+  lists every package with its version.
 - NineLives waits for felixd and Felix releases. The nightly build against
   felixd's main branch covers most of the gap.
 - This depends on both projects publishing Linux builds for every

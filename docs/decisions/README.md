@@ -12,6 +12,11 @@ the system does. These files say why it is built the way it is.
 | [0003](0003-mkosi-image-build.md) | Images are built with mkosi, in CI | Accepted | M2 |
 | [0004](0004-components-from-pinned-releases.md) | Felix and felixd ship from pinned, verified releases, not a submodule | Accepted | Open-ended |
 | [0005](0005-rust-and-unsafe.md) | System code is Rust, and `unsafe` lives in one place | Accepted | Open-ended |
+| [0006](0006-debian-base.md) | The root is built from a minimal, pinned Debian 13 | Accepted | M2 |
+| [0007](0007-kernel-from-upstream-source.md) | The kernel is built from upstream source with our own config | Accepted | Open-ended |
+
+Decisions are measured against the
+[security and networking requirements](../requirements.md).
 
 ## When to write one
 

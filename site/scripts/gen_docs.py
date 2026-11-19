@@ -17,6 +17,7 @@ docs = [
     ("topology.md", "topology", 2, "Where Felix and felixd run, and how a cluster comes up."),
     ("inference-as-effect.md", "inference-as-effect", 3, "How model inference runs as a recorded effect so its decisions can be replayed."),
     ("felixd-contract.md", "felixd-contract", 4, "Every property of felixd the image depends on, for the pinned release."),
+    ("requirements.md", "requirements", 5, "The security and networking requirements every decision and change is checked against."),
 ]
 links = {src: f"/design/{page}/" for src, page, _, _ in docs}
 repo = "https://github.com/GetFelix/ninelives"

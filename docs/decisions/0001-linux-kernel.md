@@ -23,9 +23,9 @@ already acknowledged, which breaks the one promise the whole system rests on.
 ## Decision
 
 NineLives runs stock Linux: an upstream long-term-support release, pinned to
-an exact version, with no patches and no out-of-tree modules. Which release,
-whether it is built from source or taken from the base distribution, and the
-config fragments are settled in #3.
+an exact version, with no patches and no out-of-tree modules. It is built
+from upstream source with our own config
+([0007](0007-kernel-from-upstream-source.md)); which release is settled in #3.
 
 Everything NineLives writes uses standard system calls only, so the kernel
 can be replaced without rewriting the system above it. That rule is enforced

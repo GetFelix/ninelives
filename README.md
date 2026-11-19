@@ -37,8 +37,9 @@ somewhere else. That is where the name comes from.
 
 The pieces:
 
-- **A bootable image** for each machine: a pinned stock Linux kernel, our own
-  init as PID 1, a read-only root and atomic upgrades that can roll back
+- **A bootable image** for each machine: a Linux kernel built from upstream
+  source with a hardened, network-tuned config, our own init as PID 1, a
+  minimal read-only Debian root, and atomic upgrades that can roll back
   (A/B partitions are the current proposal).
 - **[felixd](https://github.com/GetFelix/felixd)**, the node agent that runs
   workloads from the log. It has its own repo; the image ships its
@@ -70,7 +71,7 @@ look at one machine as a failure domain in
 | `system/` | Programs that run on the log: scheduler, name service, `fx` shell |
 | `tools/` | The `fx` CLI, image build wrappers, flashing, the qemu runner |
 | `images/` | Build targets (qemu x86_64 and aarch64, later clouds and Raspberry Pi) and `components.toml`, the pinned Felix and felixd releases |
-| `docs/` | The design, [decision records](docs/decisions/), [component designs](docs/components/) and the [felixd contract](docs/felixd-contract.md) |
+| `docs/` | The design, [decision records](docs/decisions/), [security and networking requirements](docs/requirements.md), [component designs](docs/components/) and the [felixd contract](docs/felixd-contract.md) |
 
 Images are built with [mkosi](https://github.com/systemd/mkosi), in CI.
 

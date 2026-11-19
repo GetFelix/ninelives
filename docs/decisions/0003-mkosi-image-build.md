@@ -21,10 +21,9 @@ built in CI on Linux runners. A local run boots an image that CI built.
 The image does not contain systemd as its init
 ([0002](0002-our-own-init.md)). The kernel command line names our init.
 
-Two choices sit on top of this one and are still open: the base
-distribution the root is built from
-([open question](../design.md#the-base-distribution)), and whether the
-kernel comes from that distribution or is built from source (#3).
+The root is built from a minimal, pinned Debian 13
+([0006](0006-debian-base.md)), and the kernel from upstream source
+([0007](0007-kernel-from-upstream-source.md)).
 
 Every image build is reproducible. CI builds each image twice from the same
 commit and fails if the two differ.

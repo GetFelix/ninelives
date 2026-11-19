@@ -39,7 +39,8 @@ A design in `docs/components/<name>.md` has these sections, in this order:
 - **Failure modes.** For each way it can fail (a dependency crashes, hangs,
   floods output, the disk fills, power is cut, the component itself
   panics), what happens and why that is acceptable.
-- **Security.** What it runs as, what it can reach, what it trusts and why.
+- **Security.** What it runs as, what it can reach, what it trusts and why,
+  and which [requirements](docs/requirements.md) it meets.
 - **Test plan.** Which test proves which invariant, and which failure mode
   is exercised where (unit, qemu, fault injection).
 - **Open questions.** Anything not decided, with who decides and by when.

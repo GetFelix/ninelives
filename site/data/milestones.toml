@@ -96,9 +96,10 @@ issues = [
 # "answer" and link its record in docs/decisions/.
 [[questions]]
 title = "Which distribution is the root built from?"
-answer = "None yet. It decides pinning, security updates, architectures and source obligations, so it is discussed first."
-link = "https://ninelives.getfelix.dev/design/os/#the-base-distribution"
-label = "Design"
+decided = true
+answer = "A minimal Debian 13, about a dozen packages pinned to a snapshot, under a kernel we build from upstream source."
+link = "https://github.com/GetFelix/ninelives/blob/main/docs/decisions/0006-debian-base.md"
+label = "Decision 0006"
 
 [[questions]]
 title = "How does a machine upgrade?"

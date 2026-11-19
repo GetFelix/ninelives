@@ -254,9 +254,10 @@ the issuer. What binds the result to the machine is that the keys are made
 on the machine and the issuer checks a proof from each key against a fresh
 nonce, so the certificates are useless without keys that never left the
 machine. A token redeemed by a thief is caught when the real machine's
-redemption is refused (0008). Two further factors are open:
-a source prefix fixed at token creation, and operator approval for core
-joins ([Open questions](#open-questions)). M3 adds hardware binding: the
+redemption is refused (0008). Two further factors:
+operator approval for core joins, decided and described
+[below](#the-exchange-with-the-issuer), and an optional source prefix fixed
+at token creation, still [open](#open-questions). M3 adds hardware binding: the
 issuer also checks a TPM attestation that the keys' machine booted a
 NineLives image (0008, "Later proofs of identity").
 
@@ -297,7 +298,7 @@ from its registry, never taken from the request.
 | Kind | CA | Names | EKU | Service | Files in `$DATA/credentials/<service>/` |
 |---|---|---|---|---|---|
 | felixd client | cluster | URI `felix:principal:<felixd principal>` | client | felixd (every role) | `client.pem`, `client.key` |
-| Broker client listener | cluster | DNS: the node id's name and the cluster's broker name; on a core broker the second only if core brokers serve clients ([#77](#77-do-core-brokers-serve-tenant-clients)) | server | broker (core, storage) | `tls.pem`, `tls.key` |
+| Broker client listener | cluster | DNS: the node id's name; on a storage broker also the cluster's broker name, never on a core broker ([Core machines are internal-only](#core-machines-are-internal-only)) | server | broker (core, storage) | `tls.pem`, `tls.key` |
 | Broker internal | internal | DNS = node id | server, client | broker | `internal.pem`, `internal.key` |
 | Broker control-plane client | cluster | URI `felix:principal:<broker principal>` | client | broker | `cp-client.pem`, `cp-client.key` |
 | Control-plane API | cluster | DNS: the control plane's name, the node id's name | server | control plane (core) | `api.pem`, `api.key` |
@@ -334,8 +335,10 @@ issuer held, so it is a rebuild. The yearly intermediate replacement does
 not touch `$DATA/trust/`, since bundles hold only roots (0008), so this cost
 arises only after an issuer compromise or at the roots' 10-year expiry. The [init design](init.md#secrets)
 had proposed per-service bundles the renewal helper rewrites; this design
-returns to 0008's layout and the init design is updated to match. A trust
-update path is an [open question](#open-questions).
+returns to 0008's layout and the init design is updated to match. Decided:
+the trust update path is a signed single-purpose updater, built in M3
+([#107](https://github.com/GetFelix/ninelives/issues/107)). Until then M1
+accepts a rebuild after an issuer compromise.
 
 **Principals.** Each Felix-facing service on a machine is its own Felix
 principal, so felixd's credentials do not carry the broker's node grant and
@@ -350,6 +353,27 @@ so the issuer computes the principal and writes it into the client
 certificate's `felix:principal:` URI, which is what Felix's subject binding
 matches
 ([`serving/tls.rs`](https://github.com/GetFelix/felix/blob/v0.7.2/services/felix-broker-service/src/serving/tls.rs)).
+
+### Core machines are internal-only
+
+Decided ([#77](https://github.com/GetFelix/ninelives/issues/77), T72): core
+brokers do not serve tenant clients. Every client token would otherwise be a
+way into a core machine's broker, and from there a kernel exploit is the
+cluster. What that fixes here:
+
+- A core broker's client-listener certificate carries only its node id's
+  name, never the cluster's broker name, so a client sent to a core broker by
+  that name fails the TLS check. Only storage brokers carry it.
+- The `FELIX_BROKERS` value the issuer returns lists storage brokers only,
+  for every role, felixd on core machines included.
+- The core role's S7 port list drops the broker client port. Core brokers
+  keep their internal port for replication, and the control plane its API
+  and Raft ports.
+- So a cluster that runs felixd or serves any client needs storage machines.
+  The issuer refuses to issue a token for any role whose `FELIX_BROKERS`
+  would be empty, which means the first storage machine joins before any
+  worker. The cluster sizes in [topology.md](../topology.md) predate this
+  and are updated with the formation design.
 
 ### The exchange with the issuer
 
@@ -396,8 +420,38 @@ Unknown tags are refused on both sides.
 4. **Issued**, issuer to machine: the node id, the role, the incarnation id,
    for each needed kind the leaf and intermediate, the cluster, internal and
    Raft roots, the values for `$DATA/join/env`, and
-   the issuer's time. Or **Refused**, with one of three codes: `retry` (with
-   a delay), `token_refused`, or `bad_request`.
+   the issuer's time. Or **Pending**, for a core-role token awaiting
+   approval (below), with the key fingerprint. Or **Refused**, with one of
+   three codes: `retry` (with a delay), `token_refused`, or `bad_request`.
+
+**Core joins wait for an operator.** Decided: in production, a core-role
+redemption is not issued until an operator approves it. A stolen core token
+is the cluster (threat model), so the token alone is not enough. The flow:
+
+1. The join's first valid Proof for a core token creates a pending
+   redemption at the issuer holding the proven key set. Nothing is committed
+   and nothing is signed. The issuer answers Pending with the fingerprint:
+   SHA-256 over the kinds and public keys in order, shown as eight groups of
+   four hex digits.
+2. The join prints that fingerprint on the console, exits 75, and is retried
+   with the same saved keys. Each retry proves the keys again and gets
+   Pending until the operator acts.
+3. The operator reads the fingerprint on the machine's console (or the
+   hypervisor's serial log) and approves the pending redemption at the issuer
+   only if the two match. The next retry then gets Issued, after the usual
+   durable write.
+4. A second, different key set for a token that already has a pending one
+   blocks the token: neither can be approved, the issuer alerts, and the
+   operator issues a new token. So a thief who redeems first cannot win by
+   being approved by mistake, and cannot hold the real machine off without
+   being seen.
+5. Approval and issuance must both happen before the token expires (60 min
+   at most), after which the pending redemption is dropped and the token is
+   refused.
+
+Development and test images of the issuer skip approval, as they skip other
+production rules (0008 names them in the image). Storage and worker tokens
+never need it.
 
 `token_refused` covers an unknown token, a wrong secret, an expired, used or
 revoked token, and a node id that is not free. The issuer's own log records
@@ -434,8 +488,11 @@ Felix control plane, issues machine certificates. Before it signs anything:
 7. Each proof verifies, on this connection, within 30 seconds of the
    challenge.
 8. No leaf would outlive its intermediate (0008).
-9. For a core-role token, the operator's approval, if that open question is
-   answered yes ([Open questions](#open-questions)).
+9. For a core-role token on a production issuer, an operator approval of
+   exactly the key set just proven, with no second key set pending for the
+   token. Otherwise Pending, or `token_refused` once the token is blocked.
+10. A role whose `FELIX_BROKERS` would be empty is refused with `retry` and
+    an alert ([Core machines are internal-only](#core-machines-are-internal-only)).
 
 Then one durable write records the token as used, the node as active, the
 new random incarnation id, each certificate's serial, and the SHA-256 of
@@ -741,6 +798,7 @@ After the revocation above:
 | [init design](init.md) | Boot step 4 opens `ninelives-config` read-write on first boot only, after checking its size is exactly 2048 sectors and it overlaps no other partition; the join's launcher keeps that fd, passes it as fd 3 and closes it once the join exits 0; I11 and I20 name this one exception; the join's `run_timeout_s` is 120 | Listed as an init open question in this change |
 | [init design](init.md) | Trust roots in `$DATA/trust/`, read-only to every service and helper, as 0008 step 5 says; `FELIX_CA_FILE` points there | Updated in this change |
 | Time client config | chrony runs with `rtcsync`, so it clears `STA_UNSYNC` ([Time](#time)) | For #59 |
+| [topology.md](../topology.md), S7's port list | Core machines are internal-only: the core role has no broker client port, and a cluster that serves clients has storage machines. The cluster size table changes | With the formation design |
 | Image config check | Fails if `FELIX_CONTROLPLANE_LEGACY_UNSCOPED_GROUPS` is set; added to S10's never-set list | Requirement updated in this change; check not built |
 | [init design](init.md) | Optional: exit 78 from the join means `failed`, no restart | Proposed here; the marker file works without it |
 | [image design](image.md) | The config partition is written once more on the machine: zeroed by the join after a successful join | Updated in this change |
@@ -752,6 +810,8 @@ After the revocation above:
 | Felix | Inline identity-provider keys ([felix#2836](https://github.com/GetFelix/felix/issues/2836), blocks M1); reload the broker's control-plane client certificate ([felix#2837](https://github.com/GetFelix/felix/issues/2837)); refuse assertions issued before a revocation cutoff ([felix#2839](https://github.com/GetFelix/felix/issues/2839)) | Filed, v0.8.0 |
 
 ### Refinements of 0008
+
+Decided: both are accepted. 0008 carries a note pointing here.
 
 | 0008 says | This design | Why |
 |---|---|---|
@@ -809,6 +869,11 @@ After the revocation above:
   the `ninelives-config` entry, whose size on the fd is exactly 1 MiB, and
   whose range lies within the GPT's usable LBAs and overlaps no other
   partition.
+- **J16.** A production issuer issues no core-role certificate without an
+  operator approval of exactly the key set proven for that token, and never
+  approves a token that has had two different key sets proven.
+- **J17.** No core broker certificate carries the cluster's broker name, and
+  no `FELIX_BROKERS` value the issuer returns lists a core broker.
 
 ## Failure modes
 
@@ -819,7 +884,7 @@ passed, and no role service starts without a role.
 |---|---|---|---|
 | **Bad token** (unknown, wrong secret, expired, wrong role) | Issuer check 4 | `token_refused`; `join/failed`; exit 78; issuer alerts | An operator issues a new token and wipes the machine |
 | **Replay** of a captured exchange | The exchange is inside TLS to the authenticated issuer; proofs bind a fresh nonce and the session's exporter | A replayed Join gets a new nonce the replayer cannot sign; a replayed Proof fails on another session | 0008's x509pop-style nonce plus channel binding |
-| **Stolen token, used first by the thief** | The real machine's redemption is refused; the issuer alerts on a second use with different keys | The thief holds that one node id's certificates for that role, at most until the operator revokes the node, plus one certificate lifetime | Bounded by expiry (15 min default), single use, one role. For a core token this is the cluster (threat model), which is why core approval is an open question |
+| **Stolen token, used first by the thief** | The real machine's redemption is refused; the issuer alerts on a second use with different keys | The thief holds that one node id's certificates for that role, at most until the operator revokes the node, plus one certificate lifetime | Bounded by expiry (15 min default), single use, one role. That covers storage and worker tokens. A core token needs operator approval in production, so a thief's redemption shows a fingerprint that does not match the console and is not approved |
 | **Stolen token, not yet used** | Not detected | Worthless after expiry | 15 minutes, 60 at most |
 | **Stolen config partition before first boot (X7)** | Not detected | As a stolen token, within its expiry | Fingerprints are not secret |
 | **Stolen config partition after the join (X7)** | | It is zero | J10 |
@@ -836,6 +901,9 @@ passed, and no role service starts without a role.
 | **Power cut while writing a file** | Temporary names | A torn temporary file is overwritten on the next run | Rename is atomic |
 | **Clock wrong at first boot** | `STA_UNSYNC`, build-time floor, issuer time check | Not synchronized: exit 75, retried. Synchronized but off by more than 60 s: permanent failure | A machine without trustworthy time must not judge certificates |
 | **No authenticated time source at all** | As above | The join never runs its exchange; reported | Fail closed, by S15 |
+| **Core join awaiting approval** | Pending | Fingerprint on the console; exit 75; retried with the same keys | Production core joins need an operator by design |
+| **Two key sets for one core token** (a thief raced the machine) | Issuer, at the second Proof | Token blocked, alert; neither approved; the join keeps getting `token_refused` and fails permanently | The operator issues a new token and wipes the machine |
+| **Core token expires before approval** | Issuer | Pending redemption dropped; `token_refused`; permanent failure | New token |
 | **Issuer clock unsynchronized** | Issuer check 3, before Hello | Refused(`retry`) instead of Hello; the join exits 75 and retries | Joins wait for the issuer's clock instead of failing under J14 |
 | **Issuer down or unreachable** | Connect timeout | Exit 75; the init retries with backoff | Machines wait; the token may expire, then a new one is needed |
 | **Issuer rate-limits** | `retry` | Exit 75 after the stated delay | T65 |
@@ -894,7 +962,7 @@ read without root), S25 (rejoin under a new identity).
 | T52, read credentials from a stolen disk | Partial: the config is zeroed and the token never stored; keys are plaintext until S16 (accepted before M3) |
 | T65, flood the join | Failed attempts rate limited per source address, and concurrent pending joins capped; no per-token limit and no lockout, a declared [refinement of 0008](#refinements-of-0008) |
 | T71, a compromised join | Runs once; no capability; installs only roots matching the config's fingerprints; no Raft peer token |
-| T72 | Depends on [#77](#77-do-core-brokers-serve-tenant-clients) |
+| T72, attack a core broker with client tokens | Core machines are internal-only: no cluster broker name on core certificates, no core broker in `FELIX_BROKERS`, no client port in the core S7 list |
 | X7 | Config zeroed after use; a rewritten config cannot reach our cluster |
 
 T4, T24 and T25 are not changed by the join: they are Felix's
@@ -960,6 +1028,8 @@ step.
 | Kill the join at each step 6 to 12, then boot again: it finishes, or fails permanently where the table says, and never yields two incarnations | fault | partial failure rows, J7 |
 | Answers with a certificate on another key, under the wrong root, with a 48-hour lifetime, a root that does not match its fingerprint, an env name outside `join_env`: nothing is written | unit | J4, J5, J8 |
 | Clock: start with `STA_UNSYNC` set; with a clock before the build time; with an issuer 2 minutes off. No token sent in any of them; permanent failure in the third | unit and qemu | J1, J14 |
+| Core join on a production test issuer: the console shows the fingerprint, retries get Pending, approval leads to Issued; a second key set for the same token blocks it and alerts; expiry before approval drops it. On a development issuer the core join is issued at once | unit and qemu | J16 |
+| A core machine's broker certificate has no cluster broker name; `FELIX_BROKERS` on every role lists only storage brokers; from a worker, the core broker client port is closed (S7 scan); a token for a cluster with no storage machine is refused | unit and qemu | J17, #77 |
 | A test issuer whose clock is unsynchronized and 5 minutes off: it answers Refused(`retry`) instead of Hello, the join exits 75 with no token sent and no `join/failed`, and it joins once the issuer's clock is synchronized | unit and qemu | Issuer clock row, J11 |
 | With the image's real chrony and the KVM clock in qemu, the join gets past the clock wait within 60 s of boot; with `rtcsync` removed from a test config, it never does and says why | qemu | Time, `rtcsync` |
 | Disks with a `ninelives-config` entry of the wrong size, one overlapping the data partition, one at LBA 0 to 2047, and two such entries: no fd reaches the join, it fails permanently, and the data partition and the primary GPT are unchanged | qemu (test images) | J15 |
@@ -974,38 +1044,16 @@ step.
 
 ## Open questions
 
+Decided and moved into the design: core machines are internal-only
+([#77](https://github.com/GetFelix/ninelives/issues/77)), core joins wait for
+an operator, both [refinements of 0008](#refinements-of-0008), and the root
+updater ([#107](https://github.com/GetFelix/ninelives/issues/107), M3).
+
 | Question | Proposal | Decides | Needed by |
 |---|---|---|---|
-| Do core brokers serve tenant clients ([#77](https://github.com/GetFelix/ninelives/issues/77), T72)? | See [below](#77-do-core-brokers-serve-tenant-clients). Left to the owner. | Owner | M1 |
-| Do core-role joins need an operator's approval after the request arrives? A stolen core token is the cluster. | Yes in production: the issuer holds a core redemption as pending until an operator approves it, comparing the key fingerprint the join prints on the console. Development images skip it. Adds one issuer state and one console line; no change to the machine's flow beyond waiting. | Owner, with the `nl-issuer` design | M1 |
 | Should a token optionally name the source prefix it may be redeemed from? | Yes, optional, set at token creation. Useful on a known LAN or VPC, useless behind NAT. Adds one issuer check. | `nl-issuer` design | M1 |
-| Is re-delivery an acceptable refinement of 0008 step 4? | Yes, as written above. If not, a lost answer costs a new token and a wipe. | Owner | M1 |
 | How does a new core member get the Raft peer token until [felix#2802](https://github.com/GetFelix/felix/issues/2802) removes it? It is shared cluster admin (T25), so neither the join nor the issuer should carry it in the clear. | The operator encrypts it to the new member's Raft public key, read from the issuer's registry after the join, and the control plane's renewal helper fetches the ciphertext from the issuer, which cannot read it. Ties naturally to core approval. | Formation design | M1 |
 | Should the init stop retrying on exit 78? | Yes, small change: `failed`, no restart. The marker file already makes retries harmless. | Init design | M1 |
 | The frame encoding with the issuer | The config's record encoding, as above | `nl-issuer` design | M1 |
 | Bare metal without a hypervisor clock: does chrony's `nocerttimecheck` count as authenticated time under S15? | Yes for at most its first update, with the issuer cross-check as the second factor | [#59](https://github.com/GetFelix/ninelives/issues/59) | M5 |
-| How are roots replaced on a running machine? 0008 leaves this open. With `$DATA/trust/` writable by nothing after the join, replacing the cluster, internal or Raft root is a cluster rebuild, and the issuer root rolls only with old and new issuers side by side until every machine rejoins. Intermediates are not affected, so this arises only after an issuer compromise or at the 10-year root expiry. | A single-purpose updater with its own uid, the only writer of `$DATA/trust/`, that accepts a new set of roots only when signed by the offline issuer root with a strictly higher generation, so a replayed old set cannot bring back a removed root. Not `nl-renew`, which is network-facing and runs at service uids | Owner, with the `nl-issuer` design | Before the first production cluster |
 | Egress by port, not address, for the join | Accept: the issuer address is only in the config, and the packet filter must not parse it | Threat model | M1 |
-
-### #77: do core brokers serve tenant clients
-
-The join does not decide this, but it fixes which names go on which
-certificates, so each answer changes it.
-
-- **Yes, core brokers serve clients.** Every broker's client-listener
-  certificate carries the cluster's broker name. The broker list the issuer
-  returns for `FELIX_BROKERS` holds every broker, core included. Nothing else
-  changes. T72 stays open as written.
-- **No, in clusters that have storage machines.** A core broker's
-  client-listener certificate carries only its node id's name, never the
-  cluster broker name, so a client sent to a core broker by name fails the
-  TLS check. The issuer returns only storage brokers in `FELIX_BROKERS`,
-  felixd on core machines included, and so needs to know whether the
-  cluster has storage machines; it refuses a core token's role values until
-  at least one storage machine is active, or the cluster is marked as having
-  none. S7's port list then closes the core client port to everything but
-  peers. A cluster without storage machines (the smallest fault-tolerant
-  one) must answer yes.
-- **No, always.** As above, and a cluster needs storage machines to serve
-  any client, which raises the smallest fault-tolerant cluster from three
-  machines to five.

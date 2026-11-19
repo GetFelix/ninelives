@@ -3,6 +3,12 @@
 **Status:** Accepted, 2026-11-18. Answers
 [#16](https://github.com/GetFelix/ninelives/issues/16) for M1.
 
+**Amended:** the join design refines step 4 of Joining in two places,
+re-delivery after a lost answer and rate limits without a per-token limit or
+lockout. Both are accepted; see
+[Refinements of 0008](../components/join.md#refinements-of-0008). The text
+below is unchanged.
+
 ## Context
 
 Mutual TLS is the baseline on every Felix listener (S10), and the broker

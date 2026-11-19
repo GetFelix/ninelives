@@ -53,8 +53,11 @@ milestone's design says otherwise.
 
 felixd exits with status 1 if it cannot connect to Felix when it starts.
 Once connected, it retries its watches every second for as long as it runs.
-So the init must restart felixd with backoff when it exits, and must start
-it only after the role's Felix services are up on a core or storage machine.
+So the init must restart felixd with backoff when it exits, and on a core
+or storage machine starts it only after the role's Felix services have been
+started. Felix has no readiness signal, so felixd may start before Felix
+answers; it then exits 1 and is restarted
+([init.md](components/init.md#restart-with-backoff)).
 
 ## Stopping
 

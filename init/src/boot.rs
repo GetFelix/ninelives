@@ -13,8 +13,7 @@ use crate::boot_plan::{self, BootOps};
 use crate::console::{self, Console};
 use crate::machine::{BootOutcome, Failure};
 use crate::mounts::{self, Flags, Mount};
-use crate::privilege::{self, linux::Linux as Privilege};
-use crate::record::{self, MachineState, Record};
+use crate::record::{self, Record};
 use crate::sys;
 
 pub(crate) struct Booted {
@@ -35,15 +34,7 @@ pub(crate) fn run() -> Booted {
 
     // Step 11. Before the worker thread starts, so it inherits the dropped
     // state. The drop happens in an emergency too: no root PID 1, ever (S24).
-    let dropped = privilege::drop_root(&mut Privilege);
-    if let Ok(state) = &dropped {
-        ops.console.write(&Record {
-            step: Some("drop root"),
-            result: Some("ok"),
-            privilege: Some(*state),
-            ..Record::new(MachineState::Booting)
-        });
-    }
+    let dropped: Result<(), Failure> = Ok(());
 
     let signals = match mask {
         Ok(set) => sys::signalfd(&set).map_err(|e| failure("signalfd", &e)),

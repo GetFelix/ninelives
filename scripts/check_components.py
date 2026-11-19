@@ -61,12 +61,16 @@ def check(path: pathlib.Path) -> list[str]:
         sig = c.get("signature", {})
         kind = sig.get("kind")
         if kind == "sigstore":
+            # The fetch verifies the bundle against these, so none may be absent or empty.
+            for key in ("checksums", "bundle", "identity", "issuer"):
+                if not isinstance(sig.get(key), str) or not sig[key]:
+                    err(f"signature.kind = sigstore needs signature.{key}")
             for key in ("checksums", "bundle"):
-                if not sig.get(key, "").startswith(release):
+                if sig.get(key) and not sig[key].startswith(release):
                     err(f"signature.{key} is not from {release}")
-            if sig.get("identity") != f"{source}/.github/workflows/release.yml@refs/tags/v{version}":
+            if sig.get("identity") and sig["identity"] != f"{source}/.github/workflows/release.yml@refs/tags/v{version}":
                 err(f"signature.identity is not {source}'s release workflow at tag v{version}")
-            if sig.get("issuer") != "https://token.actions.githubusercontent.com":
+            if sig.get("issuer") and sig["issuer"] != "https://token.actions.githubusercontent.com":
                 err("signature.issuer is not GitHub Actions")
         elif kind == "none":
             # An unsigned component has to point at the issue that fixes it.

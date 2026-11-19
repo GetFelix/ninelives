@@ -25,7 +25,8 @@ reviewed pull request.
 
 | File | Pins |
 |---|---|
-| [`tools.toml`](tools.toml) | mkosi (release and SHA-256), the bootstrap container (digest), the Debian snapshot, the release of the root and of the tools, the tools' root packages |
+| [`tools.toml`](tools.toml) | mkosi and cosign (release and SHA-256), the SHA-256 of the Sigstore trusted root, the bootstrap container (digest), the Debian snapshot, the release of the root and of the tools, the tools' root packages |
+| [`keys/sigstore/`](keys/sigstore/README.md) | the Sigstore trusted root the fetch verifies component signatures against, offline |
 | [`debian.lock`](debian.lock) | every Debian package of the root and of the tools by name, version and SHA-256, and each suite's `InRelease` hash. `scripts/image_lock.py generate` writes it; the build regenerates it and fails on a difference. |
 | [`keys/debian/`](keys/debian/) | the Debian archive keys, with their fingerprints, checked against Debian's published ones |
 | [`components.toml`](components.toml) | Felix and felixd ([decision 0004](../docs/decisions/0004-components-from-pinned-releases.md)) |
@@ -43,3 +44,15 @@ reviewed pull request.
 `qemu-x86_64/target.toml` holds the target's console, disk names, UUID seeds
 and partition sizes. `scripts/check_components.py` and
 `scripts/image_lock.py check` check the pin files' shape in CI.
+
+## How components are checked
+
+`scripts/fetch_image.py` downloads each artifact in `components.toml` and
+checks its SHA-256 against the manifest. For a component with a Sigstore
+signature it also downloads `SHA256SUMS` and its bundle and runs the pinned
+cosign on them with the trusted root in `keys/sigstore/`. Nothing is fetched
+to do this. The certificate's identity and issuer must equal the manifest's
+exactly, and the artifact's hash must equal both the manifest's and the line
+for its file name in the signed `SHA256SUMS`. Any mismatch stops the build. A
+component with `kind = "none"` is checked by SHA-256 only, and its manifest
+entry links the issue that tracks the missing signature.

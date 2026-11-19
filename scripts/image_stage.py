@@ -49,7 +49,7 @@ RESIDUE = [
     # base-files' shell and login skeleton
     "/etc/profile", "/etc/environment", "/etc/motd", "/etc/update-motd.d", "/root/.bashrc", "/root/.profile",
     # timers and docs from removed packages, and links into /run that nothing writes
-    "/etc/systemd", "/usr/share/info", "/usr/local/man", "/usr/lib/clock-epoch", "/var/spool/mail",
+    "/etc/systemd", "/usr/share/info", "/usr/local", "/usr/lib/clock-epoch", "/var/spool/mail",
 ]
 # Links into /run, the init's tmpfs, that base-files makes in its postinst.
 RUN_LINKS = {"/var/run": "/run", "/var/lock": "/run/lock"}

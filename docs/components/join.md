@@ -243,6 +243,7 @@ copy them.
 | What it is | A 16-byte id and a 32-byte secret, made by the issuer from `getrandom` | The id lets the issuer find the record and lets logs name a token without revealing it |
 | Bound to | One node id and one role, at the issuer | The token cannot be redeemed for any other identity; the machine learns both from the issuer (0008) |
 | Lifetime | 15 minutes by default, 60 at most; core tokens default to 60, to leave time for approval | A stolen token is worth something only briefly (0008) |
+| Source range | Optional, set when the token is created: the issuer refuses a redemption from outside it. Decided: one issuer check. Useful on a known LAN or VPC, useless behind NAT | A stolen token is also useless from elsewhere on a known network |
 | Single use | Marked used in the same durable write that records the node (0008) | A second redemption is refused and alerted |
 | Stored | Only `SHA-256(secret)`, at the issuer | A copy of the issuer's registry yields no usable token |
 | Travels | Only inside TLS to an issuer the machine has authenticated | A network attacker never sees it (T5) |
@@ -257,8 +258,8 @@ nonce, so the certificates are useless without keys that never left the
 machine. A token redeemed by a thief is caught when the real machine's
 redemption is refused (0008). Two further factors:
 operator approval for core joins, decided and described
-[below](#the-exchange-with-the-issuer), and an optional source prefix fixed
-at token creation, still [open](#open-questions). M3 adds hardware binding: the
+[below](#the-exchange-with-the-issuer), and an optional source address range fixed
+at token creation (below). M3 adds hardware binding: the
 issuer also checks a TPM attestation that the keys' machine booted a
 NineLives image (0008, "Later proofs of identity").
 
@@ -454,6 +455,7 @@ cannot pose as the issuer (0008).
 
 **Messages.** Each message is one frame: a 4-byte length of at most 64 KiB,
 then records in the config body's encoding, so one small parser serves both.
+Decided: the issuer uses the same encoding.
 Unknown tags are refused on both sides.
 
 0. **Hello**, issuer to machine, as soon as the handshake completes: the
@@ -514,6 +516,13 @@ A held redemption holds no connection and does not count against check 2's
 cap on in-flight joins (a Join awaiting its Proof). It is bounded anyway:
 at most one per token, since a second blocks the token, and only core
 tokens can have one.
+
+Decided: until [felix#2802](https://github.com/GetFelix/felix/issues/2802)
+removes the Raft peer token, the operator encrypts it to the new member's
+Raft public key, read from the issuer's registry, during core approval. The
+issuer relays only the ciphertext and cannot read it, and the join never
+holds the token. The control plane's renewal helper fetches the ciphertext
+from the issuer.
 
 Development and test images of the issuer skip approval, as they skip other
 production rules (0008 names them in the image). Storage and worker tokens
@@ -736,7 +745,7 @@ full disk. 78 (`EX_CONFIG`) for a permanent failure, after writing
 `join/failed`. The init today retries any non-zero exit with backoff
 ([init design](init.md#failure-modes)); step 1 makes those retries cost
 nothing and contact nothing, which is what 0008 asks ("a loud alert, not a
-retry loop"). Teaching the init to stop on 78 is optional and listed below.
+retry loop"). Decided: the init stops on 78. The join is marked `failed` and not restarted.
 
 ### Time
 
@@ -755,7 +764,9 @@ waits for it.
   reads the hypervisor's clock (`PTP_1588_CLOCK_KVM`,
   [kernel design](kernel.md)), which needs no network and no certificate. On
   bare metal, chrony uses NTS, and the chicken-and-egg is chrony's own
-  `nocerttimecheck` for its first updates, a choice #59 settles. Either way
+  `nocerttimecheck` for its first updates. Decided: that first update, and
+  only that one, counts as authenticated under S15, with the issuer's clock
+  cross-check as the second factor ([#59](https://github.com/GetFelix/ninelives/issues/59)). Either way
   the time client runs in phase 1, before the join.
 - **The join waits for a synchronized clock.** It reads the kernel's clock
   state with `adjtimex` (read-only; without `CAP_SYS_TIME` a write is
@@ -867,7 +878,7 @@ After the revocation above:
 | Time client config | chrony runs with `rtcsync`, so it clears `STA_UNSYNC` ([Time](#time)) | For #59 |
 | [topology.md](../topology.md), S7's port list | Core machines are internal-only: the core role has no broker client port, and a cluster that serves clients has storage machines. The cluster size table changes | With the formation design |
 | Image config check | Fails if `FELIX_CONTROLPLANE_LEGACY_UNSCOPED_GROUPS` is set; added to S10's never-set list | Requirement updated in this change; check not built |
-| [init design](init.md) | Optional: exit 78 from the join means `failed`, no restart | Proposed here; the marker file works without it |
+| [init design](init.md) | Exit 78 from the join means `failed`, no restart | Updated in this change |
 | [image design](image.md) | The config partition is written once more on the machine: zeroed by the join after a successful join | Updated in this change |
 | [image design](image.md) | The packet filter allows the join's uid TCP to the issuer port and, on cloud images, the metadata address, and nothing else | For the packet filter's ruleset (S18, [#62](https://github.com/GetFelix/ninelives/issues/62)) |
 | `nl-issuer` design | Every issuer check and message above; re-delivery; assertions for renewal helpers; inline assertion keys exported for formation | Not written |
@@ -1076,7 +1087,7 @@ it.
 | Landlock devices | `/dev/null` | Randomness comes from `getrandom`, not a device node |
 | Network | TCP connect, IPv4 and IPv6 | To the issuer; on a cloud image also to the metadata address |
 | seccomp | An allowlist: the file calls it uses (`openat2`, `read`, `write`, `fsync`, `renameat2`, `unlinkat`, `mkdirat`, `syncfs`), `pread64`, `pwrite64` and `fdatasync` on fd 3, `getrandom`, `adjtimex`, `clock_gettime`, `socket` for `AF_INET` and `AF_INET6` with `SOCK_STREAM` only, `connect`, `sendto` and `recvfrom` on that socket, memory and thread calls, `exit_group`. No `ioctl`, no `execve`, no `AF_NETLINK`, no `AF_UNIX`, no UDP | No DNS, no other process, nothing beyond one TCP connection |
-| Egress (S18) | The join's uid may connect only to the issuer's TCP port, and on a cloud image to the metadata address | The ruleset is static, from the image, and the issuer's address is in the config, which only the join parses. So egress is limited by port, not by address. |
+| Egress (S18) | The join's uid may connect only to the issuer's TCP port, and on a cloud image to the metadata address | The ruleset is static, from the image, and the issuer's address is in the config, which only the join parses. Decided: egress is limited by port, not by address. |
 | Ingress | none | The join listens on nothing |
 | Run timeout | 120 seconds per run | A hung connection is a transient failure, retried |
 | cgroup | 64 MiB memory, small pids limit | It parses at most 4 KiB of config and a 64 KiB frame |
@@ -1123,17 +1134,18 @@ step.
 
 ## Open questions
 
-Decided and moved into the design: core machines are internal-only
-([#77](https://github.com/GetFelix/ninelives/issues/77)), core joins wait for
-an operator, the [refinements of 0008](#refinements-of-0008), and the root
-updater ([#107](https://github.com/GetFelix/ninelives/issues/107), M3).
+None left. Decided and moved into the design: core machines are
+internal-only ([#77](https://github.com/GetFelix/ninelives/issues/77)), core
+joins wait for an operator, the [refinements of 0008](#refinements-of-0008),
+and the root updater
+([#107](https://github.com/GetFelix/ninelives/issues/107), M3). Also decided:
 
-| Question | Proposal | Decides | Needed by |
-|---|---|---|---|
-| Should a token optionally name the source prefix it may be redeemed from? | Yes, optional, set at token creation. Useful on a known LAN or VPC, useless behind NAT. Adds one issuer check. | `nl-issuer` design | M1 |
-| How does a new core member get the Raft peer token until [felix#2802](https://github.com/GetFelix/felix/issues/2802) removes it? It is shared cluster admin (T25), so neither the join nor the issuer should carry it in the clear. | The operator encrypts it to the new member's Raft public key, read from the issuer's registry after the join, and the control plane's renewal helper fetches the ciphertext from the issuer, which cannot read it. Ties naturally to core approval. | Formation design | M1 |
-| Should the init stop retrying on exit 78? | Yes, small change: `failed`, no restart. The marker file already makes retries harmless. | Init design | M1 |
-| The frame encoding with the issuer | The config's record encoding, as above | `nl-issuer` design | M1 |
-| Bare metal without a hypervisor clock: does chrony's `nocerttimecheck` count as authenticated time under S15? | Yes for at most its first update, with the issuer cross-check as the second factor | [#59](https://github.com/GetFelix/ninelives/issues/59) | M5 |
-| The fault-tolerant production cluster size | 3 core + 2 storage, so the cluster survives losing any one machine and serving survives losing a storage machine. Not decided | Formation design, with the M2 demo ([#7](https://github.com/GetFelix/ninelives/issues/7)) | M2 |
-| Egress by port, not address, for the join | Accept: the issuer address is only in the config, and the packet filter must not parse it | Threat model | M1 |
+- the [Raft peer token](#the-exchange-with-the-issuer) reaches a new core
+  member encrypted to its Raft public key, until
+  [felix#2802](https://github.com/GetFelix/felix/issues/2802);
+- the init [stops on exit 78](#files-the-join-writes);
+- egress is [limited by port](#privileges-sandbox-and-egress), not address;
+- a token may [name a source address range](#the-token);
+- the [fault-tolerant production size](../topology.md#cluster-sizes) is 3 core + 2 storage;
+- the issuer [uses the config's record encoding](#the-exchange-with-the-issuer);
+- on bare metal, the [first chrony update](#time) counts as authenticated time.

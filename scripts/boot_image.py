@@ -75,7 +75,7 @@ def record_state(line: str) -> str | None:
 # /proc/1/status prints them, plus the securebits, which it does not show.
 INIT_ID = 900
 KEPT_CAPS = "0000000000400020"  # CAP_KILL (5) and CAP_SYS_BOOT (22)
-SECUREBITS = 0b1111  # NOROOT and NO_SETUID_FIXUP, each locked
+SECUREBITS = 0xCF  # NOROOT, NO_SETUID_FIXUP and NO_CAP_AMBIENT_RAISE, each locked
 DROP_EXPECTED = {
     "uid": [INIT_ID] * 3,
     "gid": [INIT_ID] * 3,
@@ -87,6 +87,9 @@ DROP_EXPECTED = {
     "cap_bnd": KEPT_CAPS,
     "securebits": SECUREBITS,
     "no_new_privs": 1,
+    "dumpable": 0,
+    "fsuid": INIT_ID,
+    "fsgid": INIT_ID,
 }
 
 

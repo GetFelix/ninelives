@@ -61,6 +61,9 @@ fn the_drop_record_carries_what_the_kernel_reported() {
         bounding: KEPT,
         securebits: SECUREBITS,
         no_new_privs: true,
+        dumpable: false,
+        fsuid: 900,
+        fsgid: 900,
     };
     let record = Record {
         step: Some("drop root"),
@@ -76,7 +79,7 @@ fn the_drop_record_carries_what_the_kernel_reported() {
          \"step\":\"drop root\",\"result\":\"ok\",\"uid\":[900,900,900],\"gid\":[900,900,900],\
          \"groups\":0,\"cap_prm\":\"0000000000400020\",\"cap_eff\":\"0000000000000000\",\
          \"cap_inh\":\"0000000000000000\",\"cap_amb\":\"0000000000000000\",\
-         \"cap_bnd\":\"0000000000400020\",\"securebits\":15,\"no_new_privs\":1}\n"
+         \"cap_bnd\":\"0000000000400020\",\"securebits\":207,\"no_new_privs\":1,\"dumpable\":0,\"fsuid\":900,\"fsgid\":900}\n"
     );
 }
 

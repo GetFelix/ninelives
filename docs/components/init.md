@@ -488,10 +488,14 @@ uid, and its service cannot (see [Escalation](#escalation-through-the-init)).
 
 PID 1's drop, after the launchers exist:
 
-1. Set securebits `NOROOT`, `NO_SETUID_FIXUP`, `NOROOT_LOCKED` and
-   `NO_SETUID_FIXUP_LOCKED` (S24). Locked, they cannot be cleared, so uid 0
-   would grant no capability even to a process that regained it.
-2. Limit the bounding set to `CAP_KILL` and `CAP_SYS_BOOT`.
+1. Set securebits `NOROOT`, `NO_SETUID_FIXUP` and `NO_CAP_AMBIENT_RAISE`,
+   each with its lock (S24). Locked, they cannot be cleared, so uid 0 would
+   grant no capability even to a process that regained it. The third stops
+   PID 1 raising `CAP_KILL` or `CAP_SYS_BOOT` into the ambient set, where it
+   would pass to whatever PID 1 executes; it matters until PID 1's seccomp
+   filter (step 6) is loaded and stays as a second layer after.
+2. Limit the bounding set to `CAP_KILL` and `CAP_SYS_BOOT`, and clear the
+   ambient set.
 3. `setgroups([])`, `setresgid(init_gid × 3)`, `setresuid(init_uid × 3)`.
    The filesystem uids follow. With `NO_SETUID_FIXUP` the capability sets
    are left for step 4 to narrow.
@@ -512,9 +516,11 @@ powers off ([Failure modes](#failure-modes)). The drop also happens when boot
 ended in `emergency`.
 
 After step 5 PID 1 reads the result back from the kernel (`getresuid`,
-`getresgid`, `getgroups`, `capget`, `PR_CAPBSET_READ`, `PR_CAP_AMBIENT`,
-`PR_GET_SECUREBITS`, `PR_GET_NO_NEW_PRIVS`) and powers off unless every value
-is what the steps asked for. It then writes one record, `"step":"drop root"`,
+`getresgid`, the filesystem ids with `setfsuid(-1)` and `setfsgid(-1)`,
+`getgroups`, `capget`, `PR_CAPBSET_READ`, `PR_CAP_AMBIENT`,
+`PR_GET_SECUREBITS`, `PR_GET_NO_NEW_PRIVS`, `PR_GET_DUMPABLE`) and powers off unless every value
+is exactly what the steps asked for; the failure record's `step` names the
+field (`drop: verify securebits`). It then writes one record, `"step":"drop root"`,
 with the ids, the five capability sets as hex (as `/proc/<pid>/status` prints
 them), the securebits and `no_new_privs`, so a test can read them off the
 console without a shell in the image. `/proc/<pid>/status` has no securebits
@@ -522,7 +528,8 @@ field, so this record is also the only place they show without a fault hook.
 Steps 1 to 5 are implemented; step 6, PID 1's seccomp filter, is not yet.
 
 Before `reboot(2)` PID 1 raises `CAP_SYS_BOOT` to effective with `capset`,
-and lowers it again if the call returns.
+and lowers it again if the call returns. If it cannot be lowered, PID 1
+powers off at once rather than run on holding it effective.
 
 | Kept | The operation that needs it |
 |---|---|
@@ -987,7 +994,7 @@ up. Publishing records to Felix is M4.
   exactly `CAP_KILL` and `CAP_SYS_BOOT`, and its effective set is empty
   outside the two calls that use them. Each launcher and service holds only
   its `ambient` list. Securebits `NOROOT` and `NO_SETUID_FIXUP` are set and
-  locked on every process.
+  locked on every process, and PID 1's also `NO_CAP_AMBIENT_RAISE`.
 - **I18.** No service starts unless every step of PID 1's drop and its
   launcher's drop succeeded.
 - **I19.** After boot, no sysctl changes, and no root-owned file outside
@@ -1012,6 +1019,12 @@ up. Publishing records to Felix is M4.
   from `$DATA/join/role`, and on first boot not before the join has exited
   0. A missing or invalid role starts no role-gated service and never
   causes a reboot.
+- **I25.** Nothing that needs a capability is forked from PID 1 after its drop.
+  Every launcher is forked in step 9, before the drop, and is never re-forked
+  (a lost launcher is not replaced). PID 1's securebits, which include
+  `NO_CAP_AMBIENT_RAISE`, its bounding set of `CAP_KILL` and `CAP_SYS_BOOT`
+  and `no_new_privs` are inherited by anything it forks later, and such a
+  child could not be given any other capability.
 
 ## Failure modes
 

@@ -1,7 +1,9 @@
 //! The system calls behind [`super::drop_root`].
 
 use rustix::io::Errno;
-use rustix::process::{DumpableBehavior, Gid, Uid, getgroups, set_dumpable_behavior};
+use rustix::process::{
+    DumpableBehavior, Gid, Uid, dumpable_behavior, getgroups, set_dumpable_behavior,
+};
 use rustix::thread::{
     CapabilitiesSecureBits, CapabilitySet, CapabilitySets, capabilities, capabilities_secure_bits,
     capability_is_in_ambient_set, capability_is_in_bounding_set, clear_ambient_capability_set,
@@ -88,6 +90,9 @@ fn read_back() -> Result<State, Errno> {
         bounding,
         securebits: capabilities_secure_bits()?.bits(),
         no_new_privs: no_new_privs()?,
+        dumpable: dumpable_behavior()? != DumpableBehavior::NotDumpable,
+        fsuid: sys::fsuid(),
+        fsgid: sys::fsgid(),
     })
 }
 
@@ -105,18 +110,25 @@ fn in_set(answer: Result<bool, Errno>) -> Result<bool, Errno> {
     }
 }
 
+/// Why [`raised`] failed.
+pub(crate) enum Raised {
+    /// The capability could not be raised; `call` did not run.
+    Raise(i32),
+    /// `call` ran and returned, but the capability could not be lowered
+    /// again, so PID 1 still holds it effective. The caller must not go on.
+    Lower,
+}
+
 /// Runs `call` with `caps` raised to effective, then lowers them. PID 1
 /// holds its two capabilities permitted only (I17).
-pub(crate) fn raised<T>(caps: u64, call: impl FnOnce() -> T) -> Result<T, i32> {
-    let held = capabilities(None).map_err(|e| e.raw_os_error())?;
+pub(crate) fn raised<T>(caps: u64, call: impl FnOnce() -> T) -> Result<T, Raised> {
+    let held = capabilities(None).map_err(|e| Raised::Raise(e.raw_os_error()))?;
     let with = CapabilitySets {
         effective: held.effective | CapabilitySet::from_bits_retain(caps),
         ..held
     };
-    set_capabilities(None, with).map_err(|e| e.raw_os_error())?;
+    set_capabilities(None, with).map_err(|e| Raised::Raise(e.raw_os_error()))?;
     let result = call();
-    // Lowering must not be skipped: a failed reboot returns here and the
-    // loop goes on.
-    set_capabilities(None, held).map_err(|e| e.raw_os_error())?;
+    set_capabilities(None, held).map_err(|_| Raised::Lower)?;
     Ok(result)
 }

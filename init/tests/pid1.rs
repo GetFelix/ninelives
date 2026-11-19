@@ -298,7 +298,7 @@ fn boots_reports_up_and_powers_off_on_sigusr2() {
     init.signal("USR2");
     init.expect(|l| l.contains(r#""signal":12,"action":"poweroff""#));
     init.expect(|l| l.contains(r#""step":"sync","result":"done""#));
-    init.expect(|l| l.contains(r#""step":"reboot","action":"poweroff""#));
+    init.expect(|l| l.contains(r#""action":"poweroff","step":"reboot""#));
     let status = init.wait();
     // I1: the only way out was reboot(2).
     assert!(powered_off(status), "{status:?}");
@@ -313,7 +313,7 @@ fn sigterm_and_sigint_reboot() {
         let mut init = Pid1::start();
         init.signal(name);
         init.expect(|l| l.contains(&format!(r#""signal":{signo},"action":"reboot""#)));
-        init.expect(|l| l.contains(r#""step":"reboot","action":"reboot""#));
+        init.expect(|l| l.contains(r#""action":"reboot","step":"reboot""#));
         let status = init.wait();
         assert!(restarted(status), "SIG{name}: {status:?}");
     }
@@ -373,7 +373,7 @@ fn i2_orphans_are_reaped_promptly() {
     assert_eq!(children, 0, "the init still has children");
 
     init.signal("USR2");
-    init.expect(|l| l.contains(r#""step":"reboot","action":"poweroff","orphans_reaped":3"#));
+    init.expect(|l| l.contains(r#""action":"poweroff","step":"reboot","orphans_reaped":3"#));
     assert!(powered_off(init.wait()));
 }
 
@@ -408,6 +408,8 @@ fn mounts_match_init_md_and_proc_sys_is_read_only() {
     };
     let has = |set: &[String], want: &[&str]| want.iter().all(|w| set.iter().any(|s| s == w));
 
+    // tmpfs leaves its default mode, 1777, out of mountinfo, so /tmp's is
+    // not listed.
     for (target, fstype, opts, superopts) in [
         (
             "/proc",
@@ -433,7 +435,7 @@ fn mounts_match_init_md_and_proc_sys_is_read_only() {
             "/tmp",
             "tmpfs",
             &["nosuid", "nodev", "noexec"],
-            &["mode=1777", "size=65536k"],
+            &["size=65536k"],
         ),
         (
             "/proc/sys",
@@ -490,6 +492,6 @@ fn a_failed_mount_is_an_emergency_that_still_locks_and_stops() {
     );
 
     init.signal("USR2");
-    init.expect(|l| l.contains(r#""step":"reboot","action":"poweroff""#));
+    init.expect(|l| l.contains(r#""action":"poweroff","step":"reboot""#));
     assert!(powered_off(init.wait()));
 }

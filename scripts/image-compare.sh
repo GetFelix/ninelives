@@ -87,4 +87,37 @@ diffoscope --version
 # diffoscope's scratch space stays under the work directory.
 export TMPDIR=$work/tmp
 mkdir -p "$TMPDIR"
+
+# A comparison that cannot fail proves nothing. Before the real one, change one
+# byte in the middle of build A's root filesystem in a copy, and require that
+# this is reported as a mismatch with a diffoscope report on that file.
+fixture=$work/fixture
+rm -rf "$fixture"
+mkdir -p "$fixture/changed"
+for f in "$a"/*; do
+  case $f in
+    *.root.erofs) cp "$f" "$fixture/changed/" ;;
+    *) ln -s "$f" "$fixture/changed/$(basename "$f")" ;;
+  esac
+done
+erofs=$(ls "$fixture"/changed/*.root.erofs)
+python3 -I -c '
+import sys
+path = sys.argv[1]
+with open(path, "r+b") as f:
+    f.seek(64 << 20)
+    b = f.read(1)
+    f.seek(64 << 20)
+    f.write(bytes([b[0] ^ 1]))' "$erofs"
+(cd "$fixture/changed" && sha256sum -- ninelives-*.* > "$fixture/SHA256SUMS" && rm -f SHA256SUMS && cp "$fixture/SHA256SUMS" SHA256SUMS)
+if python3 -I "$repo/scripts/image_compare.py" --a "$a" --b "$fixture/changed" --report "$fixture/report" 2>"$fixture/log"; then
+  echo "the comparison passed two builds that differ by a byte" >&2
+  exit 1
+fi
+test -s "$fixture/report/summary.txt"
+grep -q 'differs: ninelives-.*\.root\.erofs' "$fixture/report/summary.txt"
+test -s "$fixture"/report/ninelives-*.root.erofs.txt || { echo "no diffoscope report for the changed file" >&2; cat "$fixture/log" >&2; exit 1; }
+echo "fixture: a one-byte change is reported, with a diffoscope report"
+rm -rf "$fixture"
+
 python3 -I "$repo/scripts/image_compare.py" --a "$a" --b "$b" --report "$report"

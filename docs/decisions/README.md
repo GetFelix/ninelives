@@ -10,7 +10,7 @@ the system does. These files say why it is built the way it is.
 | [0001](0001-linux-kernel.md) | The kernel is stock Linux | Accepted | M2, then reviewed |
 | [0002](0002-our-own-init.md) | PID 1 is our own init, written in Rust | Accepted | M2, then reviewed at M4 |
 | [0003](0003-mkosi-image-build.md) | Images are built with mkosi, in CI | Accepted | M2 |
-| [0004](0004-components-from-signed-releases.md) | Felix and felixd ship from pinned releases, not a submodule | Accepted | Open-ended |
+| [0004](0004-components-from-pinned-releases.md) | Felix and felixd ship from pinned, verified releases, not a submodule | Accepted | Open-ended |
 | [0005](0005-rust-and-unsafe.md) | System code is Rust, and `unsafe` lives in one place | Accepted | Open-ended |
 
 ## When to write one
@@ -25,6 +25,8 @@ a wire format is.
 Copy an existing record. Every record has these sections:
 
 - **Status:** Proposed, Accepted, or Superseded by a later number. A record
+  is Proposed while it is open for argument, and code may not depend on it
+  yet. It becomes Accepted when it merges after review. A record
   is never edited to say something else once accepted. A new record
   supersedes it, and the old one gets a line pointing forward.
 - **Context:** what forces the choice now, and which milestone needs it.

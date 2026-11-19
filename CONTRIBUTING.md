@@ -47,9 +47,10 @@ A design in `docs/components/<name>.md` has these sections, in this order:
 ## Code
 
 - System code is Rust, stable, edition 2024
-  ([0005](docs/decisions/0005-rust-and-unsafe.md)). `#![forbid(unsafe_code)]`
-  everywhere except a crate's `sys` module, and every `unsafe` block there
-  has a `// SAFETY:` comment.
+  ([0005](docs/decisions/0005-rust-and-unsafe.md)). Every crate sets
+  `#![deny(unsafe_code)]`. The only exception is one `#[allow(unsafe_code)]
+  mod sys` per crate, and every `unsafe` block there has a `// SAFETY:`
+  comment.
 - `cargo fmt`, `cargo clippy -- -D warnings` and `cargo deny` pass.
 - Errors are returned and handled. A program that runs as PID 1 or as a
   system service does not panic on input it can survive.
@@ -59,7 +60,7 @@ A design in `docs/components/<name>.md` has these sections, in this order:
   limit that exists for a reason. They do not restate the code.
 - Components the image ships but does not build are listed in
   [`images/components.toml`](images/components.toml)
-  ([0004](docs/decisions/0004-components-from-signed-releases.md)). Never
+  ([0004](docs/decisions/0004-components-from-pinned-releases.md)). Never
   vendor or submodule them.
 
 ## Tests

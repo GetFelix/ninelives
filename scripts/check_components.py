@@ -10,9 +10,11 @@ import sys
 import tomllib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-ARCHES = {"x86_64", "aarch64"}
+# The name each architecture goes by in upstream file names.
+ARCHES = {"x86_64": ("x86_64",), "aarch64": ("aarch64", "arm64")}
 SHA256 = re.compile(r"[0-9a-f]{64}")
 VERSION = re.compile(r"\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?")
+ISSUE = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/issues/\d+")
 
 
 def check(path: pathlib.Path) -> list[str]:
@@ -39,10 +41,12 @@ def check(path: pathlib.Path) -> list[str]:
         version = c.get("version", "")
         if not VERSION.fullmatch(version):
             err(f"version {version!r} is not an exact release version")
-        tag = f"/v{version}/"
+        source = c.get("source", "").rstrip("/")
+        if not re.fullmatch(r"https://github\.com/[\w.-]+/[\w.-]+", source):
+            err("source must be a GitHub repository URL")
+        # Every download has to come from this component's own release.
+        release = f"{source}/releases/download/v{version}/"
 
-        if not c.get("source", "").startswith("https://"):
-            err("source must be an https URL")
         contract = c.get("contract")
         if contract and not (ROOT / contract).is_file():
             err(f"contract {contract} does not exist")
@@ -50,17 +54,16 @@ def check(path: pathlib.Path) -> list[str]:
         sig = c.get("signature", {})
         kind = sig.get("kind")
         if kind == "sigstore":
-            for key in ("checksums", "bundle", "identity", "issuer"):
-                if not sig.get(key, "").startswith("https://"):
-                    err(f"signature.{key} must be an https URL")
             for key in ("checksums", "bundle"):
-                if tag not in sig.get(key, ""):
-                    err(f"signature.{key} is not from release v{version}")
-            if not sig.get("identity", "").endswith(f"@refs/tags/v{version}"):
-                err(f"signature.identity is not pinned to tag v{version}")
+                if not sig.get(key, "").startswith(release):
+                    err(f"signature.{key} is not from {release}")
+            if sig.get("identity") != f"{source}/.github/workflows/release.yml@refs/tags/v{version}":
+                err(f"signature.identity is not {source}'s release workflow at tag v{version}")
+            if sig.get("issuer") != "https://token.actions.githubusercontent.com":
+                err("signature.issuer is not GitHub Actions")
         elif kind == "none":
             # An unsigned component has to point at the issue that fixes it.
-            if not sig.get("tracking", "").startswith("https://github.com/"):
+            if not ISSUE.fullmatch(sig.get("tracking", "")):
                 err("signature.kind = none needs a tracking issue URL")
         else:
             err(f"signature.kind must be sigstore or none, not {kind!r}")
@@ -68,12 +71,25 @@ def check(path: pathlib.Path) -> list[str]:
         artifacts = c.get("artifacts", {})
         if not artifacts:
             err("no artifacts")
+        urls = set()
         for arch, a in artifacts.items():
             if arch not in ARCHES:
                 err(f"unknown architecture {arch!r}")
+                continue
             url = a.get("url", "")
-            if not url.startswith("https://") or tag not in url:
-                err(f"{arch} url is not an https URL from release v{version}")
+            filename = url.rsplit("/", 1)[-1]
+            if not url.startswith(release) or "/" in url[len(release):]:
+                err(f"{arch} url is not a file in {release}")
+            if f"v{version}" not in filename or "linux" not in filename:
+                err(f"{arch} url does not name a v{version} Linux build")
+            if not any(n in filename for n in ARCHES[arch]):
+                err(f"{arch} url does not name an {arch} build")
+            for other, names_ in ARCHES.items():
+                if other != arch and any(n in filename for n in names_):
+                    err(f"{arch} url names an {other} build")
+            if url in urls:
+                err(f"{arch} url is used for two architectures")
+            urls.add(url)
             if not SHA256.fullmatch(a.get("sha256", "")):
                 err(f"{arch} sha256 is not 64 lowercase hex digits")
     return errors

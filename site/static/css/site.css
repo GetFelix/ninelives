@@ -409,7 +409,6 @@ main { display: block; }
 /* Open questions */
 .questions { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; }
 .questions li { grid-column: span 2; }
-.questions li:nth-child(-n+2) { grid-column: span 3; }
 .questions a {
   position: relative;
   display: flex;
@@ -664,8 +663,7 @@ main { display: block; }
   .track { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 36px; }
   .track::before { display: none; }
   .questions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .questions li, .questions li:nth-child(-n+2) { grid-column: auto; }
-  .questions li:first-child { grid-column: 1 / -1; }
+  .questions li { grid-column: auto; }
   .foot { grid-template-columns: 1fr; }
 }
 @media (max-width: 860px) {

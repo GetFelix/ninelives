@@ -1,5 +1,5 @@
 # Every program the image ships that NineLives does not build itself.
-# See docs/decisions/0004-components-from-signed-releases.md.
+# See docs/decisions/0004-components-from-pinned-releases.md.
 #
 # Change this file only in a reviewed pull request. The image build downloads
 # each artifact, checks its sha256, verifies the upstream signature where one

@@ -25,6 +25,8 @@ repo = "https://github.com/GetFelix/ninelives"
 def to_github(m):
     target, anchor = m.group(1), m.group(2) or ""
     path = posixpath.normpath(posixpath.join("docs", target))
+    if path.startswith("docs/") and path[5:] in links:
+        return f"]({links[path[5:]]}{anchor})"
     kind = "tree" if target.endswith("/") or (root / path).is_dir() else "blob"
     return f"]({repo}/{kind}/main/{path}{anchor})"
 
@@ -36,7 +38,7 @@ for src, page, weight, desc in docs:
     body = text[m.end():].lstrip("\n")
     for name, url in links.items():
         body = re.sub(r"\]\(%s(#[^)]*)?\)" % re.escape(name), lambda k: "](%s%s)" % (url, k.group(1) or ""), body)
-    # Anything else relative is a file in the repo the site does not render.
+    # Other relative links, including ./ and ../ spellings of the pages above.
     body = re.sub(r"\]\((?!https?://|mailto:|#|/)([^)#\s]+)(#[^)]*)?\)", to_github, body)
     front = (
         "+++\n"

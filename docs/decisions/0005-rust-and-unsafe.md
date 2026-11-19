@@ -15,9 +15,11 @@ Programs that run on a NineLives machine are written in Rust, on the stable
 toolchain, edition 2024. Build scripts and site tooling may stay in Python
 or shell.
 
-Every crate sets `#![forbid(unsafe_code)]`, except one module per crate that
-wraps system calls the safe libraries do not cover, named `sys`. In that
-module:
+Every crate sets `#![deny(unsafe_code)]`. A crate that has to wrap system
+calls the safe libraries do not cover does it in one module, declared as
+`#[allow(unsafe_code)] mod sys;`, and nowhere else. (`forbid` would be
+stricter, but it cannot be relaxed for one module, so `deny` plus a single
+`allow` is the rule.) In that module:
 
 - each `unsafe` block has a `// SAFETY:` comment that says why it is sound,
   and review checks it;
@@ -46,8 +48,9 @@ only where the invariant is local and stated in the message.
 
 ## Consequences
 
-- The `unsafe` surface is small and easy to find: `grep -rn unsafe` lists
-  all of it.
+- The `unsafe` surface is small and easy to find:
+  `grep -rn 'allow(unsafe_code)'` lists every place it is allowed, and a
+  second one in a crate fails review.
 - Some system calls need a hand-written wrapper in `sys` until rustix covers
   them.
 - The same toolchain and lint setup as felixd and Felix, so a contributor

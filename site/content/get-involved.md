@@ -23,7 +23,7 @@ Every milestone is split into [issues](https://github.com/GetFelix/ninelives/iss
 git clone https://github.com/GetFelix/ninelives
 ```
 
-There is no build yet. Images will be built with [mkosi](https://github.com/systemd/mkosi) in CI and booted in qemu on every pull request, so you can read a boot log without installing anything. Felix and felixd are not built here: the image takes their signed releases, pinned in `images/components.toml`.
+There is no build yet. Images will be built with [mkosi](https://github.com/systemd/mkosi) in CI and booted in qemu on every pull request, so you can read a boot log without installing anything. Felix and felixd are not built here: the image takes their releases, pinned by hash in `images/components.toml`.
 
 ## Change this site
 

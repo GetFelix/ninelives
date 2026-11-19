@@ -104,7 +104,7 @@ init (PID 1)
   has CPU and memory reserved with cgroups. The reservation is what stops a
   busy workload from slowing the log on a shared machine.
 - **Felix upgrades with the image.** The image pins a Felix release
-  ([0004](decisions/0004-components-from-signed-releases.md)), so upgrading
+  ([0004](decisions/0004-components-from-pinned-releases.md)), so upgrading
   Felix is an image upgrade, with the same rollback.
 - Felix's data lives on the data partition, so an image upgrade never
   touches it, whatever the update mechanism turns out to be.

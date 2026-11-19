@@ -1,7 +1,7 @@
 # What NineLives relies on from felixd
 
 felixd is the node agent that runs workloads from the log. NineLives ships it
-([0004](decisions/0004-components-from-signed-releases.md)) and its init
+([0004](decisions/0004-components-from-pinned-releases.md)) and its init
 starts it ([0002](decisions/0002-our-own-init.md)). This page lists every
 property of felixd the image depends on, as of the version pinned in
 [`images/components.toml`](../images/components.toml).
@@ -22,11 +22,12 @@ broker (it is built and tested against Felix 0.7.2).
 | Checksums | `SHA256SUMS` over the tarballs |
 | Signature | `SHA256SUMS.sigstore.json`, a keyless Sigstore bundle. Identity `https://github.com/GetFelix/felixd/.github/workflows/release.yml@refs/tags/v<version>`, issuer `https://token.actions.githubusercontent.com` |
 | Reproducible | Built twice in felixd's release workflow, the second time on a clean runner, and compared |
-| Linking | Dynamically linked against glibc, so the image provides glibc |
+| Linking | Dynamically linked against glibc. The 0.1.0 binaries need glibc 2.38 or newer (they reference `GLIBC_2.38` symbols; felixd builds on an Ubuntu 24.04 runner), so the base distribution has to provide at least that. Felix 0.7.2's server has the same floor. |
 
 ## Running it
 
-The init starts `felixd agent` as an unprivileged user. felixd needs no root
+The init starts `felixd agent` as an unprivileged user.
+Settings come from environment variables or the matching flags. felixd needs no root
 and no capabilities, listens on no port unless metrics are turned on, and
 writes nothing to local disk. Workload modules and snapshots live in Felix.
 
@@ -39,6 +40,8 @@ writes nothing to local disk. Workload modules and snapshots live in Felix.
 | `FELIX_AUTH_TOKEN_FILE` | yes | A file on the data partition holding the node token. felixd reads it every time it uses the token, so replacing the file rotates the token. If a later read fails or finds it empty, felixd keeps the last good token. |
 | `FELIX_CA_FILE` | no | The cluster CA from the join, on the data partition |
 | `FELIX_CONTROLPLANE_URL` | yes | The control plane from the join config |
+| `FELIX_CONTROLPLANE_TOKEN_FILE` | no | Not set on the agent. Only `felixd init`, run once on a core machine when the cluster forms, gets the control plane token. With it set, an agent may also run admission. |
+| `FELIXD_ADMISSION_TOKEN_FILE` | no | Set only on the core machines that run admission, once the identity design (#16) says how that token is issued |
 | `FELIXD_NODE_ID` | no, but the image always sets it | The machine's identity. felixd's default is the host name plus the process id, which changes on every restart. |
 | `--metrics-bind` | no (off) | Set only if a later milestone decides to expose metrics. The endpoint has no authentication. |
 

@@ -20,7 +20,8 @@ Felix 0.7.2).
 The choices that shape the system are [decision records](decisions/), each
 with what it costs and when it gets reviewed again. Through M2: stock Linux,
 our own init as PID 1, images built with mkosi, and Felix and felixd shipped
-from pinned, signed releases. What is still undecided is under
+from pinned releases checked by hash and, where the upstream signs them, by
+signature. What is still undecided is under
 [Open questions](#open-questions). What NineLives relies on from felixd is in
 [felixd-contract.md](felixd-contract.md).
 
@@ -262,7 +263,7 @@ costs and when it is reviewed again.
 | The kernel is stock Linux, pinned, no patches or out-of-tree modules | M2, then reviewed | [0001](decisions/0001-linux-kernel.md) |
 | PID 1 is our own init, in Rust, with a deliberately small scope | M2, reviewed again at M4 | [0002](decisions/0002-our-own-init.md) |
 | Images are built with mkosi, in CI, reproducibly | M2 | [0003](decisions/0003-mkosi-image-build.md) |
-| Felix and felixd ship from pinned, signed releases | Open-ended | [0004](decisions/0004-components-from-signed-releases.md) |
+| Felix and felixd ship from pinned releases, checked by hash and by signature where signed | Open-ended | [0004](decisions/0004-components-from-pinned-releases.md) |
 | System code is Rust, with `unsafe` confined to one module per crate | Open-ended | [0005](decisions/0005-rust-and-unsafe.md) |
 
 Everything NineLives writes uses standard system calls only, so that after
@@ -278,9 +279,53 @@ what we would try first, written down so it can be argued with.
 
 | Question | Needed by | Proposal |
 |---|---|---|
-| The base distribution the root is built from | M0 ([#1](https://github.com/GetFelix/ninelives/issues/1)) | Decided in #1, with a record |
+| [The base distribution](#the-base-distribution) | M0 ([#1](https://github.com/GetFelix/ninelives/issues/1)) | None yet. To be discussed first. |
 | The kernel version, and whether it is built from source or taken from the distribution | M0 ([#3](https://github.com/GetFelix/ninelives/issues/3)) | Decided in #3, with a record |
 | [Node identity and credentials](#node-identity-and-credentials) | M1 | A one-time join token; TPM and cloud identity later |
+
+### The base distribution
+
+Everything in the root that NineLives does not write or pin in
+[`images/components.toml`](../images/components.toml) comes from somewhere:
+glibc, the tools the init starts (a DHCP client, time sync), CA
+certificates, and possibly the kernel (#3). The base distribution is where.
+It decides more than it looks like it does:
+
+- **What package management means.** NineLives machines upgrade by
+  swapping whole images, so a machine has no package manager at run time.
+  The distribution's packages are an input to the image build, not
+  something anyone installs on a running machine. How users add software is
+  felixd's job (workloads, then the native tier), not apt's or dnf's.
+- **How pinning and reproducibility work.** A reproducible image needs
+  every package at an exact version, fetched from an archive that still
+  has it later. Some distributions keep dated snapshots of their whole
+  archive; others do not.
+- **How fast security fixes arrive**, and so how often images are rebuilt,
+  and how long a release is supported.
+- **Architectures**, x86_64 and aarch64 now, a Raspberry Pi in M5.
+- **The C library.** Felix's and felixd's release binaries need glibc
+  2.38 or newer ([felixd-contract.md](felixd-contract.md#the-release)),
+  which rules out musl distributions and older releases unless both
+  projects ship other builds.
+- **Source obligations.** Publishing images means publishing source for the
+  GPL packages in them ([Licensing](#licensing)); some archives make that
+  easy.
+- **How well mkosi supports it** ([0003](decisions/0003-mkosi-image-build.md)).
+
+| Option | For | Against |
+|---|---|---|
+| Debian 13 | Long-lived stable releases, a complete archive with dated snapshots, a strong reproducible-builds effort, aarch64 and Raspberry Pi support, first-class in mkosi | Packages age within a release; slower to pick up new kernels and tools |
+| Ubuntu 24.04 LTS | Long support, apt, an archive snapshot service, wide cloud images | One company's choices (snap, its kernel flavours) to avoid |
+| Fedora | Current packages, close to the mkosi and systemd developers | Releases last about 13 months, so the base moves often |
+| Fedora CoreOS | Already an image-based OS for clusters: atomic upgrades with rollback, Ignition for first-boot configuration, automatic updates, signed images, x86_64 and aarch64, cloud images. Much of M1, M3 and M5 exists. | A whole OS rather than a base: systemd is PID 1 and images are built with rpm-ostree or bootc, so choosing it reopens [0002](decisions/0002-our-own-init.md) and [0003](decisions/0003-mkosi-image-build.md). NineLives becomes a derivative that follows its update streams and Fedora's cadence. |
+| CentOS Stream, AlmaLinux or Rocky | Long support and an enterprise audience | Older packages; Stream changes under you |
+| Alpine | Very small | musl, so Felix and felixd would need musl builds |
+| Nix | Reproducible and pinned by construction | Its own build system and image tooling, which replaces mkosi rather than feeding it |
+| No distribution (Buildroot, Yocto, or our own) | Smallest image, every package chosen | Every package's security fixes become ours to track |
+
+**Needed by:** M0, since the first image needs a root.
+
+**Proposal:** none yet. This is to be discussed before #1 starts.
 
 ### Node identity and credentials
 
@@ -366,6 +411,8 @@ so an aarch64 image cannot take a core or storage role yet, and its checksums
 are not signed ([felix#2796](https://github.com/GetFelix/felix/issues/2796)).
 
 **Decisions needed:** the base distribution (#1) and the kernel version (#3).
+The distribution has to ship glibc 2.38 or newer, which Felix and felixd's
+release binaries need ([felixd-contract.md](felixd-contract.md#the-release)).
 
 ### M1: joins a cluster
 
@@ -469,5 +516,5 @@ This repository is MIT. A built image also contains software under other
 licenses, which keep them: the Linux kernel and other GPL software, and Felix,
 which is AGPL-3.0. Publishing images means publishing the matching source, or
 a written offer for it, for those components. The image's inventory
-([0004](decisions/0004-components-from-signed-releases.md)) lists each one
+([0004](decisions/0004-components-from-pinned-releases.md)) lists each one
 with its license.

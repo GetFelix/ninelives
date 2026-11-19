@@ -95,6 +95,12 @@ issues = [
 # Open ones first. When one is decided, set decided = true, put the decision in
 # "answer" and link its record in docs/decisions/.
 [[questions]]
+title = "Which distribution is the root built from?"
+answer = "None yet. It decides pinning, security updates, architectures and source obligations, so it is discussed first."
+link = "https://ninelives.getfelix.dev/design/os/#the-base-distribution"
+label = "Design"
+
+[[questions]]
 title = "How does a machine upgrade?"
 answer = "A/B root partitions that switch on reboot and fall back on a failed boot."
 link = "https://github.com/GetFelix/ninelives/issues/8"
@@ -116,13 +122,13 @@ label = "Decision 0001"
 [[questions]]
 title = "Our own PID 1, or systemd?"
 decided = true
-answer = "Our own small init in Rust: it mounts, reaps, starts and restarts the role's services, and shuts down so Felix never has to repair."
+answer = "Our own small init in Rust: it mounts, reaps, starts and restarts the role's services, and shuts down in order so a clean reboot leaves Felix nothing to repair."
 link = "https://github.com/GetFelix/ninelives/blob/main/docs/decisions/0002-our-own-init.md"
 label = "Decision 0002"
 
 [[questions]]
 title = "How are images built?"
 decided = true
-answer = "mkosi, in CI, built twice and compared. Felix and felixd come from pinned, signed releases."
+answer = "mkosi, in CI, built twice and compared. Felix and felixd come from pinned releases, checked by hash and signature."
 link = "https://github.com/GetFelix/ninelives/blob/main/docs/decisions/0003-mkosi-image-build.md"
 label = "Decision 0003"

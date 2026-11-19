@@ -21,9 +21,10 @@ built in CI on Linux runners. A local run boots an image that CI built.
 The image does not contain systemd as its init
 ([0002](0002-our-own-init.md)). The kernel command line names our init.
 
-Two choices are made inside this one, each in its own issue: the base
-distribution the root is built from (#1), and whether the kernel comes from
-that distribution or is built from source (#3).
+Two choices sit on top of this one and are still open: the base
+distribution the root is built from
+([open question](../design.md#the-base-distribution)), and whether the
+kernel comes from that distribution or is built from source (#3).
 
 Every image build is reproducible. CI builds each image twice from the same
 commit and fails if the two differ.

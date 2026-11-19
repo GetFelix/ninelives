@@ -41,8 +41,8 @@ The pieces:
   init as PID 1, a read-only root and atomic upgrades that can roll back
   (A/B partitions are the current proposal).
 - **[felixd](https://github.com/GetFelix/felixd)**, the node agent that runs
-  workloads from the log. It has its own repo; the image ships its signed
-  releases.
+  workloads from the log. It has its own repo; the image ships its
+  releases, pinned by hash and checked against felixd's signature.
 - **Felix brokers** on some of the machines.
 - **System programs on the log:** the scheduler, the name service and the
   `fx` shell.

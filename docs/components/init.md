@@ -1195,8 +1195,11 @@ root, written once by the join and writable by no service or helper
 afterwards, as [0008](../decisions/0008-ca-keys-and-machine-certificates.md)
 step 5 lays out. Each service's Landlock ruleset reads only the roots it
 needs. No renewal helper can change what a service trusts. The cost is the
-one 0008 states: until a trust update path is designed, replacing a root
-means wiping and rejoining machines. The layout and the reasons are in the
+one 0008 states: until a trust update path is designed, replacing the
+cluster, internal or Raft root is a cluster rebuild, and the issuer root
+rolls only by running old and new issuers side by side while every machine
+is wiped and rejoined. Yearly intermediate replacement does not touch these
+files. The layout and the reasons are in the
 [join design](join.md#certificates-per-role).
 
 Felix's broker listeners and Raft peer port require mTLS, so every Felix

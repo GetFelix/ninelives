@@ -200,13 +200,17 @@ boot:
    `join/` is the join's directory, so the most a planted entry can decide
    is whether this fd is opened), it also finds `ninelives-config` on that
    disk, exactly once.
-2. Before opening it, PID 1 checks its sysfs `size` is exactly 2048
-   sectors (1 MiB) and that its `start` and `size` overlap no other
-   partition on the disk. GPT names are written by whoever wrote the disk
-   (X7): without this, an entry named `ninelives-config` laid over the data
-   partition would be read as config, and the join's zeroing would destroy
-   1 MiB of data. Only then does it open it `O_RDWR | O_CLOEXEC`. A failed
-   check, two matches or none mean no fd, and the join then fails closed.
+2. PID 1 opens it `O_RDWR | O_CLOEXEC`, then checks the open fd, not the
+   name: `fstat`'s `st_rdev` must equal the partition's sysfs `dev`, and the
+   size read from the fd (`BLKGETSIZE64`, before the drop) must be exactly
+   1 MiB. From sysfs it also checks that the partition's `start` and `size`
+   lie within the GPT's first and last usable LBA and overlap no other
+   partition on the disk. GPT entries are written by whoever wrote the disk
+   (X7): without these checks, an entry named `ninelives-config` laid over
+   the data partition would be read as config and the join's zeroing would
+   destroy 1 MiB of data, and one at LBA 0 to 2047 would let the zeroing
+   wipe the primary GPT. A failed check, two matches or none: PID 1 closes
+   the fd, passes none, and the join fails closed.
 3. PID 1 never reads from that fd. It keeps it only until it forks the
    join's launcher, which keeps it through its `close_range`, and PID 1 then
    closes its own copy.
@@ -319,10 +323,16 @@ runs at its service's uid, and a parser bug there must not be able to widen
 what the service trusts. The cost is 0008's own: until a trust update path
 is designed
 ([0008, Consequences](../decisions/0008-ca-keys-and-machine-certificates.md#consequences)),
-a root rotation is a rolling wipe and rejoin, and recovering from an issuer
-compromise, which needs new roots everywhere, is a cluster rebuild. Without
-a rebuild, machines keep the old issuer root and lose their certificates
-within 24 hours once the old issuer is gone. The [init design](init.md#secrets)
+replacing the cluster, internal or Raft root is a cluster rebuild. A
+rolling wipe and rejoin does not work for those three: a machine rejoined
+under a new root and one still on the old root reject each other on mutual
+TLS ([0008, Recovery](../decisions/0008-ca-keys-and-machine-certificates.md)).
+Only the issuer root can roll, by running the old and new issuers side by
+side until every machine has been wiped and rejoined under the new one.
+Recovering from an issuer compromise needs new roots for every CA that
+issuer held, so it is a rebuild. The yearly intermediate replacement does
+not touch `$DATA/trust/`, since bundles hold only roots (0008), so this cost
+arises only after an issuer compromise or at the roots' 10-year expiry. The [init design](init.md#secrets)
 had proposed per-service bundles the renewal helper rewrites; this design
 returns to 0008's layout and the init design is updated to match. A trust
 update path is an [open question](#open-questions).
@@ -366,7 +376,10 @@ Unknown tags are refused on both sides.
 
 0. **Hello**, issuer to machine, as soon as the handshake completes: the
    protocol version and the issuer's time. The join compares that time with
-   its own clock before it sends the token ([Time](#time)).
+   its own clock before it sends the token ([Time](#time)). The issuer runs
+   check 3 first: while its own clock is unsynchronized it sends
+   Refused(`retry`) instead of Hello, so a bad issuer clock delays joins
+   rather than failing them permanently under J14.
 1. **Join**, machine to issuer: the protocol version, the token id and the
    secret. The issuer checks the token (checks 1 to 5 below) but commits
    nothing yet.
@@ -404,7 +417,7 @@ Felix control plane, issues machine certificates. Before it signs anything:
    joins (T65). Over the limit is `retry`. Failures are not limited per token
    id, so someone who saw a token id in a log cannot use it to hold off the
    real machine.
-3. Its own clock is synchronized. If not, `retry`: an issuer with a wrong
+3. Its own clock is synchronized, checked before Hello. If not, `retry`: an issuer with a wrong
    clock would issue certificates the cluster rejects, or accept expired
    tokens.
 4. The token id exists; the secret's SHA-256 equals the stored hash
@@ -677,7 +690,10 @@ runs in order:
    within 24 hours (0008).
 2. Wait at least 150 seconds: the assertion lifetime (60 s), Felix's leeway
    on upstream tokens (60 s), and 30 s for clock difference between issuer
-   and control plane. Felix's revocation is only a cutoff time. Exchange does
+   and control plane. Under S15 both clocks are set only from authenticated
+   sources, which agree far closer than that, and the issuer refuses to
+   work while its own clock is unsynchronized (check 3). A control plane
+   more than 30 s off is already a T7 problem for every token it mints. Felix's revocation is only a cutoff time. Exchange does
    not compare an assertion with it; it waits until the cutoff second has
    passed and then mints a fresh token and refresh chain
    ([`revocation.rs`](https://github.com/GetFelix/felix/blob/v0.7.2/services/felix-controlplane-service/src/auth/revocation.rs),
@@ -789,8 +805,10 @@ After the revocation above:
   nothing.
 - **J14.** The join stops with a permanent failure when the issuer's time
   in Hello or Issued and the local clock differ by more than 60 seconds.
-- **J15.** The join never receives an fd for a config partition whose size
-  is not exactly 2048 sectors or whose range overlaps another partition.
+- **J15.** The join receives an fd only for a device whose `st_rdev` matches
+  the `ninelives-config` entry, whose size on the fd is exactly 1 MiB, and
+  whose range lies within the GPT's usable LBAs and overlaps no other
+  partition.
 
 ## Failure modes
 
@@ -818,6 +836,7 @@ passed, and no role service starts without a role.
 | **Power cut while writing a file** | Temporary names | A torn temporary file is overwritten on the next run | Rename is atomic |
 | **Clock wrong at first boot** | `STA_UNSYNC`, build-time floor, issuer time check | Not synchronized: exit 75, retried. Synchronized but off by more than 60 s: permanent failure | A machine without trustworthy time must not judge certificates |
 | **No authenticated time source at all** | As above | The join never runs its exchange; reported | Fail closed, by S15 |
+| **Issuer clock unsynchronized** | Issuer check 3, before Hello | Refused(`retry`) instead of Hello; the join exits 75 and retries | Joins wait for the issuer's clock instead of failing under J14 |
 | **Issuer down or unreachable** | Connect timeout | Exit 75; the init retries with backoff | Machines wait; the token may expire, then a new one is needed |
 | **Issuer rate-limits** | `retry` | Exit 75 after the stated delay | T65 |
 | **Disk full** | Write fails | Exit 75; quota on `$DATA/join` | Retried; nothing half-installed counts, since `role` is last |
@@ -870,7 +889,7 @@ read without root), S25 (rejoin under a new identity).
 | T22, secrets in a crash dump | The token is in memory only during the exchange and zeroed after; a dump taken then holds it, and dumps are already secrets (S11) |
 | T23, secrets in output | J2; output names a token by its id only |
 | T30, a stolen machine credential used elsewhere | Client certificates bound to per-service principals; Felix tokens derived from them |
-| T31, keep working after revocation | Per-service principals and the three-step revocation; certificates die within 24 h |
+| T31, keep working after revocation | Per-service principals and the four-step revocation; certificates die within 24 h |
 | T32, take another machine's node id | Names come from the issuer's registry; a revoked node id is never reused |
 | T52, read credentials from a stolen disk | Partial: the config is zeroed and the token never stored; keys are plaintext until S16 (accepted before M3) |
 | T65, flood the join | Failed attempts rate limited per source address, and concurrent pending joins capped; no per-token limit and no lockout, a declared [refinement of 0008](#refinements-of-0008) |
@@ -941,8 +960,9 @@ step.
 | Kill the join at each step 6 to 12, then boot again: it finishes, or fails permanently where the table says, and never yields two incarnations | fault | partial failure rows, J7 |
 | Answers with a certificate on another key, under the wrong root, with a 48-hour lifetime, a root that does not match its fingerprint, an env name outside `join_env`: nothing is written | unit | J4, J5, J8 |
 | Clock: start with `STA_UNSYNC` set; with a clock before the build time; with an issuer 2 minutes off. No token sent in any of them; permanent failure in the third | unit and qemu | J1, J14 |
+| A test issuer whose clock is unsynchronized and 5 minutes off: it answers Refused(`retry`) instead of Hello, the join exits 75 with no token sent and no `join/failed`, and it joins once the issuer's clock is synchronized | unit and qemu | Issuer clock row, J11 |
 | With the image's real chrony and the KVM clock in qemu, the join gets past the clock wait within 60 s of boot; with `rtcsync` removed from a test config, it never does and says why | qemu | Time, `rtcsync` |
-| Disks with a `ninelives-config` entry of the wrong size, one overlapping the data partition, and two such entries: no fd is opened, the join fails permanently, and the data partition is unchanged | qemu (test images) | J15 |
+| Disks with a `ninelives-config` entry of the wrong size, one overlapping the data partition, one at LBA 0 to 2047, and two such entries: no fd reaches the join, it fails permanently, and the data partition and the primary GPT are unchanged | qemu (test images) | J15 |
 | Revocation tool: an assertion obtained just before the issuer step, exchanged after the Felix step, is refused or its chain is ended | qemu, M2 | Renewal and revocation |
 | After a join: the config partition reads all zeros; file modes and groups as in the table; `role` is newer than every other file | qemu | J6, J7, J10 |
 | A planted known token and test keys: the console, captured output, records and the data partition outside the credential directories are searched; the token is never found anywhere | qemu | J2, S8 |
@@ -964,7 +984,7 @@ step.
 | Should the init stop retrying on exit 78? | Yes, small change: `failed`, no restart. The marker file already makes retries harmless. | Init design | M1 |
 | The frame encoding with the issuer | The config's record encoding, as above | `nl-issuer` design | M1 |
 | Bare metal without a hypervisor clock: does chrony's `nocerttimecheck` count as authenticated time under S15? | Yes for at most its first update, with the issuer cross-check as the second factor | [#59](https://github.com/GetFelix/ninelives/issues/59) | M5 |
-| How are roots replaced on a running machine, so that a root rotation or an issuer compromise is not a rebuild? 0008 leaves this open, and this design keeps `$DATA/trust/` writable by nothing after the join. | A single-purpose updater with its own uid, the only writer of `$DATA/trust/`, that accepts a new set of roots only when signed by the offline issuer root with a strictly higher generation, so a replayed old set cannot bring back a removed root. Not `nl-renew`, which is network-facing and runs at service uids | Owner, with the `nl-issuer` design | Before the first production cluster |
+| How are roots replaced on a running machine? 0008 leaves this open. With `$DATA/trust/` writable by nothing after the join, replacing the cluster, internal or Raft root is a cluster rebuild, and the issuer root rolls only with old and new issuers side by side until every machine rejoins. Intermediates are not affected, so this arises only after an issuer compromise or at the 10-year root expiry. | A single-purpose updater with its own uid, the only writer of `$DATA/trust/`, that accepts a new set of roots only when signed by the offline issuer root with a strictly higher generation, so a replayed old set cannot bring back a removed root. Not `nl-renew`, which is network-facing and runs at service uids | Owner, with the `nl-issuer` design | Before the first production cluster |
 | Egress by port, not address, for the join | Accept: the issuer address is only in the config, and the packet filter must not parse it | Threat model | M1 |
 
 ### #77: do core brokers serve tenant clients

@@ -32,9 +32,11 @@ assumes:
 
 - **Any bug an attacker can reach will be found.** A defence that relies on
   nobody noticing a weakness counts as no defence.
-- **Code execution in a service becomes root on that machine** unless a
-  requirement says why it cannot. Designs are judged by what a fully
-  compromised machine can do, not by how hard it is to compromise one.
+- **Code execution in a service is followed by a kernel exploit.** The
+  no-root rule ([below](#no-root-after-early-boot)) means a compromised
+  service starts with only its own uid, but an attacker who finds a reachable
+  kernel bug gets the whole machine. So each service is judged twice: what its
+  own uid reaches, and what a fully compromised machine reaches.
 - **Two independent checks beat one strong one.** Where a threat has a single
   mitigation, the table says so.
 
@@ -85,8 +87,9 @@ These are assumptions, not threats we defend against:
 | X6 | **Compromised CI or release pipeline** | Control of a workflow, a runner, a maintainer's GitHub account, or (from M3) a signing key | Publish an image that machines accept |
 | X7 | **Physical access** | The disk (stolen, decommissioned, or a cloud snapshot), the console, or a device port | Read the data partition, change what boots |
 
-Given the assumptions above, X3 is treated as X4 for that machine unless the
-row says otherwise, and X2 is treated as X3 for felixd.
+X2 is treated as X3 for felixd. X3 is analysed at the service's own uid in
+[No root after early boot](#no-root-after-early-boot), and as X4 for when it
+also has a kernel exploit.
 
 ## Trust boundaries
 
@@ -121,7 +124,9 @@ flowchart LR
 ## What one compromised machine can do
 
 This is the question every design here has to answer, so it gets its own
-section. It assumes X4: root on one machine, with every credential on it. The
+section. Without root, a compromised service reaches only its own row of the
+[table above](#what-a-compromised-service-still-reaches); this section assumes
+the attacker also has a kernel exploit. It assumes X4: root on one machine, with every credential on it. The
 attacker can reach other machines only through the ports S7 lets them open,
 and only with the credentials this machine holds.
 
@@ -162,6 +167,69 @@ What narrows each row:
   that also runs a broker and workloads, and a Raft peer credential per member.
   Felix has neither (T24, T25). Until then, the only lever is fewer things
   running on core machines ([Open questions](#open-questions)).
+
+## No root after early boot
+
+Nothing on a NineLives machine runs as root once early boot is over, PID 1
+included: the no-root rule (requirement pending, see the init design). The init drops to its own uid and keeps
+only a few capabilities, each with a stated reason. There are no setuid
+binaries, no file capabilities, no root login or root shell, and no service
+gets a capability that amounts to root.
+
+What that buys: getting root back after the drop takes a kernel bug. There is
+no setuid program to exploit, no root daemon to send input to, and no file
+that grants capabilities when executed. The checks that make this true belong
+to the init design: securebits `NOROOT` and `NO_SETUID_FIXUP` set and locked,
+so uid 0 confers nothing even if a process reaches it; an empty bounding set
+and `no_new_privs` for every service; and an image build that fails on any
+file with a setuid bit or a `security.capability` attribute.
+
+### What a compromised service still reaches
+
+Each row is X3: code execution as that service's uid, without a kernel bug.
+
+| Service | Reaches without root | Cannot reach |
+|---|---|---|
+| Felix broker | Its data directory, so every record of the shards it holds, in plaintext; its TLS key and node credential; client tokens presented to it; the ports S18 allows. This is the storage row of the next section. | The control plane's store and Raft token, even on a core machine; felixd's token; the packet filter, the clock, other services' memory |
+| Felix control plane (core) | The Raft store, so every tenant's signing-key seeds and the Raft peer token. **This is the whole cluster** (T24, T25); the no-root rule does not narrow it. | Other services' files on the machine, which it does not need |
+| felixd | Its node and refresh tokens, and the workloads it runs: the worker row of the next section | The broker's records on disk, the control plane's store |
+| DHCP client | `CAP_NET_ADMIN` on the machine's network: addresses, routes, and the packet filter that enforces S7 and S18. It can open ports, lift egress limits and send this machine's traffic anywhere. TLS keeps that traffic unreadable (T2). | Credentials, records, the clock |
+| Time client | `CAP_SYS_TIME`: the machine's clock. On a core machine, the control plane then mints tokens whose `iat` and `exp` follow that clock, and other brokers accept them until `exp` by their own clocks, so a clock set a day ahead yields tokens valid for a day. Revocation cutoffs move the same way. | Credentials, records, the packet filter |
+| Join | The join token, and write access to the directories where it puts each service's credentials | Running as another service's uid; it writes credentials without `CAP_DAC_OVERRIDE` or `CAP_CHOWN`, into directories made for it |
+| Diagnostics interface | Every service's captured output, and kernel crash dumps, which hold credentials (T22) | Writing anything |
+| PID 1, after the drop | It starts every service, so it can run code as any service's uid: the union of every row above. On a core machine, the cluster. | Root, once the securebits are locked |
+
+So the rule turns most service compromises into that service's reach and no
+more. It does not help where the service's own reach is already large: the
+control plane, and PID 1. Those two must take the least untrusted input, which
+is why the join config is parsed outside PID 1 (T21). The network helpers keep
+capabilities that undo other requirements: `CAP_NET_ADMIN` can switch off S7
+and S18, and `CAP_SYS_TIME` can defeat S15 from inside the machine (T69, T70).
+
+### From kernel exec to the drop
+
+Between the kernel starting PID 1 and the drop, PID 1 is uid 0 with every
+capability. Anything that subverts it in that window gets the machine with
+nothing to escalate. What it handles there:
+
+- **The kernel command line and the root.** Fixed by the image. Before M3
+  nothing verifies them, but an attacker who can change them has already
+  replaced the init itself (T46). From M3 they are signed and verified (S13).
+- **The data partition**, which PID 1 mounts. The filesystem metadata is
+  parsed by the kernel and can be crafted by anyone who wrote the disk offline
+  (X7). Encryption at rest (S16) makes crafting it need the key, if the
+  encryption is authenticated, which S16's design must settle. PID 1 reads no
+  file from the data partition before the drop.
+- **Devices** as they appear. A hostile device attacks the kernel's driver,
+  not PID 1 (T54).
+- **Its own code.** A bug in the early-boot path runs as root. That path stays
+  small, reads no network input and no join config, and starts no service
+  before the drop.
+
+The init design has to list everything PID 1 does before the drop and the
+capabilities it keeps after it, and a qemu test checks `/proc/1/status` after
+boot: uid not 0, and only the listed capabilities effective and permitted
+(T67, T68).
 
 ## Credentials: blast radius and rotation
 
@@ -276,14 +344,18 @@ mitigation, and what checks it. Rows are numbered so designs can cite them.
 
 | # | Threat | X | B | Mitigation | Check |
 |---|---|---|---|---|---|
-| T16 | Become root from a service, through a kernel bug, a capability or a setuid program | X3 | B2 | No capabilities, seccomp and Landlock per service; no shell, compiler or setuid tools; hardened kernel with lockdown and no modules; patch deadline. A kernel bug still wins. | S6, S1, S2, S9; kernel bugs accepted ([0001](decisions/0001-linux-kernel.md)) |
+| T16 | Become root from a service, through a kernel bug, a capability or a setuid program | X3 | B2 | No root process to attack, no setuid binaries or file capabilities, no capability that amounts to root; seccomp and Landlock per service; no shell or compiler; hardened kernel with lockdown and no modules; patch deadline. A kernel bug still wins. | the no-root rule (requirement pending, see the init design), S6, S1, S2, S9; kernel bugs accepted ([0001](decisions/0001-linux-kernel.md)) |
 | T17 | Read another service's credentials | X3 | B2 | Credentials readable only by their service; Landlock limits each service to its own files | S8, S6 |
 | T18 | Call out from a compromised service: exfiltrate, fetch tools, reach cloud metadata | X3 | B1 | Each service connects only where its role needs; cloud metadata only from the join | gap: S18 |
 | T19 | Persist across a reboot | X3, X4 | B2, B6 | Read-only root; nothing on the data partition can be executed; from M3, dm-verity | S3, S13 |
-| T20 | Exploit the DHCP or time client, which parse network input and need some privilege | X1, X3 | B2 | Clients chosen without shell hooks ([0006](decisions/0006-debian-base.md)); each runs as its own service with only the capability it needs | S6, S1 |
+| T20 | Exploit the DHCP or time client, which parse network input and need some privilege | X1, X3 | B2 | Clients chosen without shell hooks ([0006](decisions/0006-debian-base.md)); each runs as its own uid with only the capability it needs. Those capabilities are still large (T69, T70). | the no-root rule (requirement pending, see the init design), S6, S1 |
 | T21 | Exploit PID 1 through the join config, which comes from cloud metadata or a config partition | X1, X7 | B2 | The join runs as its own isolated service, not inside PID 1. The init and join designs must hold to this. | gap: init and join designs ([#46](https://github.com/GetFelix/ninelives/issues/46), [#5](https://github.com/GetFelix/ninelives/issues/5)) |
 | T22 | Read secrets out of the diagnostics interface: a kernel crash dump holds memory, credentials included | X3, X4 | B1 | Crash dumps are treated as secrets: reading one needs more than reading service output | S11, S8 |
 | T23 | Secrets written to service output or to the log | X3 | B2, B4 | felixd formats tokens as placeholders and tests for leaks; Felix's output is not tested by us; S8's test scans everything captured | S8 |
+| T67 | Take over PID 1 after the drop: it can run code as any service's uid | X3, X1 | B2 | PID 1 takes no network input and does not parse the join config; securebits locked so uid 0 confers nothing; only listed capabilities kept | the no-root rule (requirement pending, see the init design); gap: init design ([#46](https://github.com/GetFelix/ninelives/issues/46)) lists them |
+| T68 | Subvert PID 1 before the drop, while it is uid 0 with every capability | X7, X6 | B2, B6 | A small early path that reads no network input, no join config and no data partition files; signed kernel, command line and root from M3; a crafted data partition needs the disk key (S16) | the no-root rule (requirement pending, see the init design), S13, S16; accepted before M3 (T46) |
+| T69 | A compromised time client sets the clock; on a core machine, minted tokens outlive their TTL on every broker | X1, X3 | B2, B5 | Authenticated time stops a network attacker, not the client itself. Nothing bounds what a process with `CAP_SYS_TIME` sets. | S15; gap: init design must bound or cross-check clock changes |
+| T70 | A compromised DHCP client uses `CAP_NET_ADMIN` to open ports, lift egress limits or reroute traffic | X1, X3 | B2, B1 | TLS keeps rerouted traffic unreadable. Nothing stops it rewriting the packet filter. | S10; gap: init design must keep the DHCP parser apart from the capability (an unprivileged parser handing a typed lease to a small applier), or configure networking statically from the join |
 
 ### One machine to the cluster
 
@@ -362,6 +434,8 @@ Closed by new requirements on this repository:
 - **S22** authenticated, fresh, safe updates (T49, T50, T51)
 - **S23** independent rebuild of reproducible components (T34)
 - PID 1 does not parse the join config (T21) and the image never grants node trims (T28): rules for the init and join designs.
+- The no-root rule (requirement pending, see the init design), with its checks: locked securebits, no setuid or file capabilities in the image, `/proc/1/status` after boot (T16, T67, T68).
+- The time and DHCP clients keep capabilities that can undo S15, S7 and S18 from inside the machine (T69, T70). The init design decides how to narrow them.
 
 Upstream, where only Felix or felixd can fix it:
 

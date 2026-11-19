@@ -30,7 +30,7 @@ and the kernel starts it with `init=`. In order:
    failure here is also `emergency`.
 5. Turns Ctrl-Alt-Del into `SIGINT` (`reboot(LINUX_REBOOT_CMD_CAD_OFF)`).
 6. Drops root ([Privilege](../docs/components/init.md#privilege)), in this
-   order: securebits `NOROOT` and `NO_SETUID_FIXUP`, both locked; the
+   order: securebits `NOROOT`, `NO_SETUID_FIXUP` and `NO_CAP_AMBIENT_RAISE`, each locked; the
    bounding set cut to `CAP_KILL` and `CAP_SYS_BOOT`; the ambient set
    emptied; `setgroups([])`, `setresgid` and `setresuid` to 900; `capset` with
    permitted `CAP_KILL` and `CAP_SYS_BOOT` and nothing else; not dumpable;
@@ -72,10 +72,10 @@ The fields are in [init.md](../docs/components/init.md#state-reports).
 
 Just before it, the drop record, which the boot check reads. Its sets are
 hex as `/proc/<pid>/status` prints them; `securebits` is the kernel's number
-(15 is both bits, both locked), which `status` does not show:
+(207 is the three bits, each locked), which `status` does not show:
 
 ```
-ninelives-init {"v":1,...,"machine":"booting","step":"drop root","result":"ok","uid":[900,900,900],"gid":[900,900,900],"groups":0,"cap_prm":"0000000000400020","cap_eff":"0000000000000000","cap_inh":"0000000000000000","cap_amb":"0000000000000000","cap_bnd":"0000000000400020","securebits":15,"no_new_privs":1}
+ninelives-init {"v":1,...,"machine":"booting","step":"drop root","result":"ok","uid":[900,900,900],"gid":[900,900,900],"groups":0,"cap_prm":"0000000000400020","cap_eff":"0000000000000000","cap_inh":"0000000000000000","cap_amb":"0000000000000000","cap_bnd":"0000000000400020","securebits":207,"no_new_privs":1,"dumpable":0,"fsuid":900,"fsgid":900}
 ```
 
 `scripts/boot_image.py` fails the boot if the record is missing or any field
@@ -105,13 +105,13 @@ reads `/proc/1/status` as well is [#98](https://github.com/GetFelix/ninelives/is
 | `signals`, `mounts`, `record` | The signal table, the mount table, the record encoder and sink state. Pure. |
 | `privilege` | The drop's steps, order and the state the kernel must confirm; `privilege/linux.rs` makes the calls. |
 | `boot`, `host`, `console`, `clock` | Linux only: the boot system calls, the real `Os`, the console and panic hook. |
-| `sys` | Every `unsafe` in the crate: the C entry point, the signal mask and `signalfd`. |
+| `sys` | Every `unsafe` in the crate: the C entry point, the signal mask, `signalfd` and the id reads. |
 
 ## Dependencies
 
 - **rustix**: the system calls (mount, waitid, reboot, poll, eventfd, sync)
   without `unsafe` in this crate, as [0005](../docs/decisions/0005-rust-and-unsafe.md) asks.
-- **libc**: `sigfillset`, `pthread_sigmask`, `signalfd`, `getresuid` and `getresgid`, which rustix
+- **libc**: `sigfillset`, `pthread_sigmask`, `signalfd`, `getresuid`, `getresgid`, `setfsuid` and `setfsgid`, which rustix
   does not wrap. glibc's versions also keep the signals glibc reserves for
   its threads out of the blocked set.
 

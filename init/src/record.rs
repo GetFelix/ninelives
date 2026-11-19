@@ -260,6 +260,12 @@ fn put_privilege(out: &mut impl Out, p: &State) {
     put_u64(out, u64::from(p.securebits));
     out.put(b",\"no_new_privs\":");
     put_u64(out, u64::from(p.no_new_privs));
+    out.put(b",\"dumpable\":");
+    put_u64(out, u64::from(p.dumpable));
+    out.put(b",\"fsuid\":");
+    put_u64(out, u64::from(p.fsuid));
+    out.put(b",\"fsgid\":");
+    put_u64(out, u64::from(p.fsgid));
 }
 
 fn put_ids(out: &mut impl Out, ids: [u32; 3]) {

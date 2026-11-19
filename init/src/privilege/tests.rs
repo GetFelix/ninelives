@@ -11,6 +11,9 @@ const GOOD: State = State {
     bounding: KEPT,
     securebits: SECUREBITS,
     no_new_privs: true,
+    dumpable: false,
+    fsuid: INIT_UID,
+    fsgid: INIT_GID,
 };
 
 struct Fake {
@@ -75,8 +78,8 @@ fn what_pid1_keeps_is_kill_and_sys_boot_only() {
 
 #[test]
 fn securebits_lock_both_bits() {
-    // NOROOT, NOROOT_LOCKED, NO_SETUID_FIXUP, NO_SETUID_FIXUP_LOCKED.
-    assert_eq!(SECUREBITS, 0x0f);
+    // NOROOT, NO_SETUID_FIXUP and NO_CAP_AMBIENT_RAISE, each with its lock.
+    assert_eq!(SECUREBITS, 0xcf);
 }
 
 /// I18: any failing step is fatal, and nothing after it runs.
@@ -97,37 +100,46 @@ fn a_failed_read_back_is_fatal() {
     let mut fake = Fake::new();
     fake.state = Err(13);
     let failure = drop_root(&mut fake).unwrap_err();
-    assert_eq!((failure.step, failure.errno), ("drop: verify", 13));
+    assert_eq!((failure.step, failure.errno), ("drop: read back", 13));
 }
 
 /// Every field the kernel could leave wrong makes the drop fail, even
 /// though every call reported success.
 #[test]
 fn a_state_the_kernel_does_not_confirm_is_fatal() {
-    let bad: [fn(&mut State); 14] = [
-        |s| s.uid = [0, INIT_UID, INIT_UID],
-        |s| s.uid = [INIT_UID, 0, INIT_UID],
-        |s| s.uid = [INIT_UID, INIT_UID, 0],
-        |s| s.gid = [0, INIT_GID, INIT_GID],
-        |s| s.gid = [INIT_GID, INIT_GID, 0],
-        |s| s.groups = 1,
-        |s| s.permitted = KEPT | 1 << 21,
-        |s| s.permitted = 1 << 5,
-        |s| s.effective = 1 << 5,
-        |s| s.inheritable = 1 << 5,
-        |s| s.ambient = 1 << 5,
-        |s| s.bounding = u64::MAX,
-        |s| s.securebits = 0b0101,
-        |s| s.no_new_privs = false,
+    type Mutation = fn(&mut State);
+    let bad: [(&str, Mutation); 19] = [
+        ("uid", |s| s.uid = [0, INIT_UID, INIT_UID]),
+        ("uid", |s| s.uid = [INIT_UID, 0, INIT_UID]),
+        ("uid", |s| s.uid = [INIT_UID, INIT_UID, 0]),
+        ("gid", |s| s.gid = [0, INIT_GID, INIT_GID]),
+        ("gid", |s| s.gid = [INIT_GID, INIT_GID, 0]),
+        ("fsuid", |s| s.fsuid = 0),
+        ("fsuid", |s| s.fsgid = 0),
+        ("groups", |s| s.groups = 1),
+        ("permitted", |s| s.permitted = KEPT | 1 << 21),
+        ("permitted", |s| s.permitted = 1 << 5),
+        ("effective", |s| s.effective = 1 << 5),
+        ("inheritable", |s| s.inheritable = 1 << 5),
+        ("ambient", |s| s.ambient = 1 << 5),
+        ("bounding", |s| s.bounding = u64::MAX),
+        ("securebits", |s| s.securebits = 0b0101),
+        // A superset is not the exact value either.
+        ("securebits", |s| s.securebits = SECUREBITS | 1 << 4),
+        ("securebits", |s| s.securebits = 0b0000_1111),
+        ("no_new_privs", |s| s.no_new_privs = false),
+        ("dumpable", |s| s.dumpable = true),
     ];
-    for (i, mutate) in bad.into_iter().enumerate() {
+    for (i, (field, mutate)) in bad.into_iter().enumerate() {
         let mut state = GOOD;
         mutate(&mut state);
         assert!(check(&state).is_err(), "case {i}");
         let mut fake = Fake::new();
         fake.state = Ok(state);
         let failure = drop_root(&mut fake).unwrap_err();
-        assert_eq!(failure.step, "drop: verify", "case {i}");
+        // The console names the field that was wrong.
+        assert!(failure.step.starts_with("drop: verify"), "case {i}");
+        assert!(failure.step.contains(field), "case {i}: {}", failure.step);
     }
 }
 

@@ -19,7 +19,7 @@ READY = 'ninelives-init {"v":1,"boot":"0f6c2a3e-6d3c-4c58-9c55-6a4b1f3e2d10","mo
 DROP = ('ninelives-init {"v":1,"boot":"0f6c2a3e-6d3c-4c58-9c55-6a4b1f3e2d10","mono_ms":1200,"wall_ms":1763500000000,'
         '"machine":"booting","step":"drop root","result":"ok","uid":[900,900,900],"gid":[900,900,900],"groups":0,'
         '"cap_prm":"0000000000400020","cap_eff":"0000000000000000","cap_inh":"0000000000000000",'
-        '"cap_amb":"0000000000000000","cap_bnd":"0000000000400020","securebits":15,"no_new_privs":1}')
+        '"cap_amb":"0000000000000000","cap_bnd":"0000000000400020","securebits":207,"no_new_privs":1,"dumpable":0,"fsuid":900,"fsgid":900}')
 CMDLINE = ('Kernel command line: init=/usr/lib/ninelives/init console=ttyS0,115200 ro root=/dev/dm-0 '
            'dm-mod.create="root,,,ro,0 1 verity 1 /dev/vda2 /dev/vda3 4096 4096 9 0 sha256 ab cd 1 panic_on_corruption" panic=10 oops=panic')
 HEALTHY = "\n".join([
@@ -58,7 +58,8 @@ class Verdicts(unittest.TestCase):
         bad = {
             "uid": [0, 900, 900], "gid": [900, 900, 0], "groups": 1,
             "cap_prm": "000001ffffffffff", "cap_eff": "0000000000000020", "cap_inh": "0000000000000020",
-            "cap_amb": "0000000000000020", "cap_bnd": "000001ffffffffff", "securebits": 5, "no_new_privs": 0,
+            "cap_amb": "0000000000000020", "cap_bnd": "000001ffffffffff", "securebits": 15, "no_new_privs": 0,
+            "dumpable": 1, "fsuid": 0, "fsgid": 0,
         }
         self.assertEqual(set(bad), set(bi.DROP_EXPECTED))
         for key, value in bad.items():

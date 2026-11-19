@@ -1,5 +1,6 @@
-//! Every `unsafe` in the init lives here ([0005]): the C entry point and the
-//! signal calls rustix does not wrap. Each item is a safe wrapper, and
+//! Every `unsafe` in the init lives here ([0005]): the C entry point, the
+//! signal calls and the id calls rustix does not wrap (`getresuid`,
+//! `getresgid`, `setfsuid`, `setfsgid`). Each item is a safe wrapper, and
 //! nothing outside this module calls libc.
 //!
 //! [0005]: ../../docs/decisions/0005-rust-and-unsafe.md
@@ -98,4 +99,21 @@ pub(crate) fn getresgid() -> io::Result<[u32; 3]> {
         return Err(io::Error::last_os_error());
     }
     Ok(ids)
+}
+
+/// The calling thread's filesystem uid. `setfsuid` returns the previous
+/// value, and an id that is not valid (-1) changes nothing, so this reads it.
+pub(crate) fn fsuid() -> u32 {
+    // SAFETY: setfsuid takes an integer and has no memory effects; u32::MAX
+    // is rejected by the kernel without changing the uid.
+    let prev = unsafe { libc::setfsuid(libc::uid_t::MAX) };
+    // The kernel returns a uid, as an int.
+    prev.cast_unsigned()
+}
+
+/// The calling thread's filesystem gid, read the same way.
+pub(crate) fn fsgid() -> u32 {
+    // SAFETY: as for `fsuid`.
+    let prev = unsafe { libc::setfsgid(libc::gid_t::MAX) };
+    prev.cast_unsigned()
 }

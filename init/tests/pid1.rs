@@ -531,7 +531,8 @@ fn pid1_drops_root_and_keeps_two_capabilities() {
         .find(|l| l.contains(r#""step":"drop root""#))
         .unwrap();
     assert!(drop.contains(r#""uid":[900,900,900]"#), "{drop}");
-    assert!(drop.contains(r#""securebits":15"#), "{drop}");
+    assert!(drop.contains(r#""securebits":207"#), "{drop}");
+    assert!(drop.contains(r#""dumpable":0"#), "{drop}");
 
     // The drop leaves a PID 1 that can still reboot: reboot(2) needs the
     // capability it raises for the call.

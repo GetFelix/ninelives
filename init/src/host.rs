@@ -15,7 +15,7 @@ use crate::clock;
 use crate::console::Console;
 use crate::event_loop::Os;
 use crate::machine::{Event, StopKind};
-use crate::privilege;
+use crate::privilege::{self, linux::Raised};
 use crate::record::{MachineState, Record};
 use crate::signals::{self, SIGINFO_SIZE};
 
@@ -173,7 +173,13 @@ impl Os for LinuxOs {
         };
         // PID 1 holds CAP_SYS_BOOT permitted only, so raise it for this call.
         match privilege::linux::raised(privilege::CAP_SYS_BOOT, || reboot(cmd)) {
-            Err(errno) => errno,
+            Err(Raised::Raise(errno)) => errno,
+            // The capability stayed effective. Fail closed: power off now,
+            // while it is still held, instead of running on with it.
+            Err(Raised::Lower) => match reboot(RebootCommand::PowerOff) {
+                Err(e) => e.raw_os_error(),
+                Ok(()) => 0,
+            },
             Ok(Err(e)) => e.raw_os_error(),
             // Restart and power-off do not return on success.
             Ok(Ok(())) => 0,

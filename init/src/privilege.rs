@@ -18,15 +18,19 @@ pub(crate) const CAP_SYS_BOOT: u64 = 1 << 22;
 /// one call.
 pub(crate) const KEPT: u64 = 1 << CAP_KILL | CAP_SYS_BOOT;
 
-/// `NOROOT` and `NO_SETUID_FIXUP`, each with its lock. `KEEP_CAPS` stays
-/// clear: with no fixup nothing is cleared on the uid change, so there is
-/// nothing to keep.
-pub(crate) const SECUREBITS: u32 = 0b1111;
+/// `NOROOT`, `NO_SETUID_FIXUP` and `NO_CAP_AMBIENT_RAISE`, each with its
+/// lock. `KEEP_CAPS` stays clear: with no fixup nothing is cleared on the uid
+/// change, so there is nothing to keep. `NO_CAP_AMBIENT_RAISE` is there
+/// because PID 1 has no seccomp filter yet: without it a compromised PID 1
+/// could raise `CAP_KILL` or `CAP_SYS_BOOT` into the ambient set and hand it
+/// to whatever it executes.
+pub(crate) const SECUREBITS: u32 = 0b1100_1111;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Step {
-    /// Set and lock `NOROOT` and `NO_SETUID_FIXUP`, so nothing PID 1 starts
-    /// gains capabilities from uid 0 and the uid change leaves the sets alone.
+    /// Set and lock [`SECUREBITS`]: nothing PID 1 starts gains capabilities
+    /// from uid 0, the uid change leaves the sets alone, and the ambient set
+    /// cannot be raised.
     Securebits,
     /// Remove everything but [`KEPT`] from the bounding set.
     BoundingSet,
@@ -89,6 +93,11 @@ pub(crate) struct State {
     pub(crate) bounding: u64,
     pub(crate) securebits: u32,
     pub(crate) no_new_privs: bool,
+    pub(crate) dumpable: bool,
+    /// The filesystem ids, which `setresuid` and `setresgid` move with the
+    /// effective ones.
+    pub(crate) fsuid: u32,
+    pub(crate) fsgid: u32,
 }
 
 pub(crate) trait PrivilegeOps {
@@ -96,33 +105,46 @@ pub(crate) trait PrivilegeOps {
     fn read_back(&mut self) -> Result<State, i32>;
 }
 
-/// What is wrong with `state`, if anything. The drop is not trusted because
-/// every call returned success: the machine must not run until the kernel
-/// says PID 1 is unprivileged.
+/// What is wrong with `state`, if anything, as the step name the failure
+/// record carries. The drop is not trusted because every call returned
+/// success: the machine must not run until the kernel says PID 1 is
+/// unprivileged.
 pub(crate) fn check(state: &State) -> Result<(), &'static str> {
     if state.uid != [INIT_UID; 3] {
-        return Err("uid is not the init's");
+        return Err("drop: verify uid");
     }
     if state.gid != [INIT_GID; 3] {
-        return Err("gid is not the init's");
+        return Err("drop: verify gid");
+    }
+    if state.fsuid != INIT_UID || state.fsgid != INIT_GID {
+        return Err("drop: verify fsuid");
     }
     if state.groups != 0 {
-        return Err("supplementary groups remain");
+        return Err("drop: verify groups");
     }
     if state.permitted != KEPT {
-        return Err("permitted set is not exactly the kept capabilities");
+        return Err("drop: verify permitted");
     }
-    if state.effective != 0 || state.inheritable != 0 || state.ambient != 0 {
-        return Err("effective, inheritable or ambient set is not empty");
+    if state.effective != 0 {
+        return Err("drop: verify effective");
+    }
+    if state.inheritable != 0 {
+        return Err("drop: verify inheritable");
+    }
+    if state.ambient != 0 {
+        return Err("drop: verify ambient");
     }
     if state.bounding != KEPT {
-        return Err("bounding set is not exactly the kept capabilities");
+        return Err("drop: verify bounding");
     }
-    if state.securebits & SECUREBITS != SECUREBITS {
-        return Err("securebits are not set and locked");
+    if state.securebits != SECUREBITS {
+        return Err("drop: verify securebits");
     }
     if !state.no_new_privs {
-        return Err("no_new_privs is not set");
+        return Err("drop: verify no_new_privs");
+    }
+    if state.dumpable {
+        return Err("drop: verify dumpable");
     }
     Ok(())
 }
@@ -137,13 +159,12 @@ pub(crate) fn drop_root(ops: &mut impl PrivilegeOps) -> Result<State, Failure> {
             errno,
         })?;
     }
-    let verify = |errno| Failure {
-        step: "drop: verify",
+    let state = ops.read_back().map_err(|errno| Failure {
+        step: "drop: read back",
         errno,
-    };
-    let state = ops.read_back().map_err(verify)?;
+    })?;
     // EPERM: the kernel disagrees with what was asked for.
-    check(&state).map_err(|_| verify(1))?;
+    check(&state).map_err(|step| Failure { step, errno: 1 })?;
     Ok(state)
 }
 

@@ -373,7 +373,8 @@ image build can check what it ships.
 **Gaps:** none in felixd. Felix publishes its broker and control plane only
 for Linux x86_64 ([felix#2797](https://github.com/GetFelix/felix/issues/2797)),
 so an aarch64 image cannot take a core or storage role yet, and its checksums
-are not signed ([felix#2796](https://github.com/GetFelix/felix/issues/2796)).
+are not signed in 0.7.2; on main, after v0.7.2, they are
+([felix#2845](https://github.com/GetFelix/felix/pull/2845)).
 
 **Decisions needed:** the kernel LTS release (#3).
 

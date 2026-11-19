@@ -378,18 +378,27 @@ cluster. What that fixes here:
   enough on its own. A request sent to a storage broker for a stream a core
   broker owns is forwarded to the core broker, which parses it and checks
   the token (T73), so any tenant token would still reach a core broker's
-  parser over the internal port. So placement keeps every tenant stream and
-  cache on storage brokers; core brokers host only system or internal
-  streams, if any. Felix cannot enforce this today: placement has no label
-  or role constraint, only region and zone
-  ([control plane](https://github.com/GetFelix/felix/blob/v0.7.2/docs/control-plane.md#how-shards-get-placed)),
-  and `max_shards`, which placement does honour as a hard cap
-  ([`rendezvous.rs`](https://github.com/GetFelix/felix/blob/v0.7.2/services/felix-controlplane-service/src/cluster/placement/rendezvous.rs)),
-  is documented as a hint, caps system shards too, and applies only after a
-  broker has registered and may already hold shards. M1 depends on
-  [felix#2840](https://github.com/GetFelix/felix/issues/2840), which asks for
-  brokers marked internal to be excluded from tenant shards. Until it
-  lands, internal-only narrows T72 but does not close it.
+  parser over the internal port. So placement keeps every stream and cache
+  shard on storage brokers, and core brokers hold none. Felix does this on
+  main, after v0.7.2 ([felix#2840](https://github.com/GetFelix/felix/issues/2840), merged as
+  [felix#2841](https://github.com/GetFelix/felix/issues/2841)). Core brokers set `FELIX_NODE_ROLE=internal`, which
+  registers the label `felix.dev/node-role=internal` in the request that
+  creates the node. Placement then never gives it a stream or cache shard,
+  at creation, balancing, failover or restoring a lost copy
+  ([`plan.rs`](https://github.com/GetFelix/felix/blob/main/services/felix-controlplane-service/src/cluster/placement/plan.rs)),
+  and an operator move onto it is refused
+  ([`operator.rs`](https://github.com/GetFelix/felix/blob/main/services/felix-controlplane-service/src/cluster/placement/operator.rs)).
+  There is no system-stream exception. An unknown role value fails broker
+  startup, so a typo cannot leave a core machine open to shards. The role
+  is kept once recorded: registering again without it is refused, and
+  clearing it needs `node.manage` on `cluster:*`, which a broker's own
+  `node:<id>` token does not carry
+  ([`nodes.rs`](https://github.com/GetFelix/felix/blob/main/services/felix-controlplane-service/src/api/nodes.rs)).
+  Neither does the issuer's group grant, which is scoped to `node:<id>`
+  (0009), so an issuer compromise cannot clear it either. A registration
+  with the role waits until every control-plane member runs metadata level
+  44. This holds only with a Felix release that contains it; M1 pins the
+  first one, expected to be v0.8.0-preview.1.
 - So a cluster that runs felixd or serves any client needs storage machines
   ([topology.md](../topology.md#cluster-sizes)); the fault-tolerant size is
   [open](#open-questions).
@@ -618,42 +627,55 @@ signing keys (T24). So, as recorded in
 [0009](../decisions/0009-node-tokens-from-felix-exchange.md):
 
 1. The cluster tenant trusts the issuer as an identity provider, with the
-   issuer's assertion-signing public keys configured inline, so the control
-   plane fetches nothing. Felix can only fetch a JWKS today, over TLS checked
-   against the system trust store and from a public address unless a global
-   flag opens every private one
-   ([`idp_registry.rs`](https://github.com/GetFelix/felix/blob/v0.7.2/services/felix-controlplane-service/src/auth/idp_registry.rs),
-   [`oidc.rs`](https://github.com/GetFelix/felix/blob/v0.7.2/services/felix-controlplane-service/src/auth/oidc.rs)).
-   Inline keys are a Felix gap:
-   [felix#2836](https://github.com/GetFelix/felix/issues/2836). M1 is
-   blocked on it, with no fallback: fetching a JWKS would need the issuer's
-   root in the system trust store of every process, or the private-address
-   flag for every issuer of every tenant, and the image does neither.
+   issuer's assertion-signing public keys configured inline (`jwks`), so the
+   control plane fetches nothing and a token with an unknown `kid` is
+   refused without a refresh. Felix has this on main, after v0.7.2
+   ([felix#2836](https://github.com/GetFelix/felix/issues/2836), merged as [felix#2843](https://github.com/GetFelix/felix/issues/2843);
+   [`docs/auth.md`](https://github.com/GetFelix/felix/blob/main/docs/auth.md),
+   [`idp_registry.rs`](https://github.com/GetFelix/felix/blob/main/services/felix-controlplane-service/src/auth/idp_registry.rs)).
+   The issuer's config sets `jwks` (two keys during a rotation),
+   `single_use_jti: true` and `max_token_lifetime_seconds: 60`, the
+   assertion lifetime, so Felix refuses an assertion whose `exp - iat` is
+   larger; single use needs a bound of at most 600. Changing the keys needs
+   `tenant.manage:cluster:*`, and taking a key out revokes every principal
+   in the tenant, so retiring the old key at the yearly ceremony ends every
+   refresh chain and each service takes a new exchange. There is no
+   fallback: it needs a Felix release that contains the change. M1 pins the
+   first one that does, expected to be v0.8.0-preview.1, in
+   `components.toml` under 0004.
 2. Each service's renewal helper, running at the service's uid, asks the
    issuer for an assertion over mutual TLS with the service's current client
    certificate. The issuer answers only for an active node's current
    incarnation and current serial, with an ES256 JWT: `iss` the issuer's
    cluster name, `sub` the service's subject, `aud` the cluster's control
    plane, a groups claim from the registry (the service and, for a broker,
-   `node-<node id>`), a `jti`, and a lifetime of 60 seconds. Felix accepts
+   `node-<node id>`), a `jti`, and a lifetime of exactly 60 seconds (`exp - iat`). Felix accepts
    an upstream token for 60 seconds past its `exp`
    ([`oidc.rs`](https://github.com/GetFelix/felix/blob/v0.7.2/services/felix-controlplane-service/src/auth/oidc.rs)
    sets the leeway that
    [`server/state.rs`](https://github.com/GetFelix/felix/blob/v0.7.2/services/felix-controlplane-service/src/server/state.rs)
-   passes), so an assertion is usable for up to 120 seconds. A service needs
+   passes), so an assertion is usable for up to 120 seconds. Felix records its `jti` until then and refuses a second exchange of it on the same control-plane replica; the replicas do not share the record ([felix#2844](https://github.com/GetFelix/felix/issues/2844)). A replica also refuses an assertion issued before it started, so one issued just before a control-plane restart fails and the helper asks again. A service needs
    one only when it has no working refresh chain, so the issuer allows a few
    per principal per day and alerts beyond that. The control plane holds no
    Felix principal and asks for none.
 3. The helper exchanges it at `POST /v1/tenants/{t}/token/exchange` for the
    service's audience (broker audience for felixd, `felix-controlplane` for
    the broker's node credential) and writes the access and refresh tokens
-   into the service's directory.
+   into the service's directory. The control-plane API takes a client CA and
+   binds the exchange to the principal the assertion resolves to, so the
+   helper presents the service's certificate and Felix refuses a certificate
+   issued to anyone else ([felix#2821](https://github.com/GetFelix/felix/issues/2821),
+   [`server.rs`](https://github.com/GetFelix/felix/blob/main/services/felix-controlplane-service/src/server.rs)).
 4. From then on the token is refreshed: by the broker itself from
    `FELIX_NODE_REFRESH_TOKEN_FILE`, which Felix 0.7.2 supports
    ([`config/env.rs`](https://github.com/GetFelix/felix/blob/v0.7.2/services/felix-broker-service/src/config/env.rs));
    by felixd once [felixd#276](https://github.com/GetFelix/felixd/issues/276)
    lands, and until then by felixd's renewal helper. A lost or ended refresh
    chain is replaced by a new exchange, which needs a current certificate.
+   Refresh needs one too: Felix refuses a certificate not issued to the
+   refresh token's principal, and does not spend the token
+   ([felix#2827](https://github.com/GetFelix/felix/issues/2827),
+   [`refresh.rs`](https://github.com/GetFelix/felix/blob/main/services/felix-controlplane-service/src/auth/refresh.rs)).
 
 Grants come from groups. Felix maps each group in an assertion to
 `group:<iss>#<name>` and evaluates RBAC through it, cluster scope included
@@ -834,9 +856,13 @@ runs in order:
    ([`revocation.rs`](https://github.com/GetFelix/felix/blob/v0.7.2/services/felix-controlplane-service/src/auth/revocation.rs),
    `wait_out_revocation`). Without the wait, a thief who got an assertion
    just before step 1 could exchange it just after step 3 and hold a new
-   30-day chain, which a revocation that came before it does not end, and
-   refresh is not bound to a certificate
-   ([felix#2822](https://github.com/GetFelix/felix/issues/2822)). With the
+   30-day chain, which a revocation that came before it does not end. On
+   Felix main, after v0.7.2, an exchange and a refresh each need a
+   certificate issued to the principal ([felix#2821](https://github.com/GetFelix/felix/issues/2821),
+   [felix#2827](https://github.com/GetFelix/felix/issues/2827)), so the thief needs the key as well; one who has it
+   is who the wait is for. The single-use `jti` does not shorten the wait: it
+   stops a second exchange of one assertion on one replica, not the first one
+   after step 3. With the
    wait, every assertion issued before step 1 is dead before the cutoff.
    Felix should refuse such assertions itself
    ([felix#2839](https://github.com/GetFelix/felix/issues/2839)); the wait
@@ -885,7 +911,7 @@ After the revocation above:
 | `nl-renew` design | Assertion request, token exchange, felixd refresh until felixd#276 | Not written |
 | Formation design | Register the issuer with inline keys on the cluster tenant; grant `group:<iss>#felixd`; deliver the Raft peer token to a new core member | Not written |
 | [0008](../decisions/0008-ca-keys-and-machine-certificates.md) | Two refinements, [below](#refinements-of-0008) | Stated here; 0008 is not edited |
-| Felix | Inline identity-provider keys ([felix#2836](https://github.com/GetFelix/felix/issues/2836), blocks M1); reload the broker's control-plane client certificate ([felix#2837](https://github.com/GetFelix/felix/issues/2837)); refuse assertions issued before a revocation cutoff ([felix#2839](https://github.com/GetFelix/felix/issues/2839)); keep tenant shards off brokers marked internal ([felix#2840](https://github.com/GetFelix/felix/issues/2840), blocks M1) | Filed, v0.8.0 |
+| Felix | Reload the broker's control-plane client certificate ([felix#2837](https://github.com/GetFelix/felix/issues/2837)); refuse assertions issued before a revocation cutoff ([felix#2839](https://github.com/GetFelix/felix/issues/2839)); replicate the single-use `jti` record ([felix#2844](https://github.com/GetFelix/felix/issues/2844)). Inline keys ([felix#2836](https://github.com/GetFelix/felix/issues/2836)) and the internal role ([felix#2840](https://github.com/GetFelix/felix/issues/2840)) are on Felix main after v0.7.2; M1 needs a release that contains them | Filed, v0.8.0 |
 
 ### Refinements of 0008
 
@@ -951,10 +977,11 @@ Decided: all three are accepted. 0008 carries a note pointing here.
 - **J16.** A production issuer issues no core-role certificate without an
   operator approval of exactly the key set proven for that token, and never
   approves a token that has had two different key sets proven.
-- **J17.** No core broker certificate carries the cluster's broker name, and
-  no `FELIX_BROKERS` value the issuer returns lists a core broker. This
-  narrows T72; closing it also needs core brokers to own no tenant shards
-  ([felix#2840](https://github.com/GetFelix/felix/issues/2840)).
+- **J17.** No core broker certificate carries the cluster's broker name, no
+  `FELIX_BROKERS` value the issuer returns lists a core broker, and every
+  core broker runs with `FELIX_NODE_ROLE=internal`, so placement gives it no
+  shard. This closes T72 once the pinned Felix contains
+  [felix#2841](https://github.com/GetFelix/felix/issues/2841).
 - **J18.** A `core-dev` role, the only role that puts a client port on a
   core machine, is issued only by a `development` or `test` issuer and
   installed only on a `development` or `test` image.
@@ -973,7 +1000,7 @@ passed, and no role service starts without a role.
 | **Stolen config partition before first boot (X7)** | Not detected | As a stolen token, within its expiry | Fingerprints are not secret |
 | **Stolen config partition after the join (X7)** | | It is zero | J10 |
 | **Rewritten config partition (X7, before first boot)** | Not detected | The machine trusts the attacker's issuer and joins the attacker's cluster. It holds none of ours, and our issuer never hears from it. | An attacker with the disk before M3 can replace the image too (T46). From M3, attestation ties joins to a signed image. |
-| **Stolen current certificate and key** (X4 copies them off a running machine) | The real machine's next renewal presents a superseded serial (0008) | Until then the thief can renew, and can get assertions and start refresh chains for that principal. Those chains outlive the certificate, but their tokens need a certificate bound to the principal on every client port and on the control-plane API (S10), except on the forward path (T73) and on refresh itself ([felix#2822](https://github.com/GetFelix/felix/issues/2822)). Revocation (issuer first, a 150 s wait, then Felix) ends all of it | 0008's detected-not-prevented residual; the assertion rate limit and alert make a burst visible |
+| **Stolen current certificate and key** (X4 copies them off a running machine) | The real machine's next renewal presents a superseded serial (0008) | Until then the thief can renew, and can get assertions and start refresh chains for that principal. Those chains outlive the certificate, but their tokens need a certificate bound to the principal on every client port, on the control-plane API and on refresh (S10), and on Felix main after v0.7.2 on the forward path too, except that a compromised broker can replay a chain and token it was shown (T73). Revocation (issuer first, a 150 s wait, then Felix) ends all of it | 0008's detected-not-prevented residual; the assertion rate limit and alert make a burst visible |
 | **Stolen data partition after the join (X7)** | Not detected | Plaintext keys until M3 (T52): the certificates work until they expire, and a renewal by the thief is detected when the real machine's next renewal presents a superseded serial (0008) | Accepted before M3; S16 closes it |
 | **Rogue control plane** | Felix services verify it against the cluster root | The join never talks to it; services refuse it | The join's trust is the issuer root only |
 | **Fake issuer: MITM on first contact, a compromised worker or core machine** | J1 | Connection closed before any token byte; exit 75, retried | The issuer root is pinned and only issuers hold leaves under it |
@@ -1047,7 +1074,7 @@ read without root), S25 (rejoin under a new identity).
 | T52, read credentials from a stolen disk | Partial: the config is zeroed and the token never stored; keys are plaintext until S16 (accepted before M3) |
 | T65, flood the join | Failed attempts rate limited per source address, and in-flight joins capped; no per-token limit and no lockout, a declared [refinement of 0008](#refinements-of-0008) |
 | T71, a compromised join | Runs once; no capability; installs only roots matching the config's fingerprints; no Raft peer token |
-| T72, attack a core broker with client tokens | Narrowed, not closed: no cluster broker name on core certificates, no core broker in `FELIX_BROKERS` or discovery, no client port in the core S7 list. Forwarding still reaches a core broker that owns a tenant shard (T73), until placement keeps tenant shards off core brokers ([felix#2840](https://github.com/GetFelix/felix/issues/2840)) |
+| T72, attack a core broker with client tokens | Closed once the pinned Felix contains [felix#2841](https://github.com/GetFelix/felix/issues/2841): no cluster broker name on core certificates, no core broker in `FELIX_BROKERS` or discovery, no client port in the core S7 list, and `FELIX_NODE_ROLE=internal` on every core broker, so placement gives it no shard and forwarding no longer reaches it (T73). Narrowed until then |
 | X7 | Config zeroed after use; a rewritten config cannot reach our cluster |
 
 T4, T24 and T25 are not changed by the join: they are Felix's
@@ -1055,25 +1082,36 @@ T4, T24 and T25 are not changed by the join: they are Felix's
 [felix#2801](https://github.com/GetFelix/felix/issues/2801)). T10 (bootstrap)
 and T28 (node trims) belong to the formation design.
 
-**Dependencies on Felix and felixd.**
+**Dependencies on Felix and felixd.** Still open:
 
 | Gap | Effect here | Issue |
 |---|---|---|
-| No inline identity-provider keys | The control plane cannot trust the issuer for machine principals without a JWKS fetch through the system trust store | [felix#2836](https://github.com/GetFelix/felix/issues/2836) |
-| An upstream token can be exchanged until 60 s past its expiry | A stolen assertion can start a second refresh chain for that principal for up to 120 s | [felix#2836](https://github.com/GetFelix/felix/issues/2836) (the `jti` part) |
+| The single-use `jti` record is in memory in each control-plane replica | An assertion replayed on a replica that has not seen it is exchanged once more there, inside its 120 s window: one extra chain per replica, up to three on the 3-core cluster. The exchange also needs a certificate issued to the principal (S10), so the thief needs the machine's key as well | [felix#2844](https://github.com/GetFelix/felix/issues/2844) |
 | Exchange sleeps past a revocation cutoff instead of refusing older assertions | The operator tool waits 150 s between the issuer and Felix revocation steps | [felix#2839](https://github.com/GetFelix/felix/issues/2839) |
 | The broker reads its control-plane client certificate once | A 24-hour certificate expires under a running broker | [felix#2837](https://github.com/GetFelix/felix/issues/2837) |
-| Refresh is not bound to the client certificate | A stolen refresh token plus any cluster certificate refreshes another principal's chain | [felix#2822](https://github.com/GetFelix/felix/issues/2822) |
 | Connections outlive their certificate | A revoked machine's open connection outlives its certificate | [felix#2817](https://github.com/GetFelix/felix/issues/2817) |
 | Raft TLS read once | Control-plane members restart after Raft renewal (0008) | [felix#2815](https://github.com/GetFelix/felix/issues/2815) |
 | Internal port serves before an identity-checked Hello | Any internal certificate acts as any broker on replication | [felix#2819](https://github.com/GetFelix/felix/issues/2819) |
+| A forwarded request has no proof that the client holds its certificate key | A compromised broker can replay a chain and token it was shown, until either expires (T73) | [felix#2818](https://github.com/GetFelix/felix/issues/2818) |
 | felixd presents no client certificate | felixd's tokens are bearer tokens | [felixd#275](https://github.com/GetFelix/felixd/issues/275) |
 | felixd does not refresh its token | felixd's renewal helper refreshes it until then | [felixd#276](https://github.com/GetFelix/felixd/issues/276) |
 
-The control-plane API's client CA
-([felix#2811](https://github.com/GetFelix/felix/issues/2811)) is closed on
-Felix's main branch, after 0.7.2; the broker's `cp-client` certificate is for
-it.
+Closed on Felix main, on main after v0.7.2, in no 0.7 release:
+
+| Change | What it closes here |
+|---|---|
+| Inline identity-provider keys, single-use `jti` and a lifetime bound ([felix#2836](https://github.com/GetFelix/felix/issues/2836), merged as [felix#2843](https://github.com/GetFelix/felix/issues/2843)) | The issuer is trusted with no JWKS fetch. A second exchange of one assertion on one replica is refused |
+| `FELIX_NODE_ROLE=internal` keeps every shard off a broker ([felix#2840](https://github.com/GetFelix/felix/issues/2840), merged as [felix#2841](https://github.com/GetFelix/felix/issues/2841)) | Core brokers hold no shard (J17, T72) |
+| Refresh bound to the client certificate ([felix#2822](https://github.com/GetFelix/felix/issues/2822), merged as [felix#2827](https://github.com/GetFelix/felix/issues/2827)) | A stolen refresh token needs the principal's certificate |
+| The owner checks the certificate binding on forwarded requests ([felix#2812](https://github.com/GetFelix/felix/issues/2812), merged as [felix#2823](https://github.com/GetFelix/felix/issues/2823)) | Forwarded requests no longer skip the binding (T73, narrowed) |
+| The control-plane API takes a client CA ([felix#2811](https://github.com/GetFelix/felix/issues/2811), merged as [felix#2821](https://github.com/GetFelix/felix/issues/2821)) | S10's mutual TLS holds on the API |
+| The server's `SHA256SUMS` is signed with Sigstore ([felix#2796](https://github.com/GetFelix/felix/issues/2796), merged as [felix#2845](https://github.com/GetFelix/felix/issues/2845)) | The pinned Felix can be verified like felixd (0004) |
+
+None of these is in a release yet. M1 pins the first Felix release that
+contains them, expected to be v0.8.0-preview.1, in `components.toml` under
+[0004](../decisions/0004-components-from-pinned-releases.md). A tagged
+preview is a release; a nightly is not, and 0004 does not allow pinning one.
+J17 and the T72 row close when that pin lands.
 
 ### Privileges, sandbox and egress
 
@@ -1114,10 +1152,10 @@ step.
 | Answers with a certificate on another key, under the wrong root, with a 48-hour lifetime, a root that does not match its fingerprint, an env name outside `join_env`: nothing is written | unit | J4, J5, J8 |
 | Clock: start with `STA_UNSYNC` set; with a clock before the build time; with an issuer 2 minutes off. No token sent in any of them; permanent failure in the third | unit and qemu | J1, J14 |
 | Core join on a production test issuer: the console shows the fingerprint, retries get AwaitingApproval, approval leads to Issued; a second key set for the same token blocks it and alerts; expiry before approval drops it. On a development issuer the core join is issued at once | unit and qemu | J16 |
-| A core machine's broker certificate has no cluster broker name; `FELIX_BROKERS` on every role lists only storage brokers; from a worker, the core broker client port is closed (S7 scan); a token for a cluster with no storage machine is refused | unit and qemu | J17, #77 |
+| A core machine's broker certificate has no cluster broker name; its broker runs with `FELIX_NODE_ROLE=internal`; `FELIX_BROKERS` on every role lists only storage brokers; from a worker, the core broker client port is closed (S7 scan); a token for a cluster with no storage machine is refused | unit and qemu | J17, #77 |
 | The first storage token redeems with no storage machine active; a worker token redeemed before any storage machine gets `retry` and then succeeds once one is active; a core join never waits on storage | unit | check 10 |
 | felixd on a worker started with one seed broker reaches a storage broker added later, and is never offered a core broker | qemu | Seed list, discovery |
-| A storage broker forwards no tenant request to a core broker: with felix#2840, no tenant shard is placed on a core broker, including after storage machines fail | qemu, once felix#2840 lands | T72 |
+| A storage broker forwards no tenant request to a core broker: with `FELIX_NODE_ROLE=internal`, no tenant shard is placed on a core broker, including after storage machines fail | qemu, once the pinned Felix contains felix#2841 | T72 |
 | An AwaitingApproval whose fingerprint differs from the join's own makes the join fail permanently; the console shows the join's own value | unit | J16 |
 | A production issuer refuses to create a `core-dev` token; a `core-dev` Issued answer from a test issuer makes a production image's join fail permanently with nothing written; on a development image the same answer gives a working one-machine cluster whose broker serves clients | unit and qemu | J18 |
 | A test issuer whose clock is unsynchronized and 5 minutes off: it answers Refused(`retry`) instead of Hello, the join exits 75 with no token sent and no `join/failed`, and it joins once the issuer's clock is synchronized | unit and qemu | Issuer clock row, J11 |

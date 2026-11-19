@@ -5,9 +5,10 @@ The tool and the base are fixed by [0003](../decisions/0003-mkosi-image-build.md
 (Felix and felixd from pinned releases), [0006](../decisions/0006-debian-base.md)
 (minimal Debian 13 from snapshot.debian.org) and
 [0007](../decisions/0007-kernel-from-upstream-source.md) (the kernel from
-verified upstream source). This page says how the build meets them. Nothing
-here is built yet: the image is [#1](https://github.com/GetFelix/ninelives/issues/1),
-the CI boot [#2](https://github.com/GetFelix/ninelives/issues/2), signing and
+verified upstream source). This page says how the build meets them. The first
+slice of the image, [#1](https://github.com/GetFelix/ninelives/issues/1), is
+built: the x86_64 qemu `production` image, fetched, built offline and checked
+in CI (parts marked "not built yet" below are still design). The CI boot [#2](https://github.com/GetFelix/ninelives/issues/2), signing and
 secure boot [#9](https://github.com/GetFelix/ninelives/issues/9), cloud
 images [#13](https://github.com/GetFelix/ninelives/issues/13), component
 bumps [#52](https://github.com/GetFelix/ninelives/issues/52) and pinning the
@@ -104,9 +105,9 @@ is built without erofs compression or xattr support (`EROFS_FS_ZIP=n`,
 in the compressed paths. The cost is a larger root partition, which the size
 budget carries. squashfs is the
 alternative with the same properties and an older parser; erofs is proposed
-because its kernel code is maintained for exactly this use. Picking the root
-filesystem is a format choice, so it may want a decision record
-([open question](#open-questions)).
+because its kernel code is maintained for exactly this use. erofs is the
+choice and it needs no decision record of its own: the root is rebuilt from
+pins every time, so the format is not a compatibility promise.
 
 **Why the config partition is raw.** The join config is written by whoever
 provisions the machine, so on a machine taken from its owner (X7) it is
@@ -286,9 +287,12 @@ mkosi run inside the bootstrap container, pinned by digest, and the runner
 supplies only its kernel, container runtime and network. The alternative is
 mkosi's `ToolsTree=` with `ToolsTreeSnapshot=` pinned to the lock's
 snapshot, which still bootstraps from the runner's python3 and apt; #1
-picks one, and the container is proposed because it removes the runner's
-userland entirely. The container is built from the same snapshot by this
-pipeline, reproducibly, so its digest is checked like any other output.
+picks one. #1 took the container, because it removes the runner's userland
+entirely. The first slice uses Debian's own 13 slim image by digest and
+installs python3, git and gpgv into it from the pinned snapshot, checked only
+by the image's own archive keyring. That is the one step the pins do not
+cover. Building the container from the snapshot with those tools in it, so
+its digest covers them, is still to do.
 
 #### Tarballs against tags
 

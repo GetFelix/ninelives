@@ -115,14 +115,6 @@ filename = "pool/main/f/findutils/findutils_4.10.0-3_amd64.deb"
 source = "findutils"
 
 [[root.package]]
-name = "gawk"
-version = "1:5.2.1-2+b1"
-sha256 = "0e3b376e74cadfa5049bc8248c563efe89fd45e31466f8891c094c65c0879f5c"
-archive = "debian"
-filename = "pool/main/g/gawk/gawk_5.2.1-2+b1_amd64.deb"
-source = "gawk"
-
-[[root.package]]
 name = "gcc-14-base"
 version = "14.2.0-19"
 sha256 = "5b6825de4263824b78c4c51f6476414f3b4e89c2ab63e81dc8b9b5501e867cf6"
@@ -315,14 +307,6 @@ filename = "pool/main/u/util-linux/libmount1_2.41.5-0+deb13u1_amd64.deb"
 source = "util-linux"
 
 [[root.package]]
-name = "libmpfr6"
-version = "4.2.2-1"
-sha256 = "75dddce11dabc7fc543712c33dc27b7f2ee66a111763eb5eac654d010b42cd92"
-archive = "debian"
-filename = "pool/main/m/mpfr4/libmpfr6_4.2.2-1_amd64.deb"
-source = "mpfr4"
-
-[[root.package]]
 name = "libpam-modules"
 version = "1.7.0-5"
 sha256 = "9679ade117f8775ac0471f48a92652ab8e8dcda4e2ff06de75158cded9cfd83c"
@@ -363,28 +347,12 @@ filename = "pool/updates/main/p/pcre2/libpcre2-8-0_10.46-1~deb13u3_amd64.deb"
 source = "pcre2"
 
 [[root.package]]
-name = "libreadline8t64"
-version = "8.2-6"
-sha256 = "eeadf2b5e755c9f183883feea2d9b5b28560284275d5f54d3e55d0923b1d0967"
-archive = "debian"
-filename = "pool/main/r/readline/libreadline8t64_8.2-6_amd64.deb"
-source = "readline"
-
-[[root.package]]
 name = "libselinux1"
 version = "3.8.1-1"
 sha256 = "68bb8d32bd8d6d7d2f5952a169db03d1484b46ae1e52abccdec42a19dccea5d5"
 archive = "debian"
 filename = "pool/main/libs/libselinux/libselinux1_3.8.1-1_amd64.deb"
 source = "libselinux"
-
-[[root.package]]
-name = "libsigsegv2"
-version = "2.14-1+b2"
-sha256 = "bac603b965f303ea88dc39cd723b3d88cd86e3be9c948783f0d5e0d00e971302"
-archive = "debian"
-filename = "pool/main/libs/libsigsegv/libsigsegv2_2.14-1+b2_amd64.deb"
-source = "libsigsegv"
 
 [[root.package]]
 name = "libsmartcols1"
@@ -451,6 +419,14 @@ filename = "pool/main/libz/libzstd/libzstd1_1.5.7+dfsg-1_amd64.deb"
 source = "libzstd"
 
 [[root.package]]
+name = "mawk"
+version = "1.3.4.20250131-1"
+sha256 = "ade14470c4dff8921bca6ca8b1ea20eadc0f2178b48caff3c74534b17a633292"
+archive = "debian"
+filename = "pool/main/m/mawk/mawk_1.3.4.20250131-1_amd64.deb"
+source = "mawk"
+
+[[root.package]]
 name = "ncurses-base"
 version = "6.5+20250216-2"
 sha256 = "190e775260a38973c415a36ae99f33ad1b37ea6ca99929d7c5d53843fc23e914"
@@ -481,14 +457,6 @@ sha256 = "b795464137a0f4d443fc9284f4b93e883fb83883cb533adf300ac660807a352a"
 archive = "debian"
 filename = "pool/main/p/perl/perl-base_5.40.1-6+deb13u1_amd64.deb"
 source = "perl"
-
-[[root.package]]
-name = "readline-common"
-version = "8.2-6"
-sha256 = "f77e8aa0bf0de618f11cb0b21658a4ed60f177d63b3cf26d7fc3706b6d0eaaa9"
-archive = "debian"
-filename = "pool/main/r/readline/readline-common_8.2-6_all.deb"
-source = "readline"
 
 [[root.package]]
 name = "sed"

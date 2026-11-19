@@ -27,6 +27,7 @@ import image_common as ic  # noqa: E402
 LOCK = ic.IMAGES / "debian.lock"
 SNAPSHOT = re.compile(r"\d{8}T\d{6}Z")
 NAME = re.compile(r"[a-z0-9][a-z0-9+.-]*")
+PRIORITY = {"required": 0, "important": 1, "standard": 2, "optional": 3, "extra": 4}
 ARCHIVE_URL = "http://snapshot.debian.org/archive"
 
 
@@ -95,7 +96,8 @@ def closure(universe: dict, roots: list[str], include_essential: bool) -> list[s
                 pick = next((a for a in group if a in universe), None)
                 if pick is None:
                     for a in group:
-                        cands = sorted(providers.get(a, []))
+                        # apt prefers the provider with the higher priority.
+                        cands = sorted(providers.get(a, []), key=lambda n: (PRIORITY.get(universe[n].get("Priority"), 9), n))
                         done = [c for c in cands if c in chosen]
                         if done:
                             pick = done[0]

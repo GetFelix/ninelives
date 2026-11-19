@@ -7,12 +7,12 @@ The tool and the base are fixed by [0003](../decisions/0003-mkosi-image-build.md
 [0007](../decisions/0007-kernel-from-upstream-source.md) (the kernel from
 verified upstream source). This page says how the build meets them. The first
 slice of the image, [#1](https://github.com/GetFelix/ninelives/issues/1), is
-built: the x86_64 qemu `production` image, fetched, built offline and checked
-in CI (see [What the first slice builds](#what-the-first-slice-builds)). This
+built: the x86_64 qemu `production` image, fetched, built offline, checked and
+booted in CI (see [What the first slice builds](#what-the-first-slice-builds)). This
 page is the design, and much of it is later: parts for M3 and later (signing,
 rollback, updates), cloud images (M5) and the first published image say so
 where they appear, and a part of M0's scope that the slice does not do yet
-carries a *Not built yet* note with its issue. The CI boot [#2](https://github.com/GetFelix/ninelives/issues/2), signing and
+carries a *Not built yet* note with its issue. Signing and
 secure boot [#9](https://github.com/GetFelix/ninelives/issues/9), cloud
 images [#13](https://github.com/GetFelix/ninelives/issues/13), component
 bumps [#52](https://github.com/GetFelix/ninelives/issues/52) and pinning the
@@ -49,12 +49,42 @@ the fetch phase and the offline build described below, the root as erofs with
 dm-verity, the UKI with its command line, the GPT disk, and every check in
 [Checks](#checks) except the three it names there. The outputs are the `.raw`,
 `.root.erofs`, `.root.verity`, `.roothash`, `.efi`, `.inventory.json`,
-`.files.json` and `SHA256SUMS`, plus `.origins.json`. It does not build
-aarch64 ([#99](https://github.com/GetFelix/ninelives/issues/99)), a second
-build to compare ([#94](https://github.com/GetFelix/ninelives/issues/94)), the
+`.files.json` and `SHA256SUMS`, plus `.origins.json`. The `boot` job then
+boots the `.raw` (see [Boot test](#boot-test)). The slice does not build
+aarch64, so nothing boots it either
+([#99](https://github.com/GetFelix/ninelives/issues/99)), a second
+build to compare ([#94](https://github.com/GetFelix/ninelives/issues/94)), or the
 SBOM, source or provenance outputs
-([#100](https://github.com/GetFelix/ninelives/issues/100)), or a boot of the
-image ([#2](https://github.com/GetFelix/ninelives/issues/2)).
+([#100](https://github.com/GetFelix/ninelives/issues/100)).
+
+### Boot test
+
+The `boot` job runs after `image` in the same workflow run and boots the
+`image-qemu-x86_64` artifact of that run. A failed build uploads under another
+name, so a failed image is never booted. It runs `scripts/boot-run.sh` in the
+bootstrap container and starts `qemu-system-x86_64` with UEFI firmware,
+no display, the serial port written to a log file and a hard timeout. It uses
+KVM if the runner has `/dev/kvm` (180 s) and falls back to emulation
+otherwise (900 s). The `.raw` is the virtio disk.
+
+- **Pass:** the init's ready line (`"machine":"up"`) appears on the serial
+  console, and nothing on it is a kernel panic, an oops or a dm-verity error.
+- **Fail:** any of those, the UEFI shell (the firmware found nothing to boot),
+  the timeout, or a missing ready line.
+- **Corruption.** The job boots two copies of the image, one with a byte
+  flipped in block 0 of the root partition and one in block 0 of the hash tree.
+  Both are read on every boot. Each must end in a dm-verity error and a panic,
+  with the VM rebooting (`panic=10`), and the ready line must never appear.
+
+The serial logs and the verdicts are uploaded as `boot-serial-logs` on every
+outcome. `tools/boot.sh` runs the same three boots on a Linux host with docker
+or podman. qemu and the firmware are the `boot` set of `images/debian.lock`:
+fetched, hash-checked and installed by the same mechanism as the build tools,
+never from the runner's apt. The firmware is Debian's `ovmf`, the 4 MiB
+`OVMF_CODE_4M.fd`. The unpinned parts are the bootstrap step that installs
+`python3` and `gpgv` into the container (#92, as for the image job) and the
+runner's kernel, KVM and container runtime ([#65](https://github.com/GetFelix/ninelives/issues/65)).
+The `boot` job is part of `CI ok`.
 
 ## What it does not do
 
@@ -475,7 +505,7 @@ Each check fails the build on any violation. Each allowlist lives in
 | Components match the manifest | Each Felix and felixd binary in the root has the hash of the member in the verified archive. | S4 |
 | No secrets | No file holds a private key, a token in a known format, or a test credential the S8 test plants. | S8 |
 | Kernel command line | The UKI's command line equals the expected string for its target, its root hash is the root partition's in this image, it holds every word the kernel's `policy.toml` requires, and none it forbids. | S13, S17 |
-| ESP contents | The ESP holds exactly the expected UKI files and nothing else. | S13 |
+| ESP contents | The ESP holds exactly the expected UKI files and nothing else, and its FAT has 512-byte sectors like the disk. Firmware ignores a FAT with other sectors, so the machine would boot nothing. | S13 |
 | Shared libraries of network daemons | Each network-facing binary's `DT_NEEDED` set equals its entry in `images/executables.toml`. | S4 |
 | Verity | `veritysetup verify` passes for the root against its hash tree and the root hash in the UKI. | S13 |
 | Kernel config | kernel-hardening-checker passes with the listed exceptions, and `CONFIG_MODULES` is off (0007). | S2 |
@@ -789,9 +819,9 @@ first published image.
 | The build phase run with a step that tries to download: it fails | CI fixture. The slice checks that a download fails inside a fresh network namespace, and the build itself fails if the network is reachable in its phase; a fixture that runs a whole build step that downloads is not built | I2 |
 | One fixture image per check, each seeded with one violation (a setuid file, a setgid directory, a `security.capability` attribute, a write bit, a file owned by uid 1, a FIFO, a link into `/var/lib`, an extra passwd entry, a `#!` script, a `dash` binary, an unlisted package, an orphan file, a planted test token, an oversized root, a changed command line): each check fails, and the clean fixture passes | *Built as unit tests on in-memory trees, one per check, not as fixture images; the clean tree passes.* CI, every pull request | I3 to I9 |
 | `veritysetup verify` on the built image | CI | I8 |
-| Boot the image in qemu, x86_64 and aarch64: the init reports ready on the serial console | *Not built yet.* CI, every pull request (#2) | the image boots |
+| Boot the image in qemu, x86_64 and aarch64: the init reports ready on the serial console | x86_64 is the `boot` job ([Boot test](#boot-test)). *Not built yet:* aarch64 ([#99](https://github.com/GetFelix/ninelives/issues/99)). CI, every pull request | the image boots |
 | In qemu: a write to the root fails with `EROFS`; a binary copied to the data partition does not run; `ld.so` on it fails | *Not built yet,* [#98](https://github.com/GetFelix/ninelives/issues/98). CI (test variant) | S3 |
-| Flip one byte in a copy's root partition, in a block a boot reads, and boot: the kernel panics on that read and the VM reboots; the same for the hash tree | *Not built yet,* [#2](https://github.com/GetFelix/ninelives/issues/2). CI | dm-verity |
+| Flip one byte in a copy's root partition, in a block a boot reads, and boot: the kernel panics on that read and the VM reboots; the same for the hash tree | The `boot` job does both ([Boot test](#boot-test)); each must show a dm-verity error and a panic, then a reboot. CI | dm-verity |
 | From M3, the same with two slots: the machine falls back to the other slot and does not loop | CI, from M3 (#8) | slot fallback |
 | A workflow policy check on fixtures: an Action pinned by tag, a `pull_request_target` trigger, missing top-level `permissions: {}`, a checkout without `persist-credentials: false`, a signing job reachable from a branch, a release job that restores a cache, an unhashed download: each fails | *Not built yet,* [#65](https://github.com/GetFelix/ninelives/issues/65). CI, every pull request (#65) | I10, I14, S21 |
 | The signer refuses a token from a different workflow SHA, from a branch, and for a tag whose commit is not on `main` | Signer test, from M3 | I10 |

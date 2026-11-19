@@ -1,0 +1,8 @@
+# Size limits in bytes (docs/components/image.md, "Checks": size budget).
+# Each is the first build's size plus 20%. The build warns at 90%. Raising a
+# limit is a reviewed change that says why.
+[x86_64]
+root_erofs = 146846515
+uki = 6189466
+esp_files = 6189466
+raw = 782681702

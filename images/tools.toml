@@ -1,0 +1,42 @@
+# Everything the image build runs on, pinned (docs/components/image.md,
+# "Inputs"). Change it only in a reviewed pull request that touches pin
+# files and nothing else.
+
+# mkosi runs from its source archive. It needs only Python's standard
+# library, so nothing is resolved from PyPI.
+[mkosi]
+version = "27.1"
+url = "https://github.com/systemd/mkosi/archive/refs/tags/v27.1.tar.gz"
+sha256 = "33520d662e151d6c43e910c3840ac971fd6023e4488d9c10599e199a07f77d8b"
+
+# The container the fetch phase and the build run in. The runner supplies only
+# its kernel, container runtime and network. Debian 13 trixie-20261104-slim.
+[bootstrap]
+image = "debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2"
+
+# One snapshot.debian.org timestamp for everything Debian. The release of the
+# image's root and the release of the build tools are separate pins, so
+# either can move without the other.
+[debian]
+snapshot = "20261118T000000Z"
+architecture = "amd64"
+
+[root]
+release = "trixie"
+
+[tools]
+release = "trixie"
+# Roots of the tools set; debian.lock holds their closure. Why each:
+#   python3, apt, dpkg  mkosi and the install of the root
+#   erofs-utils         mkfs.erofs and fsck.erofs
+#   cryptsetup-bin      veritysetup
+#   systemd-repart      the GPT disk
+#   systemd-ukify, python3-pefile, systemd-boot-efi   the unified kernel image and its EFI stub
+#   dosfstools, mtools  the ESP's vfat, which repart makes
+#   gpgv                signature checks
+#   xz-utils, tar, util-linux, e2fsprogs   unpacking, mounts for the checks
+packages = [
+  "apt", "cryptsetup-bin", "dosfstools", "dpkg", "e2fsprogs", "erofs-utils", "gpgv",
+  "mount", "mtools", "python3", "python3-pefile", "systemd", "systemd-boot-efi",
+  "systemd-repart", "systemd-ukify", "tar", "util-linux", "xz-utils",
+]

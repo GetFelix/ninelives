@@ -1,0 +1,18 @@
+# The qemu x86_64 target (docs/components/image.md, "Partition layout" and
+# "Boot without an initrd").
+
+architecture = "x86_64"
+console = "ttyS0,115200"
+# The root's disk is the first virtio disk in qemu. Cloud targets name theirs
+# in their own file.
+root_device = "/dev/vda2"
+verity_device = "/dev/vda3"
+# Fixed seeds, so the disk, partition and filesystem UUIDs are the same every
+# build. Changing one changes every image.
+disk_seed = "6c8d5c3e-9a64-4e0b-8f41-2b7a6f0c1d11"
+erofs_uuid_seed = "2f0e7b49-1c35-4b58-a0e2-5d6c9a3b7e84"
+
+[sizes]
+esp_mib = 256
+config_mib = 1
+data_mib = 128

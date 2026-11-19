@@ -1,0 +1,12 @@
+# Symlinks whose target is not in the image (docs/components/image.md,
+# "Checks": special files and stray links). Each says why.
+
+[[symlink]]
+path = "/var/run"
+target = "/run"
+reason = "/run is the init's tmpfs; the link is Debian's long-standing path for it"
+
+[[symlink]]
+path = "/var/lock"
+target = "/run/lock"
+reason = "as /var/run: the init's tmpfs holds locks"

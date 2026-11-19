@@ -1,0 +1,24 @@
+# Files removed from packages the image keeps, because nothing in the root
+# uses them (docs/components/image.md, "Building the root", step 4). Every
+# entry says why. A shared library listed here that something still links
+# against fails the build: the check resolves every DT_NEEDED inside the root.
+
+[[prune]]
+path = "/usr/lib/x86_64-linux-gnu/gconv"
+reason = "iconv character set modules; Felix, felixd and the init do not call iconv"
+
+[[prune]]
+paths = [
+  "/usr/lib/x86_64-linux-gnu/libBrokenLocale.so.1",
+  "/usr/lib/x86_64-linux-gnu/libanl.so.1",
+  "/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so.0",
+  "/usr/lib/x86_64-linux-gnu/libmemusage.so",
+  "/usr/lib/x86_64-linux-gnu/libmvec.so.1",
+  "/usr/lib/x86_64-linux-gnu/libnsl.so.1",
+  "/usr/lib/x86_64-linux-gnu/libnss_compat.so.2",
+  "/usr/lib/x86_64-linux-gnu/libnss_hesiod.so.2",
+  "/usr/lib/x86_64-linux-gnu/libpcprofile.so",
+  "/usr/lib/x86_64-linux-gnu/libthread_db.so.1",
+  "/usr/lib/x86_64-linux-gnu/libutil.so.1",
+]
+reason = "debugging, profiling and legacy NSS libraries nothing links against or loads; nsswitch.conf names only files and dns"

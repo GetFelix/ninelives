@@ -60,3 +60,16 @@ packages = [
 [boot]
 release = "trixie"
 packages = ["ovmf", "qemu-system-x86"]
+
+# What the CI comparison job runs on (docs/components/image.md,
+# "Reproducibility"): diffoscope, installed from the same snapshot and lock,
+# never from the runner or PyPI. The format tools are what it calls to open
+# each output instead of falling back to a hex dump.
+#   diffoscope-minimal  the comparison
+#   binutils            the PE sections of the unified kernel image
+#   fdisk               the GPT disk
+#   erofs-utils         the root filesystem
+#   xxd                 the hex view of what has no reader
+[compare]
+release = "trixie"
+packages = ["binutils", "diffoscope-minimal", "erofs-utils", "fdisk", "xxd"]

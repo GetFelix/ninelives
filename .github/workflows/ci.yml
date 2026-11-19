@@ -348,6 +348,107 @@ jobs:
           path: /__w/_temp/image/out/
           if-no-files-found: ignore
 
+  # Build B of the reproducibility check (image.md, "Reproducibility"): the
+  # same commit and inputs as the image job, on another runner with no cache
+  # of any kind. It fetches every input itself and varies what must not matter:
+  # the checkout path, the work and output paths, the user's name and home, the
+  # umask, the time zone, the locale and the CPU count. The container runs as
+  # root because the build mounts the filesystem it makes, so the user varies
+  # by name, not by uid.
+  image-rebuild:
+    needs: [kernel-changes, kernel, init-binary]
+    if: needs.kernel-changes.outputs.run == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    container:
+      image: debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 # trixie-20261104-slim
+      options: --privileged
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          path: rebuild/src/other-checkout
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kernel-qemu-x86_64
+          path: /__w/_temp/rebuild-in/kernel
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: init-x86_64
+          path: /__w/_temp/rebuild-in/init
+      - name: Build the image again, changed
+        env:
+          COMMIT: ${{ github.sha }}
+          SOURCE_DATE_EPOCH: ${{ needs.kernel-changes.outputs.epoch }}
+        run: |
+          export TZ=Pacific/Kiritimati LANG=tr_TR.UTF-8 LANGUAGE=tr
+          export USER=builder LOGNAME=builder HOME=/home/builder
+          mkdir -p "$HOME"
+          chmod +x /__w/_temp/rebuild-in/init/init
+          umask 077
+          # One CPU where the first build had every one the runner has.
+          echo "cpus: $(taskset -c 0 nproc), the first build: $(nproc)"
+          taskset -c 0 rebuild/src/other-checkout/scripts/image-build.sh \
+            --kernel /__w/_temp/rebuild-in/kernel --init /__w/_temp/rebuild-in/init/init \
+            --out /__w/_temp/rebuild-out/b --work /__w/_temp/rebuild-work/elsewhere
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: success()
+        with:
+          name: image-qemu-x86_64-rebuild
+          path: /__w/_temp/rebuild-out/b/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: image-qemu-x86_64-rebuild-FAILED-checks
+          path: /__w/_temp/rebuild-out/b/
+          if-no-files-found: ignore
+
+  # Fails unless the two builds' SHA256SUMS are identical. On a mismatch it
+  # uploads a diffoscope report (diffoscope is the lock's compare set) and does
+  # not retry: a retry would hide the nondeterminism it found.
+  image-compare:
+    needs: [kernel-changes, image, image-rebuild]
+    if: needs.kernel-changes.outputs.run == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 # trixie-20261104-slim
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: image-qemu-x86_64
+          path: /__w/_temp/compare/a
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: image-qemu-x86_64-rebuild
+          path: /__w/_temp/compare/b
+      - name: Compare the two builds
+        run: |
+          scripts/image-compare.sh --a /__w/_temp/compare/a --b /__w/_temp/compare/b \
+            --report /__w/_temp/compare/report --work /__w/_temp/compare/work
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '### Two builds'
+            echo '```'
+            cat /__w/_temp/compare/a/SHA256SUMS || true
+            echo '---'
+            cat /__w/_temp/compare/b/SHA256SUMS || true
+            [[ -f /__w/_temp/compare/report/summary.txt ]] && { echo '---'; cat /__w/_temp/compare/report/summary.txt; }
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: image-reproducibility-report
+          path: /__w/_temp/compare/report/
+          if-no-files-found: warn
+
   # Boots the image of this run in qemu with UEFI, headless, serial to a log,
   # and a hard timeout (image.md, "Boot test"). qemu and the firmware come from
   # the lock's boot set, installed in the same pinned container the image was
@@ -396,7 +497,7 @@ jobs:
   ci-ok:
     name: CI ok
     if: always()
-    needs: [lint, python, init, kernel-changes, kernel, init-binary, image, boot]
+    needs: [lint, python, init, kernel-changes, kernel, init-binary, image, image-rebuild, image-compare, boot]
     runs-on: ubuntu-latest
     steps:
       - run: |

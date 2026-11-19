@@ -16,6 +16,7 @@ Any mismatch exits non-zero before anything is built.
 
   fetch_image.py --out DIR          the image build's inputs
   fetch_image.py --out DIR --boot   only the packages the boot test runs on
+  fetch_image.py --out DIR --compare   only the packages the comparison job runs on
 """
 import argparse
 import json
@@ -108,6 +109,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", type=pathlib.Path, required=True)
     parser.add_argument("--boot", action="store_true", help="fetch only the boot test's packages")
+    parser.add_argument("--compare", action="store_true", help="fetch only the comparison job's packages (diffoscope)")
     parser.add_argument("--target-arch", default="x86_64", choices=sorted(ARCH))
     args = parser.parse_args()
 
@@ -122,11 +124,14 @@ def main() -> int:
     if arch != ARCH[args.target_arch]:
         fail(f"the lock is for {arch}, not {ARCH[args.target_arch]}")
 
-    sets = ("boot",) if args.boot else ("root", "tools")
+    if args.boot and args.compare:
+        fail("--boot and --compare are separate runs")
+    only = "boot" if args.boot else "compare" if args.compare else None
+    sets = (only,) if only else ("root", "tools")
     for which in sets:
         fetch_release(out, lock, which, arch, snapshot)
     n = fetch_debs(out, lock, snapshot, sets)
-    if args.boot:
+    if only:
         print(f"fetched {n} packages into {out}")
         return 0
 

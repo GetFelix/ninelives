@@ -40,12 +40,9 @@ pub(crate) fn run() -> Booted {
             emergency = Some(failure(m.step, e));
             break;
         }
-        match m.target {
-            "/proc" => {
-                console.set_boot_id(read_boot_id());
-                console.write(&Record::new(MachineState::Booting));
-            }
-            _ => {}
+        if m.target == "/proc" {
+            console.set_boot_id(read_boot_id());
+            console.write(&Record::new(MachineState::Booting));
         }
     }
     // TODO(#48): steps 2 to 6: the config and its [[mount]] entries, the data

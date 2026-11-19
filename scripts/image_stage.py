@@ -51,6 +51,8 @@ RESIDUE = [
     # timers and docs from removed packages, and links into /run that nothing writes
     "/etc/systemd", "/usr/share/info", "/usr/local/man", "/usr/lib/clock-epoch", "/var/spool/mail",
 ]
+# Links into /run, the init's tmpfs, that base-files makes in its postinst.
+RUN_LINKS = {"/var/run": "/run", "/var/lock": "/run/lock"}
 # Name lookups: local files, then DNS. libnss_files and libnss_dns are the two NSS modules the image keeps.
 NSSWITCH = "passwd: files\ngroup: files\nhosts: files dns\n"
 LD_SO_CONF = "include /etc/ld.so.conf.d/*.conf\n"

@@ -42,6 +42,15 @@ jobs:
           persist-credentials: false
       - name: Scripts compile
         run: python3 -m compileall -q scripts site/scripts
+      - name: Pinned cosign
+        # The Sigstore bundle tests run the same binary the fetch phase does,
+        # checked against the hash in images/tools.toml.
+        run: |
+          read -r url sha < <(python3 -I -c 'import tomllib; c = tomllib.load(open("images/tools.toml", "rb"))["cosign"]; print(c["url"], c["sha256"])')
+          curl -fsSLo "$RUNNER_TEMP/cosign" "$url"
+          echo "$sha  $RUNNER_TEMP/cosign" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/cosign"
+          echo "NL_COSIGN=$RUNNER_TEMP/cosign" >> "$GITHUB_ENV"
       - name: Unit tests
         run: python3 -m unittest discover -s scripts/tests -v
       - name: Kernel pin and fragments
@@ -133,7 +142,7 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
             # The checkout is the merge commit; its first parent is the base.
             if ! git diff --name-only HEAD^1 HEAD \
-              | grep -qE '^(kernel/|images/|rootfs/|init/|tools/(image|boot)\.sh$|scripts/(bootstrap\.sh|check_kernel_config\.py|fetch_kernel\.py|kernel_build\.sh|image[-_a-z]*\.(py|sh)|boot[-_a-z]*\.(py|sh)|fetch_image\.py|check_image\.py|faketime(_lib\.py|\.sh))$|\.github/workflows/ci\.yml$)'; then
+              | grep -qE '^(kernel/|images/|rootfs/|init/|tools/(image|boot)\.sh$|scripts/(bootstrap\.sh|check_kernel_config\.py|fetch_kernel\.py|kernel_build\.sh|image[-_a-z]*\.(py|sh)|boot[-_a-z]*\.(py|sh)|fetch_image\.py|sigstore_verify\.py|check_image\.py|faketime(_lib\.py|\.sh))$|\.github/workflows/ci\.yml$)'; then
               run=false
             fi
           fi

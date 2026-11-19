@@ -9,8 +9,13 @@ without network and reads only what this leaves in --out.
   InRelease   SHA-256 from debian.lock, then gpgv against images/keys/debian/
   Packages    SHA-256 from the signed InRelease
   .deb        SHA-256 from debian.lock and from the Packages stanza, both
-  Felix, felixd   SHA-256 from images/components.toml
   mkosi       SHA-256 from images/tools.toml
+  cosign      SHA-256 from images/tools.toml, then run offline on each signed
+              component's SHA256SUMS and Sigstore bundle against the trusted
+              root in images/keys/sigstore/ (SHA-256 from tools.toml)
+  Felix, felixd   SHA-256 from images/components.toml; where the component is
+              signed, also the line in the verified SHA256SUMS, and the
+              bundle's certificate must carry the manifest's identity and issuer
 
 Any mismatch exits non-zero before anything is built.
 
@@ -23,11 +28,13 @@ import argparse
 import json
 import lzma
 import pathlib
+import stat
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import image_common as ic  # noqa: E402
 import image_lock  # noqa: E402
+import sigstore_verify as sv  # noqa: E402
 
 ARCH = {"x86_64": "amd64"}
 
@@ -106,6 +113,44 @@ def fetch_pinned(url: str, sha256: str, dest: pathlib.Path) -> None:
         fail(f"{dest.name}: downloaded {digest}, pinned {sha256}")
 
 
+def fetch_verifier(tools: dict, out: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
+    """The pinned cosign binary and the pinned Sigstore trusted root."""
+    cs = tools["cosign"]
+    cosign = out / "tools" / f"cosign-{cs['version']}"
+    fetch_pinned(cs["url"], cs["sha256"], cosign)
+    cosign.chmod(cosign.stat().st_mode | stat.S_IXUSR)
+    sg = tools["sigstore"]
+    root = ic.ROOT / sg["trusted_root"]
+    digest = ic.sha256_file(root)
+    if digest != sg["trusted_root_sha256"]:
+        fail(f"{sg['trusted_root']} is {digest}, tools.toml pins {sg['trusted_root_sha256']}")
+    return cosign, root
+
+
+def fetch_component(c: dict, arch: str, out: pathlib.Path, verifier: tuple[pathlib.Path, pathlib.Path]) -> dict:
+    """Download one component's artifact and check it as its manifest entry says."""
+    art = c["artifacts"][arch]
+    dest = out / "components" / art["url"].rsplit("/", 1)[1]
+    fetch_pinned(art["url"], art["sha256"], dest)
+    sig = c["signature"]
+    if sig["kind"] == "sigstore":
+        cosign, root = verifier
+        sdir = out / "components" / "signatures" / c["name"]
+        sums, bundle = sdir / "SHA256SUMS", sdir / "SHA256SUMS.sigstore.json"
+        # Always fresh: nothing left in a reused --out is trusted without the check.
+        for url, path in ((sig["checksums"], sums), (sig["bundle"], bundle)):
+            path.unlink(missing_ok=True)
+            ic.download(url, path)
+        try:
+            sv.verify_bundle(cosign, root, bundle, sums, sig["identity"], sig["issuer"])
+            sv.check_artifact(sv.parse_sums(sums.read_text(encoding="utf-8")), dest.name,
+                              art["sha256"], ic.sha256_file(dest))
+        except sv.VerifyError as e:
+            dest.unlink(missing_ok=True)
+            fail(f"{c['name']} {c['version']}: {e}")
+    return {"version": c["version"], "file": dest.name, "sha256": art["sha256"]}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", type=pathlib.Path, required=True)
@@ -143,12 +188,8 @@ def main() -> int:
     fetch_pinned(mk["url"], mk["sha256"], out / "mkosi" / f"mkosi-{mk['version']}.tar.gz")
 
     components = ic.load_toml(ic.IMAGES / "components.toml")
-    fetched = {}
-    for c in components["component"]:
-        art = c["artifacts"][args.target_arch]
-        dest = out / "components" / art["url"].rsplit("/", 1)[1]
-        fetch_pinned(art["url"], art["sha256"], dest)
-        fetched[c["name"]] = {"version": c["version"], "file": dest.name, "sha256": art["sha256"]}
+    verifier = fetch_verifier(tools, out)
+    fetched = {c["name"]: fetch_component(c, args.target_arch, out, verifier) for c in components["component"]}
 
     (out / "fetched.json").write_text(json.dumps({
         "snapshot": snapshot, "debs": n, "mkosi": mk["sha256"], "components": fetched,

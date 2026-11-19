@@ -33,6 +33,10 @@ the latest artifact with that name: any pull request's run can upload one.
   `hardening.config` lines that cannot apply and why, the expected
   sysctls, the command line words the kernel policy requires, and the
   image parameters the command line may carry besides them.
+- `section-mismatches/<arch>.txt`: the modpost section mismatches a build
+  may report. x86_64 builds with `SECTION_MISMATCH_WARN_ONLY` because 6.18's
+  FineIBT code trips modpost when modules are off, so `kernel_build.sh`
+  fails on any mismatch not listed, and on a listed one that went away.
 - `hardening-exceptions.toml`: each kernel-hardening-checker finding that
   is not fixed, with the reason (S2).
 

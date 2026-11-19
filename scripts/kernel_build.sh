@@ -55,7 +55,18 @@ case $cmd in
     make -s -C "$src" O="$out" olddefconfig
     ;;
   build)
-    make -C "$src" O="$out" -j"$(nproc)" KCFLAGS="-ffile-prefix-map=$src/=" "$image"
+    make -C "$src" O="$out" -j"$(nproc)" KCFLAGS="-ffile-prefix-map=$src/=" "$image" 2>&1 | tee "$work/build.log"
+    # modpost's section mismatches must be exactly the listed ones, offsets
+    # dropped, so a new one fails even where the config only warns.
+    expected=$repo/kernel/section-mismatches/$arch.txt
+    sed -n 's/^WARNING: modpost: vmlinux: section mismatch in reference: //p' "$work/build.log" \
+      | sed -E 's/\+0x[0-9a-f]+//' | LC_ALL=C sort -u > "$work/mismatches"
+    if [[ -f $expected ]]; then
+      grep -v -e '^#' -e '^$' "$expected" | LC_ALL=C sort -u > "$work/mismatches.expected" || true
+    else
+      : > "$work/mismatches.expected"
+    fi
+    diff -u "$work/mismatches.expected" "$work/mismatches"
     ;;
   *)
     echo "unknown command $cmd" >&2

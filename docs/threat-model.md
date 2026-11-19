@@ -124,9 +124,10 @@ flowchart LR
 ## What one compromised machine can do
 
 This is the question every design here has to answer, so it gets its own
-section. Without root, a compromised service reaches only its own row of the
-[table above](#what-a-compromised-service-still-reaches); this section assumes
-the attacker also has a kernel exploit. It assumes X4: root on one machine, with every credential on it. The
+section. Without root, a compromised service reaches only its own row in
+[What a compromised service still reaches](#what-a-compromised-service-still-reaches).
+This section assumes the attacker also has a kernel exploit: X4, root on one
+machine, with every credential on it. The
 attacker can reach other machines only through the ports S7 lets them open,
 and only with the credentials this machine holds.
 

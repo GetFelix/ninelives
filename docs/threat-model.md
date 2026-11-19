@@ -190,8 +190,9 @@ would run that program as full root on the next crash. So:
 - **PID 1 keeps only `CAP_KILL` and `CAP_SYS_BOOT`.** Before the drop it
   forks one launcher per service, already running as that service's uid and
   holding only that service's listed capabilities. After the drop PID 1
-  cannot change uid, and a qemu test checks that `setuid(0)` from PID 1
-  fails.
+  cannot change uid. A qemu test checks that its uids are not 0, its
+  `CapPrm` has no `CAP_SETUID` and its securebits are locked; calling
+  `setuid(0)` from PID 1 itself would need a test hook inside it.
 - **Launchers are protected from their own services.** A launcher runs at its
   service's uid without the service's seccomp filter or Landlock rules, so the
   service could otherwise ptrace it. Yama's `ptrace_scope` is 3, so nothing
@@ -204,11 +205,25 @@ would run that program as full root on the next crash. So:
   with no file capabilities that is the only way to hold one across `exec`.
   Every other service holds none, and each service's bounding set holds only
   its list, with `no_new_privs` set.
-- **`CAP_NET_ADMIN` reaches routes and addresses, not the packet filter.** The
-  packet filter is loaded before the drop. DHCP is split: an unprivileged
-  parser reads replies from a packet socket the applier opened and handed to
-  it, and passes a typed lease to the applier, whose seccomp filter allows
-  netlink sockets only for `NETLINK_ROUTE`, so `NETLINK_NETFILTER` is denied.
+- **`CAP_NET_ADMIN` cannot change the packet filter's rules, but tc can get
+  around them.** The packet filter is loaded before the drop. DHCP is split:
+  an unprivileged parser reads replies from a packet socket the applier
+  opened and handed to it, and passes a typed lease to the applier. The
+  applier opens the socket with protocol 0, attaches a classic BPF filter
+  that passes only DHCP and locks it with `SO_LOCK_FILTER`, and only then
+  binds it to one interface and the protocol, so it never receives stray
+  packets before the filter is on; the parser's
+  seccomp filter denies `bind` and `setsockopt`, so it cannot widen what it
+  receives. The applier's seccomp filter allows netlink sockets only for
+  `NETLINK_ROUTE`, so `NETLINK_NETFILTER` is denied, and denies the xtables
+  `setsockopt` options (`IPT_SO_SET_*`, `IP6T_SO_SET_*`, `EBT_SO_SET_*`,
+  `ARPT_SO_SET_*`, `IP_VS_SO_SET_*`), which change rules without netlink; S2
+  also leaves legacy xtables and IPVS out of the kernel. That does not cover tc: qdiscs, classifiers and
+  actions such as `pedit`, `nat` and `mirred` are configured over
+  `NETLINK_ROUTE`, and run before netfilter on ingress and after it on
+  egress, so they can rewrite or redirect what S7 and S18 allow. S2 builds the
+  kernel without the classifiers and actions NineLives does not use; what is
+  left is open ([#69](https://github.com/GetFelix/ninelives/issues/69)).
   Unprivileged user namespaces are off (S2), so no service can gain
   `CAP_NET_ADMIN` in a namespace of its own and reach nf_tables or tc that
   way.
@@ -228,8 +243,8 @@ Each row is X3: code execution as that service's uid, without a kernel bug.
 | Felix broker | Its data directory, so every record of the shards it holds, in plaintext; its TLS key and node credential; client tokens presented to it, usable only through forwarding (T73); the ports S18 allows. This is the storage row of the next section. | The control plane's store and Raft token, even on a core machine; felixd's token; the packet filter, the clock, other services' memory |
 | Felix control plane (core) | The Raft store, so every tenant's signing-key seeds and the Raft peer token. **This is the whole cluster** (T24, T25); the no-root rule does not narrow it. | Other services' files on the machine, which it does not need |
 | felixd | Its node and refresh tokens, and the workloads it runs: the worker row of the next section | The broker's records on disk, the control plane's store |
-| DHCP parser | A packet socket the applier handed it: it can read DHCP replies and send forged frames on the local link, and feed the applier a lease. No capability. | Routes, addresses, the packet filter, credentials, records, the clock |
-| DHCP applier | `CAP_NET_ADMIN`, `CAP_NET_RAW` and `CAP_NET_BIND_SERVICE` (ambient, listed in S6), with netlink limited to `NETLINK_ROUTE`: addresses and routes, so it can send this machine's traffic anywhere; raw sockets, so it can sniff and spoof on the machine's interfaces. TLS keeps the traffic unreadable (T2). A bug in route handling reached through it is a kernel bug (T70). | The packet filter (no `NETLINK_NETFILTER`), credentials, records, the clock |
+| DHCP parser | A packet socket the applier handed it, bound to one interface with a locked filter that passes only DHCP: it can read DHCP replies, send forged frames on the local link, and feed the applier a lease. No capability, and no `bind` or `setsockopt`. | Routes, addresses, the packet filter, credentials, records, the clock |
+| DHCP applier | `CAP_NET_ADMIN`, `CAP_NET_RAW` and `CAP_NET_BIND_SERVICE` (ambient, listed in S6), with netlink limited to `NETLINK_ROUTE`: addresses and routes, so it can send this machine's traffic anywhere; tc, so it can rewrite or redirect packets past the packet filter with whatever classifiers and actions the kernel has (S2, [#69](https://github.com/GetFelix/ninelives/issues/69)); raw sockets, so it can sniff and spoof on the machine's interfaces. TLS keeps the traffic unreadable (T2). A bug in route or tc handling reached through it is a kernel bug (T70). | The packet filter's rules (no `NETLINK_NETFILTER`, no xtables `setsockopt`), credentials, records, the clock |
 | Time client | `CAP_SYS_TIME` (ambient, listed in S6): the machine's clock. On a core machine, the control plane then mints tokens whose `iat` and `exp` follow that clock, and other brokers accept them until `exp` by their own clocks, so a clock set a day ahead yields tokens valid for a day. Revocation cutoffs move the same way. | Credentials, records, the packet filter |
 | Join | The join token, and write access to every service's credential directory. That includes the CA bundles felixd and the broker trust, so it can install an attacker's CA and let a fake broker or control plane collect their tokens (T2), and on a core machine the Raft peer token. **This is the machine's whole identity** (T71). | Running as another service's uid; it writes credentials without `CAP_DAC_OVERRIDE` or `CAP_CHOWN`, into directories made for it |
 | Diagnostics interface | Every service's captured output, and kernel crash dumps, which hold credentials (T22) | Writing anything |
@@ -241,7 +256,7 @@ control plane, the join, and PID 1 if its launchers take orders. Those must
 take the least untrusted input, which is why the join config is parsed outside
 PID 1 (T21) and the join runs only on first boot (T71). The network helpers
 keep capabilities that cut into other requirements: the DHCP applier's
-`CAP_NET_ADMIN` can reroute traffic though not lift S7 or S18, and
+`CAP_NET_ADMIN` can reroute traffic and, through tc, get around S7 and S18, and
 `CAP_SYS_TIME` can defeat S15 from inside the machine (T69, T70).
 
 ### From kernel exec to the drop
@@ -267,8 +282,8 @@ nothing to escalate. What it handles there:
 
 The init design has to list everything PID 1 does before the drop and the
 capabilities it keeps after it, and a qemu test checks `/proc/1/status` after
-boot: uid not 0, only the listed capabilities effective and permitted, and
-`setuid(0)` refused (T67, T68).
+boot: no uid or gid 0 (real, effective, saved or filesystem), only the listed
+capabilities effective and permitted, and securebits locked (T67, T68).
 
 ## Credentials: blast radius and rotation
 
@@ -283,8 +298,8 @@ revoked. "Not built" means NineLives has no code for it yet.
 | Broker node credential (`felix-controlplane` audience) | Core and storage | 900 s, refreshed by the broker | The cluster's catalog, nodes and placement: reconnaissance, not writes | Broker's own refresh loop | As above |
 | Broker TLS certificate and key | Core and storage | At most 24 h, renewed at half its life (S19) | Speaking as that broker to peers and clients | Files re-read every 30 s | Felix documents no revocation list, so only expiry ends one. Short lifetimes are the only revocation (S19). |
 | Client certificate and key (felixd and every service client) | Every machine | At most 24 h, renewed at half its life (S19) | Presenting that machine's tokens on a client port, where the broker binds the token's subject to the certificate. Not yet for felixd, which presents none ([felixd#275](https://github.com/GetFelix/felixd/issues/275)). | Files re-read where the client supports it | Expiry only |
-| Raft TLS certificate and key | Core | At most 24 h, renewed at half its life (S19) | The control-plane Raft listener checks only that a client certificate chains to the Raft CA, not which member it names, so any Raft certificate can speak for any member ([felix#2802](https://github.com/GetFelix/felix/issues/2802)). Broker replication certificates, unlike these, are bound to node ids. | Files re-read every 30 s | Expiry only |
-| Raft peer token | Every core machine, shared | Static | Cluster admin over metadata, including replacing the store | No rolling rotation documented by Felix | None short of rotating it on every member |
+| Raft TLS certificate and key | Core | At most 24 h, renewed at half its life (S19) | The control-plane Raft listener checks only that a client certificate chains to the Raft CA, not which member it names, so any Raft certificate can speak for any member ([felix#2802](https://github.com/GetFelix/felix/issues/2802)). Broker replication certificates, unlike these, are bound to node ids. | Files re-read every 30 s | Expiry, or rotating the Raft CA (S25) |
+| Raft peer token | Every core machine, shared | Static | Cluster admin over metadata, including replacing the store | Restart every member together with the new token, an outage, until [felix#2813](https://github.com/GetFelix/felix/issues/2813) | None short of rotating it on every member |
 | Tenant signing keys | The Raft store on every core machine | Until rotated | Any token for that tenant | Stage, activate, retire through the control plane ([Felix](https://github.com/GetFelix/felix/blob/v0.7.2/docs/auth.md#rotating-signing-keys)) | A retired key keeps verifying on a broker for about 10 minutes, and for up to 24 hours on a broker that cannot reach the control plane |
 | Bootstrap token | The core machine forming the cluster | Static, while bootstrap is on | Initialising tenants; with dev tokens on, any token | Felix accepts a previous token alongside the current one | Turn bootstrap off (S20) |
 | Admission token and control-plane token | The one machine running admission, and `felixd init` once | Per Felix token TTL | Admission: write `sys.specs`, and delete, patch or trim any workload stream (`stream.manage`). Control plane: create streams and RBAC policy. | As for node tokens | As for node tokens |
@@ -297,9 +312,11 @@ every listener (S10) and subject binding on the client port, a stolen token is
 useless without the certificate key it is bound to, and a stolen certificate
 key is useful until the certificate expires. Felix checks no revocation list,
 so the lifetime is the revocation: S19 sets it at 24 hours at most, renewed on
-the machine at half its life by presenting the current certificate to the
-cluster's CA, and Felix picks up the renewed files within 30 seconds without a
-restart. The join issues the first certificate (S20). Where the CA keys live
+the machine when half its life has passed by presenting the current
+certificate to the cluster's CA, and Felix picks up the renewed files within 30
+seconds without a restart. Renewal alone would let a key thief renew forever,
+so the CA checks cluster membership on every renewal and refuses a revoked
+principal or a machine that is no longer a member. The join issues the first certificate (S20). Where the CA keys live
 and what does the issuing is not decided
 ([#16](https://github.com/GetFelix/ninelives/issues/16)), and that gates all
 of it: a CA key on a machine that can be compromised turns every certificate
@@ -382,7 +399,7 @@ mitigation, and what checks it. Rows are numbered so designs can cite them.
 
 | # | Threat | X | B | Mitigation | Check |
 |---|---|---|---|---|---|
-| T1 | Read or change traffic between machines | X1 | B1 | QUIC is always TLS 1.3. Felix's control-plane API, Raft peer port and bootstrap listener are plain HTTP unless configured; the image configures mutual TLS on every one that takes a client CA, and server TLS on the control-plane API, which takes none. | S10; upstream gap for the API's client certificates (not filed yet) |
+| T1 | Read or change traffic between machines | X1 | B1 | QUIC is always TLS 1.3. Felix's control-plane API, Raft peer port and bootstrap listener are plain HTTP unless configured; the image configures mutual TLS on every one that takes a client CA, and server TLS on the control-plane API, which takes none. | S10; upstream gap for the API's client certificates ([felix#2811](https://github.com/GetFelix/felix/issues/2811)) |
 | T2 | Pose as a broker to felixd and collect bearer tokens. Felix's default is a self-signed `localhost` certificate that clients cannot verify. | X1 | B1 | Brokers serve certificates from the cluster CA with `FELIX_TLS_REQUIRE_CERT=true`, and every client verifies them against that CA (`FELIX_CA_FILE` and `FELIX_SERVER_NAME` for felixd), with the CA's fingerprint from the join config. A fake broker without a certificate from that CA fails the handshake before any token is sent. | gap: S10, S20 |
 | T3 | Pose as a peer broker and inject records through replication | X1 | B1 | Felix refuses to start without peer mTLS unless `FELIX_INTERNAL_ALLOW_UNAUTHENTICATED=true`; the image never sets it. Certificates are bound to node ids. | S10 |
 | T4 | Pose as a control-plane member | X1 | B5 | Felix requires the Raft peer token, and mTLS on top when configured. Broker replication binds peer certificates to node ids; the control-plane Raft listener checks only that a certificate chains to the Raft CA, so any Raft certificate can speak for any member and the Raft CA must issue only to core machines. | S10, S19; upstream gap ([felix#2802](https://github.com/GetFelix/felix/issues/2802)) |
@@ -390,7 +407,7 @@ mitigation, and what checks it. Rows are numbered so designs can cite them.
 | T6 | Spoof DHCP or DNS to redirect a machine's connections | X1 | B1 | TLS verification turns redirection into a failed connection (T2). Denial of service remains. | S10; DoS accepted on a hostile local network |
 | T7 | Move a machine's clock: tokens accepted past expiry, revocations missed, leases expiring early | X1 | B1 | Time from an authenticated source only | gap: S15 |
 | T8 | Exploit a parser that runs before authentication: QUIC and TLS handshakes, Felix's pre-auth frames, the control-plane HTTP API, the join, diagnostics | X1 | B1 | Only listed ports open; the service behind each is isolated and patched on deadline. Felix bounds pre-auth input (64 KiB frames, 16 streams per connection, 10 s to authenticate) and fuzzes its internal decoder. | S7, S6, S9 |
-| T9 | Read unauthenticated metrics and health endpoints (Felix binds metrics on all interfaces by default; felixd's has no authentication) | X1 | B1 | Metrics off or on loopback until an authenticated path exists. The control plane's tenant JWKS stays unauthenticated: it is public keys, and S10 names it. | S10, S7 |
+| T9 | Read unauthenticated metrics and health endpoints (Felix binds metrics on all interfaces by default; felixd's has no authentication) | X1 | B1 | Broker and control-plane metrics bind to loopback, and a scraper on the machine forwards them over mutual TLS. The control plane's tenant JWKS stays unauthenticated: it is public keys, and S10 names it. | S10, S7 |
 | T10 | Reach the bootstrap listener, or a production cluster with dev tokens on (dev tokens mint any token) | X1 | B5 | Bootstrap on loopback, only while the cluster forms, then off; dev tokens never in a production image | gap: S20 |
 
 ### Workloads
@@ -418,7 +435,7 @@ mitigation, and what checks it. Rows are numbered so designs can cite them.
 | T67 | Take over PID 1 after the drop | X3, X1 | B2 | PID 1's input after the drop is the launcher channel (fixed-size typed messages: started, exited with a status) and the services' output pipes, which it copies to bounded storage without parsing. It takes no network input and does not parse the join config. It keeps only `CAP_KILL` and `CAP_SYS_BOOT`; launchers run only their fixed program; `/proc/sys` read-only after boot. | the no-root rule (S24); gap: init design ([#46](https://github.com/GetFelix/ninelives/issues/46)) lists them |
 | T68 | Subvert PID 1 before the drop, while it is uid 0 with every capability | X7, X6 | B2, B6 | A small early path that reads no network input, no join config and no data partition files; signed kernel, command line and root from M3; a crafted data partition needs the disk key (S16) | the no-root rule (S24), S13, S16; accepted before M3 (T46) |
 | T69 | A compromised time client sets the clock; on a core machine, minted tokens outlive their TTL on every broker | X1, X3 | B2, B5 | Authenticated time stops a network attacker, not the client itself. Nothing bounds what a process with `CAP_SYS_TIME` sets. | S15; gap: init design must bound or cross-check clock changes |
-| T70 | A compromised DHCP client uses `CAP_NET_ADMIN` to open ports, lift egress limits or reroute traffic, `CAP_NET_RAW` to sniff or spoof, or chains a parser bug with an nf_tables or tc bug into root | X1, X3 | B2, B1 | The parser holds no capability; a separate applier holds them, with seccomp allowing netlink only for `NETLINK_ROUTE`. The packet filter loads before the drop, so no service needs `NETLINK_NETFILTER`. Unprivileged user namespaces are off, so no service gets `CAP_NET_ADMIN` in a namespace of its own. TLS keeps rerouted or sniffed traffic unreadable. Left: a parser bug reaches the applier only through a typed lease; an applier bug can reroute traffic and spoof frames on the local link; a route-handling kernel bug is still root. | S6, S2, S24, S10; gap: init design ([#69](https://github.com/GetFelix/ninelives/issues/69)) |
+| T70 | A compromised DHCP client uses `CAP_NET_ADMIN` to open ports, lift egress limits or reroute traffic, `CAP_NET_RAW` to sniff or spoof, or chains a parser bug with an nf_tables or tc bug into root | X1, X3 | B2, B1 | The parser holds no capability; a separate applier holds them, with seccomp allowing netlink only for `NETLINK_ROUTE` and denying the xtables `setsockopt` options, and a kernel without legacy xtables or unused tc classifiers and actions (S2). The packet filter loads before the drop, so no service needs `NETLINK_NETFILTER`. Unprivileged user namespaces are off, so no service gets `CAP_NET_ADMIN` in a namespace of its own. TLS keeps rerouted or sniffed traffic unreadable. Left: a parser bug reaches the applier only through a typed lease; an applier bug can reroute traffic, spoof frames on the local link, and use the tc actions the kernel keeps to get around S7 and S18; a route-handling kernel bug is still root. | S6, S2, S24, S10; gap: init design ([#69](https://github.com/GetFelix/ninelives/issues/69)) |
 | T71 | A compromised join installs an attacker's CA or credentials for every service, or takes the Raft peer token on a core machine | X1, X7 | B2, B5 | The join runs only on first boot and its uid never runs again; it writes each service's directory without being able to read the others afterwards; the CA it installs must match the fingerprint in the join config | gap: join design ([#5](https://github.com/GetFelix/ninelives/issues/5)), S20 |
 | T74 | A service attacks its own launcher, which shares its uid but not its seccomp filter or Landlock rules, or kills it | X3 | B2 | Yama `ptrace_scope` 3 and non-dumpable launchers, so the service cannot ptrace or read it; the launcher takes no input from its service. PID 1 cannot re-fork a launcher, so when a Felix or felixd launcher dies the init powers the machine off and the cluster sees a clean loss. | S24, S2; the power-off is accepted (one machine is one failure domain) |
 
@@ -437,7 +454,7 @@ mitigation, and what checks it. Rows are numbered so designs can cite them.
 | T32 | Pose as another machine in felixd's `nodes` cache or take its node id | X4 | B4 | Broker identity is certificate-bound. felixd's `nodes` cache is writable by every node. | S19; upstream gap ([felixd#74](https://github.com/GetFelix/felixd/issues/74), [felixd#82](https://github.com/GetFelix/felixd/issues/82)) |
 | T33 | Delete, patch or trim any workload stream from the machine that runs admission | X4 | B4 | Felix has no create-only stream action, so admission's grant includes delete. The image runs admission only on a core machine, which is already the most trusted. | accepted until Felix has a create-only grant ([felix#2805](https://github.com/GetFelix/felix/issues/2805)) |
 | T72 | Attack a core machine's broker through the input it parses after login (publish, subscribe, cache frames), with any tenant's client token or a stolen worker token, plus the certificate bound to it. This moves from a worker to a core machine with no workload on the core machine. | X4, X2 | B1, B4 | Mutual TLS narrows it to holders of a certificate from the cluster's client CA and a matching token; the Kafka and MQTT listeners are off. As T29. A broker exploit gets the broker's uid, which does not reach the control plane's store on the same machine (S6, S24); a kernel exploit from there gets the cluster. | S10, S6, S9, S24 narrow it; gap: whether core brokers serve tenant clients ([#77](https://github.com/GetFelix/ninelives/issues/77)) |
-| T73 | A compromised broker reuses client tokens it was shown, by forwarding requests to other brokers | X4 | B1, B4 | The owning broker verifies a forwarded token's signature, tenant and grants, but not its certificate binding: in Felix 0.7.2 the forward path calls `authenticate`, not the binding check. So the broker can act with any client's rights on any stream another broker owns, until the token expires (900 s) or is revoked. It cannot use the token on a client port, or delegate it. | upstream gap (Felix: forwarded requests carry no proof of the client's certificate; not filed yet) |
+| T73 | A compromised broker reuses client tokens it was shown, by forwarding requests to other brokers | X4 | B1, B4 | The owning broker verifies a forwarded token's signature, tenant and grants, but not its certificate binding: in Felix 0.7.2 the forward path calls `authenticate`, not the binding check. So the broker can act with any client's rights for publish and cache operations on streams other brokers own, until the token expires (900 s) or is revoked. It cannot use the token on a client port, or delegate it. | upstream gap ([felix#2812](https://github.com/GetFelix/felix/issues/2812)) |
 
 ### Supply chain and pipeline
 
@@ -503,9 +520,9 @@ Closed by new requirements on this repository:
 - **S22** ([#66](https://github.com/GetFelix/ninelives/issues/66)) authenticated, fresh, safe updates (T49, T50, T51)
 - **S23** ([#67](https://github.com/GetFelix/ninelives/issues/67)) independent rebuild of reproducible components (T34)
 - **S24** ([#68](https://github.com/GetFelix/ninelives/issues/68)) no root after early boot (T16, T67, T68, T70, T74)
-- **S25** ([#75](https://github.com/GetFelix/ninelives/issues/75)) a compromised machine is reprovisioned from outside and rejoins with new credentials; for a core machine, the Raft peer token and every tenant signing key are rotated (T19, T31)
+- **S25** ([#75](https://github.com/GetFelix/ninelives/issues/75)) a compromised machine is reprovisioned from outside and rejoins with new credentials; for a core machine, it leaves Raft membership first, then the Raft CA, the Raft peer token and every tenant signing key are rotated (T19, T31)
 - PID 1 does not parse the join config (T21), the join runs only on first boot (T71), and the image never grants node trims (T28): rules for the init and join designs.
-- The time client's `CAP_SYS_TIME` can defeat S15 from inside the machine (T69), and the DHCP applier can still reroute and spoof (T70): [#69](https://github.com/GetFelix/ninelives/issues/69).
+- The time client's `CAP_SYS_TIME` can defeat S15 from inside the machine (T69), and the DHCP applier can still reroute, spoof, and use tc to get around S7 and S18 (T70): [#69](https://github.com/GetFelix/ninelives/issues/69).
 - Whether core brokers serve tenant clients (T72): [#77](https://github.com/GetFelix/ninelives/issues/77).
 
 Upstream, where only Felix or felixd can fix it:
@@ -519,8 +536,9 @@ Upstream, where only Felix or felixd can fix it:
 - Felix checksums unsigned and its server not checked as reproducible ([felix#2796](https://github.com/GetFelix/felix/issues/2796), [felix#2799](https://github.com/GetFelix/felix/issues/2799)) (T35).
 - No storage quotas per tenant (T58): [felix#2804](https://github.com/GetFelix/felix/issues/2804).
 - No create-only stream grant, so admission can delete streams (T33): [felix#2805](https://github.com/GetFelix/felix/issues/2805).
-- Felix's control-plane API takes no client certificate, so it stays server-authenticated TLS plus bearer tokens (T1). Not filed yet.
-- A forwarded request is checked by token, not by the client's certificate binding, so a compromised broker can reuse tokens it was shown (T73). Not filed yet.
+- Felix's control-plane API takes no client certificate, so it stays server-authenticated TLS plus bearer tokens (T1): [felix#2811](https://github.com/GetFelix/felix/issues/2811).
+- A forwarded request is checked by token, not by the client's certificate binding, so a compromised broker can reuse tokens it was shown for publish and cache operations (T73): [felix#2812](https://github.com/GetFelix/felix/issues/2812).
+- Rotating the Raft peer token means restarting every member together (T25, S25): [felix#2813](https://github.com/GetFelix/felix/issues/2813).
 - No audit log of who did what, so an attacker's writes look like the node's they came from: [felix#2806](https://github.com/GetFelix/felix/issues/2806).
 
 ## Accepted

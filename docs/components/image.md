@@ -33,10 +33,13 @@ NineLives' own programs, and a root of named Debian packages, Felix and
 felixd. It writes the root as a read-only filesystem with a dm-verity hash
 tree, puts the kernel, its command line and the root hash into one unified
 kernel image (UKI), and lays these out on a GPT disk. It checks the result
-against the rules below and fails on any violation. CI runs the whole build
-twice, the second time on a clean runner with no cache, and fails unless the
-outputs are identical (*not built yet:* the first slice builds once,
-[#94](https://github.com/GetFelix/ninelives/issues/94)). That proves the build is deterministic. From the first
+against the rules below and fails on any violation. CI builds the kernel, the init and the image twice, each second build on
+its own clean runner with no cache and with the path, CPU count, clock and
+user name changed, and fails unless the outputs are identical. That proves the
+build is deterministic under those changes, and that one compromised kernel,
+init or image runner cannot change both builds. Two runners are single points
+of trust: `image-compare` itself, which a compromise would make pass any pair,
+and `kernel-changes`, which supplies the timestamp and can skip the jobs. From the first
 published image, an independent rebuild on other hardware must also match
 before the maintainer signs the release's update metadata offline. One
 pinned signing workflow, and only it, gets the UKI signed (from M3), and the
@@ -50,10 +53,10 @@ dm-verity, the UKI with its command line, the GPT disk, and every check in
 [Checks](#checks) except the three it names there. The outputs are the `.raw`,
 `.root.erofs`, `.root.verity`, `.roothash`, `.efi`, `.inventory.json`,
 `.files.json` and `SHA256SUMS`, plus `.origins.json`. The `boot` job then
-boots the `.raw` (see [Boot test](#boot-test)). The slice does not build
+boots the `.raw` (see [Boot test](#boot-test)). The `image-rebuild` and
+`image-compare` jobs build it a second time and compare ([Reproducibility](#reproducibility)). The slice does not build
 aarch64, so nothing boots it either
-([#99](https://github.com/GetFelix/ninelives/issues/99)), a second
-build to compare ([#94](https://github.com/GetFelix/ninelives/issues/94)), or the
+([#99](https://github.com/GetFelix/ninelives/issues/99)), or the
 SBOM, source or provenance outputs
 ([#100](https://github.com/GetFelix/ninelives/issues/100)).
 
@@ -302,7 +305,7 @@ repository; changing one is a reviewed pull request
 | **NineLives' own programs** (init, join, the firewall loader) | This commit, `Cargo.lock`, and the Rust toolchain by exact version in `rust-toolchain.toml` | Cargo checks each crate's checksum against `Cargo.lock`. The toolchain archives are checked against SHA-256s committed in `images/tools.toml`, because rustup does not enforce its signatures. *Not built yet:* the toolchain archives are not checked against SHA-256s; CI runs `rustup toolchain install` ([#95](https://github.com/GetFelix/ninelives/issues/95)). | Build fails |
 | **mkosi** | `images/tools.toml`: an exact release, its source archive URL and SHA-256 | SHA-256. mkosi needs only Python's standard library, so it runs from the archive with nothing resolved from PyPI. The version is chosen in #1. | Build fails |
 | **Bootstrap container** | `images/tools.toml`: the official Debian 13 slim container image by digest, plus the `bootstrap` set of `images/debian.lock` (python3, `gpgv`, xz-utils, ca-certificates and their dependencies) | The container runtime checks the digest. `scripts/bootstrap.sh` checks each bootstrap `.deb` against the lock's SHA-256 with `sha256sum` before `dpkg` unpacks it, and the lock is then regenerated against the signed archive, which catches drift but not a tampered lock ([Bootstrap](#bootstrap)). | Build fails |
-| **Build tools** (`mkfs.erofs`, `veritysetup`, `ukify`, `sbsign`, Clang (the kernel's compiler, [kernel design](kernel.md)), the Sigstore verifier, diffoscope) | mkosi's tools tree, built from the same Debian snapshot and listed in the lock; the Sigstore verifier, if not in Debian 13, by SHA-256 in `images/tools.toml` | As Debian packages *Built so far:* `mkfs.erofs`, `veritysetup`, `ukify`, `systemd-repart` and their dependencies from Debian, in the lock. *Not built yet:* `sbsign`, Clang in the image job, the Sigstore verifier and diffoscope; the tools are installed straight from the verified store, not through mkosi's tools tree. | Build fails |
+| **Build tools** (`mkfs.erofs`, `veritysetup`, `ukify`, `sbsign`, Clang (the kernel's compiler, [kernel design](kernel.md)), the Sigstore verifier, diffoscope) | mkosi's tools tree, built from the same Debian snapshot and listed in the lock; the Sigstore verifier, if not in Debian 13, by SHA-256 in `images/tools.toml` | As Debian packages *Built so far:* `mkfs.erofs`, `veritysetup`, `ukify`, `systemd-repart` and their dependencies from Debian, in the lock, and diffoscope as the lock's `compare` set. *Not built yet:* `sbsign`, Clang in the image job and the Sigstore verifier; the tools are installed straight from the verified store, not through mkosi's tools tree. | Build fails |
 | **CI runner** | The `ubuntu-24.04` label, never `ubuntu-latest`. The image version GitHub reports is recorded in the provenance. | Nothing can verify a hosted runner. The bootstrap container and tools tree keep it to its kernel, its container runtime and the network. *Not built yet:* the runner image version is not recorded in provenance (no provenance yet, [#100](https://github.com/GetFelix/ninelives/issues/100)). | See [Open questions](#open-questions) |
 | **GitHub Actions** | Each by full commit SHA, with the tag in a comment | The workflow checks in [Actions hygiene](#actions-hygiene) (S21, #65) | PR fails |
 
@@ -457,7 +460,7 @@ yet:* the slice builds `production` only
 
 ### Reproducibility
 
-*Built so far:* `SOURCE_DATE_EPOCH` from the commit, fixed UUID and verity seeds, a salt derived from the commit, and a check that every file's time is `SOURCE_DATE_EPOCH`. *Not built yet:* any comparison of two builds ([#94](https://github.com/GetFelix/ninelives/issues/94)), so nothing proves the outputs are deterministic yet; the init is built with `--locked` and a path remap but not `--offline`, and its toolchain is not pinned by hash ([#95](https://github.com/GetFelix/ninelives/issues/95)).
+*Built so far:* `SOURCE_DATE_EPOCH` from the commit, fixed UUID and verity seeds, a salt derived from the commit, a check that every file's time is `SOURCE_DATE_EPOCH`, and the two-build comparison below: the `image-rebuild` and `image-compare` jobs, part of `CI ok`. *Not built yet:* the independent rebuild on other hardware (first published image); the SBOM and provenance in the comparison ([#100](https://github.com/GetFelix/ninelives/issues/100)); the init is built with `--locked` and a path remap but not `--offline`, and its toolchain is not pinned by hash ([#95](https://github.com/GetFelix/ninelives/issues/95)).
 
 S5 asks for the same bytes from the same commit, on a clean runner, with a
 different build path and time.
@@ -480,7 +483,7 @@ listed with the other hardening exceptions in `kernel/` (S2). Rust builds use
 any other value a tool would pick at random come from fixed seeds in the
 config or from the commit.
 
-**How two builds are compared.** *Not built yet ([#94](https://github.com/GetFelix/ninelives/issues/94)); this section is the design.* On a pull request, CI runs build A on one
+**How two builds are compared.** On a pull request, CI runs build A on one
 runner, using caches (the kernel build is cached by version, config and
 toolchain lock). The release workflow uses no cache in either build: a
 poisoned Actions cache can backdoor a build that still carries valid
@@ -489,9 +492,68 @@ runs on a fresh runner with no cache of any kind, fetches every input itself
 rather than reusing A's store, and varies what should not matter: a different
 build path, user name, umask, time zone, locale and CPU count. Each build
 writes `SHA256SUMS` over its outputs. The comparison job checks the two files
-are identical. On a mismatch it runs diffoscope on the differing outputs,
-uploads the report and fails. Partitions are also hashed one by one, so a
-report starts from the partition that differs.
+are identical and that each line is true of the file next to it, so a stale
+`SHA256SUMS` cannot pass. On a mismatch it runs diffoscope on the differing
+outputs, uploads the report as `image-reproducibility-report` and fails.
+Partitions of a differing disk are also hashed one by one, so the report
+starts from the partition that differs. Nothing retries. Before the real
+comparison the job changes one byte in a copy of build A's root filesystem
+and requires that to be reported with a diffoscope report, so a comparison
+that cannot fail does not pass quietly.
+
+*What the slice does:* three builds run twice, each on its own runner.
+
+| Build A | Build B | What B changes |
+|---|---|---|
+| `kernel` (x86_64) | `kernel-rebuild` | the work path, one job against the runner's four, the clock 400 days ahead for the build step |
+| `init-binary` | `init-rebuild` | the checkout path, `CARGO_HOME`, one cargo job, the clock 400 days ahead for cargo and its build scripts (rustc hangs under libfaketime, so it runs at the real time) |
+| `image` | `image-rebuild` | the checkout, work and output paths, `USER`, `LOGNAME` and `HOME`, `TZ=Pacific/Kiritimati`, one CPU (`taskset`) against four, the clock 400 days ahead for mkosi and the tools it runs directly (not its package install, see below) |
+
+No job in the table shares a cache, a store or a runner with its partner.
+`image-rebuild` takes only the `kernel-qemu-x86_64-rebuild` and
+`init-x86_64-rebuild` artifacts, never build A's, so a compromised kernel or
+init runner reaches only one of the two image builds. `image-compare` takes the
+image, kernel and init of both, checks that the two image uploads and the two
+init uploads have different artifact IDs so that a build is never compared with
+itself, and requires identical `SHA256SUMS` plus identical `bzImage`,
+`System.map`, `.config` and init binary. Both `SHA256SUMS` must name each of the
+eight outputs (`.raw`, `.root.erofs`, `.root.verity`, `.roothash`, `.efi`,
+`.inventory.json`, `.files.json`, `.origins.json`), so two empty files cannot
+match.
+
+The clock is moved with libfaketime, the `faketime` set of
+`images/debian.lock`: `scripts/faketime_lib.py` unpacks the SHA-256-checked
+`.deb` and the build preloads the library; it is never installed. It is applied
+after the fetch phase (TLS certificates and signatures are checked at the real
+time), and `scripts/faketime.sh` stops the build unless a direct child that
+loads the library sees the offset. Only processes that load it are moved: a
+static binary, or a program run in a chroot that lacks the library, still sees
+the real time. mkosi 27.1 rebuilds the environment of every command it starts
+and runs apt, dpkg and the packages' maintainer scripts inside its sandbox and
+the image root, so the package install of the root runs at the real clock.
+Moving it needs the library inside the image root and removed again before the
+root is sealed ([#110](https://github.com/GetFelix/ninelives/issues/113)). SOURCE_DATE_EPOCH and the commit time, not the clock, give every
+timestamp, so an output that depended on the clock would differ.
+
+The container runs as root because the build mounts the filesystem it makes, so
+the user varies by name, not uid. The umask (`022`) and locale (`LC_ALL=C`) are
+pinned by the build scripts, not varied: the caller's values do not reach the
+build, and nothing proves more than that. The kernel and init jobs are on the
+runner, whose operating system, toolchain installer and Rust toolchain are not
+pinned by hash ([#65](https://github.com/GetFelix/ninelives/issues/65),
+[#95](https://github.com/GetFelix/ninelives/issues/95)).
+
+A red `image-compare` must not be cleared by running it again: a retry would hide
+the nondeterminism it found, so a mismatch is fixed in a commit.
+
+diffoscope is the `compare` set of `images/debian.lock` (with the readers it
+calls for the disk, erofs and PE files), installed in the pinned container by
+`scripts/image-compare.sh` from the verified store, never from the runner or
+PyPI. A diffoscope that does not report the differences (any exit status but 1
+on files that differ) fails the job. `ukify`, `systemd-repart`, `mkfs.erofs`
+and `veritysetup` come out byte-identical under these variations. Each is given
+its time, UUID, salt or seed explicitly ([Building the root](#building-the-root),
+step 6).
 
 **What is compared**, and must be identical: the raw disk image, each
 partition image, the unsigned UKI, the root hash, the inventory, the file
@@ -513,9 +575,12 @@ digest equals their unsigned UKI's. Stripping the signature is not relied
 on to give back the exact bytes.
 
 **What two builds prove.** Two builds on GitHub share GitHub, the runner
-image, the snapshot and the tools. They prove the build is deterministic, not
-that it is honest: a compromise common to both builds the same bad bytes
-twice and passes (T39). What catches a compromised builder is an independent
+image, the snapshot and the pinned tools, and each build's kernel, init and
+image come from different runners. They prove the build is deterministic under
+the variations above, and that one compromised kernel, init or image runner
+cannot change both builds' bytes. They do not prove it is honest: a compromise common to both,
+GitHub, the runner image, the snapshot or a pinned tool, builds the same bad
+bytes twice and passes (T39), and neither does a compromised `image-compare` runner, which passes any pair, or a compromised `kernel-changes` runner, which supplies the epoch and can skip the jobs. What catches a compromised builder is an independent
 rebuild on other hardware, outside GitHub, that fetches every input itself
 from the pins and must produce the same `SHA256SUMS`. From the first
 published image the maintainer signs a release's update metadata only after
@@ -815,7 +880,7 @@ Each is written so a test can check it.
 | A dependency pulls in a new package | The package allowlist fails | Every package needs a stated reason (S1) |
 | A build tool bug writes a wrong image twice | The checks read the result, not the tree; the boot test catches what boots wrong | Checks on the output, not on the tool's intent |
 | The root grows past its budget | Fails; raising the budget is a reviewed change | Growth is a review decision, not an accident |
-| A compromised runner, cache or tool builds bad bytes in both builds | Not caught by I1 (T39). The independent rebuild differs, so targets are not signed and no machine installs it. | Before the first published image nothing ships; after it, the independent rebuild is the check |
+| A compromised runner, cache or tool builds bad bytes in both builds | One compromised kernel, init or image runner is caught, since the two builds of each run on different runners and the second image build takes only the second kernel and init. A compromise common to both (GitHub, the runner image, the snapshot, a pinned tool), a compromised `image-compare` runner (it passes any pair) and a compromised `kernel-changes` runner (it supplies the epoch and can skip the jobs) are not caught by I1 (T39). The independent rebuild differs, so targets are not signed and no machine installs it. | Before the first published image nothing ships; after it, the independent rebuild is the check |
 | A backdoor in an upstream tarball that builds reproducibly | Caught only where the tarball is compared with its git tag | Debian packages are out of reach; keeping network daemons' libraries few limits where one can land |
 | A corrupt block in the root | Before M3: panic and a reboot loop, the panic on the console, and the cluster reports the machine missing. From M3: the slot is marked bad and the machine falls back ([Boot](#boot-without-an-initrd)) | One machine is lost, never a wrong byte read |
 | The signer is down at release time | The release waits | There is no fallback key in CI, on purpose |
@@ -865,7 +930,7 @@ first published image.
 
 | Test | Where | Proves |
 |---|---|---|
-| Build twice, the second clean with varied path, user, umask, time zone, locale and CPU count; compare `SHA256SUMS` | *Not built yet,* [#94](https://github.com/GetFelix/ninelives/issues/94). CI, every pull request | I1 |
+| Build the kernel, the init and the image twice on separate clean runners, the second with another path, user name, time zone, CPU count and clock (libfaketime, +400 days); the umask and locale are pinned by the scripts, not varied. Compare `SHA256SUMS` of the image, and the kernel, `System.map`, `.config` and init binary | The `kernel-rebuild`, `init-rebuild`, `image-rebuild` and `image-compare` jobs, plus a fixture that changes one byte and must be reported. CI, every pull request. *Not built yet:* the independent rebuild on other hardware, first published image | I1 |
 | The build phase run with a step that tries to download: it fails | CI fixture. The slice checks that a download fails inside a fresh network namespace, and the build itself fails if the network is reachable in its phase; a fixture that runs a whole build step that downloads is not built | I2 |
 | One fixture image per check, each seeded with one violation (a setuid file, a setgid directory, a `security.capability` attribute, a write bit, a file owned by uid 1, a FIFO, a link into `/var/lib`, an extra passwd entry, a `#!` script, a `dash` binary, an unlisted package, an orphan file, a planted test token, an oversized root, a changed command line): each check fails, and the clean fixture passes | *Built as unit tests on in-memory trees, one per check, not as fixture images; the clean tree passes.* CI, every pull request | I3 to I9 |
 | `veritysetup verify` on the built image | CI | I8 |

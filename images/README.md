@@ -7,7 +7,7 @@ signed is in [the image build design](../docs/components/image.md).
 ## What builds today
 
 CI's `image` job builds the x86_64 qemu `production` image from the commit,
-checks it and uploads it as the `image-qemu-x86_64` artifact. To run the same
+checks it and uploads it as the `image-qemu-x86_64` artifact. `kernel-rebuild`, `init-rebuild` and `image-rebuild` build the kernel, the init and the image again on other runners with the paths, CPU count, clock and user name changed (the scripts pin the umask and locale), and `image-compare` fails unless the image's `SHA256SUMS`, the kernel and the init are identical, with a diffoscope report if not. To run the same
 build on a Linux host with docker or podman:
 
 ```sh

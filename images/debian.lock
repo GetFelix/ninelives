@@ -1,5 +1,5 @@
 # Every Debian package the image build uses, by name, version and SHA-256,
-# for the root, the build tools, the boot test's tools and the bootstrap
+# for the root, the build tools, the boot test's tools, the comparison's tools, libfaketime and the bootstrap
 # step's packages separately. Written by
 # scripts/image_lock.py; CI regenerates it and fails on a difference, so
 # a hand edit cannot add a package resolution would not. Change it only in
@@ -2258,6 +2258,663 @@ archive = "debian-security"
 filename = "pool/updates/main/z/zlib/zlib1g_1.3.dfsg+really1.3.1-1+deb13u1_amd64.deb"
 architecture = "amd64"
 source = "zlib"
+
+[compare]
+release = "trixie"
+
+[[compare.suite]]
+archive = "debian"
+name = "trixie"
+inrelease_sha256 = "0584fba32e13e0ab8285fb16c27adea1ec03a73669c18702821094fd6ca86675"
+
+[[compare.suite]]
+archive = "debian"
+name = "trixie-updates"
+inrelease_sha256 = "871ca324ca5e0d5e848fafbd9be0b6ff245563ef2362f685d15ccefc55a0a294"
+
+[[compare.suite]]
+archive = "debian-security"
+name = "trixie-security"
+inrelease_sha256 = "619dd69e766c1f8ea8dd5bb1741154960804a8b9849b021e14c8fd1c6af269ab"
+
+[[compare.package]]
+name = "binutils"
+version = "2.44-3"
+sha256 = "6bc08c02539ba53b5e748142397144c499f9b20b5fa9bb56431545db124addeb"
+archive = "debian"
+filename = "pool/main/b/binutils/binutils_2.44-3_amd64.deb"
+architecture = "amd64"
+source = "binutils"
+
+[[compare.package]]
+name = "binutils-common"
+version = "2.44-3"
+sha256 = "002da5d23f8757dee97a2c0a40e0e1d4d85a43da094488ee2ee7068d4d3691f9"
+archive = "debian"
+filename = "pool/main/b/binutils/binutils-common_2.44-3_amd64.deb"
+architecture = "amd64"
+source = "binutils"
+
+[[compare.package]]
+name = "binutils-x86-64-linux-gnu"
+version = "2.44-3"
+sha256 = "e6741ce95ff0f7a131c8d9faa3528ccbbc453078bbc62a97da81340ed7462c53"
+archive = "debian"
+filename = "pool/main/b/binutils/binutils-x86-64-linux-gnu_2.44-3_amd64.deb"
+architecture = "amd64"
+source = "binutils"
+
+[[compare.package]]
+name = "debconf"
+version = "1.5.91"
+sha256 = "1ddc7e6c5925f748eefb7ca811d98e049f18c158bb21fbc7e122262ce6011e49"
+archive = "debian"
+filename = "pool/main/d/debconf/debconf_1.5.91_all.deb"
+architecture = "all"
+source = "debconf"
+
+[[compare.package]]
+name = "diffoscope-minimal"
+version = "297+deb13u1"
+sha256 = "89b6df8373ffd6a5f27baea7896a6a2142e39ac4433c69a227e5983906a35ffc"
+archive = "debian"
+filename = "pool/main/d/diffoscope/diffoscope-minimal_297+deb13u1_all.deb"
+architecture = "all"
+source = "diffoscope"
+
+[[compare.package]]
+name = "dpkg"
+version = "1.22.22"
+sha256 = "3e800c6d75e8e709007ed1c356e5fa8509a75c1694fb0a1183709abc9cfdc1f3"
+archive = "debian"
+filename = "pool/main/d/dpkg/dpkg_1.22.22_amd64.deb"
+architecture = "amd64"
+source = "dpkg"
+
+[[compare.package]]
+name = "erofs-utils"
+version = "1.8.6-1"
+sha256 = "81042b8c0c3eb63699aa7d0763dceedc675a747d9f5cfebf914b4160233f411e"
+archive = "debian"
+filename = "pool/main/e/erofs-utils/erofs-utils_1.8.6-1_amd64.deb"
+architecture = "amd64"
+source = "erofs-utils"
+
+[[compare.package]]
+name = "fdisk"
+version = "2.41.5-0+deb13u1"
+sha256 = "7f37094ca3f63c3a07b4431532b0bcc4aa64291e75c48cabebf41bf42ad706b1"
+archive = "debian"
+filename = "pool/main/u/util-linux/fdisk_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
+source = "util-linux"
+
+[[compare.package]]
+name = "gcc-14-base"
+version = "14.2.0-19"
+sha256 = "5b6825de4263824b78c4c51f6476414f3b4e89c2ab63e81dc8b9b5501e867cf6"
+archive = "debian"
+filename = "pool/main/g/gcc-14/gcc-14-base_14.2.0-19_amd64.deb"
+architecture = "amd64"
+source = "gcc-14"
+
+[[compare.package]]
+name = "libacl1"
+version = "2.3.2-2+b1"
+sha256 = "08074f01e384bc07c0c2d79a58cf4a6523f71cf75d1808101c79617656c9a39d"
+archive = "debian"
+filename = "pool/main/a/acl/libacl1_2.3.2-2+b1_amd64.deb"
+architecture = "amd64"
+source = "acl"
+
+[[compare.package]]
+name = "libarchive13t64"
+version = "3.7.4-4+deb13u1"
+sha256 = "12e06195a899e8db371803ed70111fc7302573d3ed84e967d3d48ef2d543ace8"
+archive = "debian"
+filename = "pool/main/liba/libarchive/libarchive13t64_3.7.4-4+deb13u1_amd64.deb"
+architecture = "amd64"
+source = "libarchive"
+
+[[compare.package]]
+name = "libbinutils"
+version = "2.44-3"
+sha256 = "4f4664c8a8f0ad0c8631c39fab02e3d8d86ccc6f4436a1d59f059dbcb0492679"
+archive = "debian"
+filename = "pool/main/b/binutils/libbinutils_2.44-3_amd64.deb"
+architecture = "amd64"
+source = "binutils"
+
+[[compare.package]]
+name = "libblkid1"
+version = "2.41.5-0+deb13u1"
+sha256 = "81535f3c2c0efc732965907c8749103a0a26377c761622c9ce39b4c92dcde52f"
+archive = "debian"
+filename = "pool/main/u/util-linux/libblkid1_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
+source = "util-linux"
+
+[[compare.package]]
+name = "libbz2-1.0"
+version = "1.0.8-6"
+sha256 = "cba4cda04244b5e481bb15524bc3c983a7d1b6f330013b9b381706a2fcb65310"
+archive = "debian"
+filename = "pool/main/b/bzip2/libbz2-1.0_1.0.8-6_amd64.deb"
+architecture = "amd64"
+source = "bzip2"
+
+[[compare.package]]
+name = "libc6"
+version = "2.41-12+deb13u4"
+sha256 = "967aa62605721081c3eb2a17650611a792aa802d76a6511d1840242623d204c9"
+archive = "debian"
+filename = "pool/main/g/glibc/libc6_2.41-12+deb13u4_amd64.deb"
+architecture = "amd64"
+source = "glibc"
+
+[[compare.package]]
+name = "libctf-nobfd0"
+version = "2.44-3"
+sha256 = "e280b2be3db6e584500e865c251605b95c346767d87ccb2524e44992048fc657"
+archive = "debian"
+filename = "pool/main/b/binutils/libctf-nobfd0_2.44-3_amd64.deb"
+architecture = "amd64"
+source = "binutils"
+
+[[compare.package]]
+name = "libctf0"
+version = "2.44-3"
+sha256 = "120cafcd93132a276fa92a8fb4cf39b23d14e5a3e348f4f5580638d71ca95ac5"
+archive = "debian"
+filename = "pool/main/b/binutils/libctf0_2.44-3_amd64.deb"
+architecture = "amd64"
+source = "binutils"
+
+[[compare.package]]
+name = "libdb5.3t64"
+version = "5.3.28+dfsg2-9"
+sha256 = "18d02510ee78b67e4504ba050176797a200ff24214a7cd318082ab60ad7bf3fc"
+archive = "debian"
+filename = "pool/main/d/db5.3/libdb5.3t64_5.3.28+dfsg2-9_amd64.deb"
+architecture = "amd64"
+source = "db5.3"
+
+[[compare.package]]
+name = "libdeflate0"
+version = "1.23-2"
+sha256 = "5fe37fb79d53f5c91da6ba3ac4c1a8453e1f2b1ff0e0ea45189c5338bbfdbf82"
+archive = "debian"
+filename = "pool/main/libd/libdeflate/libdeflate0_1.23-2_amd64.deb"
+architecture = "amd64"
+source = "libdeflate"
+
+[[compare.package]]
+name = "libexpat1"
+version = "2.9.0-1~deb13u1"
+sha256 = "feff874772cae904ae4d24e917b35664952bec4b4ae9100a4edda5a7fa746832"
+archive = "debian-security"
+filename = "pool/updates/main/e/expat/libexpat1_2.9.0-1~deb13u1_amd64.deb"
+architecture = "amd64"
+source = "expat"
+
+[[compare.package]]
+name = "libfdisk1"
+version = "2.41.5-0+deb13u1"
+sha256 = "7f96d173cc01787201691f80ca9b335b8c7d6cdcc6fb81011302d4a005ff5089"
+archive = "debian"
+filename = "pool/main/u/util-linux/libfdisk1_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
+source = "util-linux"
+
+[[compare.package]]
+name = "libffi8"
+version = "3.4.8-2"
+sha256 = "0ebdc340de33333639c3c63874cd4b15ac2e83dfa1ef3053b7eefaf4919f4f68"
+archive = "debian"
+filename = "pool/main/libf/libffi/libffi8_3.4.8-2_amd64.deb"
+architecture = "amd64"
+source = "libffi"
+
+[[compare.package]]
+name = "libgcc-s1"
+version = "14.2.0-19"
+sha256 = "3c71917b490d1a17aed43196a2787a256ecf060526cdb20216a74bedc061b150"
+archive = "debian"
+filename = "pool/main/g/gcc-14/libgcc-s1_14.2.0-19_amd64.deb"
+architecture = "amd64"
+source = "gcc-14"
+
+[[compare.package]]
+name = "libgprofng0"
+version = "2.44-3"
+sha256 = "0d36d0bde85c467ac6735dded08e19dd30ae1369e3908b9eb48ccc0d6ff66648"
+archive = "debian"
+filename = "pool/main/b/binutils/libgprofng0_2.44-3_amd64.deb"
+architecture = "amd64"
+source = "binutils"
+
+[[compare.package]]
+name = "libjansson4"
+version = "2.14-2+b3"
+sha256 = "60707a62fe6c1228c3389b12a13ca4efd76defc5532473e547a29e99cf7d2a6e"
+archive = "debian"
+filename = "pool/main/j/jansson/libjansson4_2.14-2+b3_amd64.deb"
+architecture = "amd64"
+source = "jansson"
+
+[[compare.package]]
+name = "liblz4-1"
+version = "1.10.0-4"
+sha256 = "c31ec4c7c82755a38b2f3fe066fc0c5518cc91a601a268fbcd19bdacb1f22e1e"
+archive = "debian"
+filename = "pool/main/l/lz4/liblz4-1_1.10.0-4_amd64.deb"
+architecture = "amd64"
+source = "lz4"
+
+[[compare.package]]
+name = "liblzma5"
+version = "5.8.1-1+deb13u2"
+sha256 = "b38acab30f295bf1066a6632e31cbd0a1980f2924b38040cda131d5dea5384ec"
+archive = "debian-security"
+filename = "pool/updates/main/x/xz-utils/liblzma5_5.8.1-1+deb13u2_amd64.deb"
+architecture = "amd64"
+source = "xz-utils"
+
+[[compare.package]]
+name = "libmagic-mgc"
+version = "1:5.46-5"
+sha256 = "1368da7c4c7dd10fb2f9ee3ed8a70801650c0c1d249a4076af15e2ddfbb14b46"
+archive = "debian"
+filename = "pool/main/f/file/libmagic-mgc_5.46-5_amd64.deb"
+architecture = "amd64"
+source = "file"
+
+[[compare.package]]
+name = "libmagic1t64"
+version = "1:5.46-5"
+sha256 = "53f653873216b135570b42c423ea93825c008ac464780b4578e80ee424237a4e"
+archive = "debian"
+filename = "pool/main/f/file/libmagic1t64_5.46-5_amd64.deb"
+architecture = "amd64"
+source = "file"
+
+[[compare.package]]
+name = "libmd0"
+version = "1.1.0-2+b1"
+sha256 = "7244ec3839b61fac0c1884fe08aaa040f26e8f1f35f1f5d3482eacefd30d1b44"
+archive = "debian"
+filename = "pool/main/libm/libmd/libmd0_1.1.0-2+b1_amd64.deb"
+architecture = "amd64"
+source = "libmd"
+
+[[compare.package]]
+name = "libmount1"
+version = "2.41.5-0+deb13u1"
+sha256 = "6d00f45f2e80e078e906e3eedecd3ba6913e39fef49bff361ee583f17f00ec05"
+archive = "debian"
+filename = "pool/main/u/util-linux/libmount1_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
+source = "util-linux"
+
+[[compare.package]]
+name = "libncursesw6"
+version = "6.5+20250216-2"
+sha256 = "47baa2e11579583654583a066b69bd5a5d2f22423081f707ed6c0c3ba6d538b7"
+archive = "debian"
+filename = "pool/main/n/ncurses/libncursesw6_6.5+20250216-2_amd64.deb"
+architecture = "amd64"
+source = "ncurses"
+
+[[compare.package]]
+name = "libnettle8t64"
+version = "3.10.1-1"
+sha256 = "1b03d4a9cd9c8143ba50fe6396f36937e901a317d492d179f4596862c1731cfe"
+archive = "debian"
+filename = "pool/main/n/nettle/libnettle8t64_3.10.1-1_amd64.deb"
+architecture = "amd64"
+source = "nettle"
+
+[[compare.package]]
+name = "libpcre2-8-0"
+version = "10.46-1~deb13u3"
+sha256 = "e226f661d918f04daf38cdbc4806b7ed7d6ef95c7eb0ade692fc350e31970040"
+archive = "debian-security"
+filename = "pool/updates/main/p/pcre2/libpcre2-8-0_10.46-1~deb13u3_amd64.deb"
+architecture = "amd64"
+source = "pcre2"
+
+[[compare.package]]
+name = "libpython3-stdlib"
+version = "3.13.5-1"
+sha256 = "7e142ed64a81ccdd39714f213467bd365736ef341adb2be11be981f638b9175f"
+archive = "debian"
+filename = "pool/main/p/python3-defaults/libpython3-stdlib_3.13.5-1_amd64.deb"
+architecture = "amd64"
+source = "python3-defaults"
+
+[[compare.package]]
+name = "libpython3.13-minimal"
+version = "3.13.5-2+deb13u5"
+sha256 = "a4aa6a9a8c77f87bfe545e1d14ec42c001d189ace90e3aa75deec882b39dee49"
+archive = "debian"
+filename = "pool/main/p/python3.13/libpython3.13-minimal_3.13.5-2+deb13u5_amd64.deb"
+architecture = "amd64"
+source = "python3.13"
+
+[[compare.package]]
+name = "libpython3.13-stdlib"
+version = "3.13.5-2+deb13u5"
+sha256 = "db161322a3481d2c0c3b9a3b9a03c3ab0e2b1718f54b88755fb4a3f939165b84"
+archive = "debian"
+filename = "pool/main/p/python3.13/libpython3.13-stdlib_3.13.5-2+deb13u5_amd64.deb"
+architecture = "amd64"
+source = "python3.13"
+
+[[compare.package]]
+name = "libreadline8t64"
+version = "8.2-6"
+sha256 = "eeadf2b5e755c9f183883feea2d9b5b28560284275d5f54d3e55d0923b1d0967"
+archive = "debian"
+filename = "pool/main/r/readline/libreadline8t64_8.2-6_amd64.deb"
+architecture = "amd64"
+source = "readline"
+
+[[compare.package]]
+name = "libselinux1"
+version = "3.8.1-1"
+sha256 = "68bb8d32bd8d6d7d2f5952a169db03d1484b46ae1e52abccdec42a19dccea5d5"
+archive = "debian"
+filename = "pool/main/libs/libselinux/libselinux1_3.8.1-1_amd64.deb"
+architecture = "amd64"
+source = "libselinux"
+
+[[compare.package]]
+name = "libsframe1"
+version = "2.44-3"
+sha256 = "38f625dfdc582717029ac3a3e97c51d994ec2e7a0e9b230c6b44e40d1276311f"
+archive = "debian"
+filename = "pool/main/b/binutils/libsframe1_2.44-3_amd64.deb"
+architecture = "amd64"
+source = "binutils"
+
+[[compare.package]]
+name = "libsmartcols1"
+version = "2.41.5-0+deb13u1"
+sha256 = "d96bac9c8805685f2734885098a214b82950da6ebb182c27a6b7a124a0323392"
+archive = "debian"
+filename = "pool/main/u/util-linux/libsmartcols1_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
+source = "util-linux"
+
+[[compare.package]]
+name = "libsqlite3-0"
+version = "3.46.1-7+deb13u2"
+sha256 = "0a459adaffd901109f7811ab65f58e7a957b4907d05539cf3d1184efdcde0468"
+archive = "debian"
+filename = "pool/main/s/sqlite3/libsqlite3-0_3.46.1-7+deb13u2_amd64.deb"
+architecture = "amd64"
+source = "sqlite3"
+
+[[compare.package]]
+name = "libssl3t64"
+version = "3.5.7-1~deb13u3"
+sha256 = "ff16bc048bcd7d1b256094450b79c77947d8e76fe2a24bd99b91021d591fa074"
+archive = "debian-security"
+filename = "pool/updates/main/o/openssl/libssl3t64_3.5.7-1~deb13u3_amd64.deb"
+architecture = "amd64"
+source = "openssl"
+
+[[compare.package]]
+name = "libstdc++6"
+version = "14.2.0-19"
+sha256 = "ab1fa05837aa7a92aae748fd07a18a35f7d18bb4a71c4724fe2bbf0e32089de0"
+archive = "debian"
+filename = "pool/main/g/gcc-14/libstdc++6_14.2.0-19_amd64.deb"
+architecture = "amd64"
+source = "gcc-14"
+
+[[compare.package]]
+name = "libtinfo6"
+version = "6.5+20250216-2"
+sha256 = "8b9f6a7983e9418564e48a627518de4c03917b56efe68d7f3e93bd8fffa1cc10"
+archive = "debian"
+filename = "pool/main/n/ncurses/libtinfo6_6.5+20250216-2_amd64.deb"
+architecture = "amd64"
+source = "ncurses"
+
+[[compare.package]]
+name = "libuuid1"
+version = "2.41.5-0+deb13u1"
+sha256 = "c1bf4c4c3ff48c57fabf93307dfb56996b60cfa33927afc4158b5db36fb2721e"
+archive = "debian"
+filename = "pool/main/u/util-linux/libuuid1_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
+source = "util-linux"
+
+[[compare.package]]
+name = "libxml2"
+version = "2.12.7+dfsg+really2.9.14-2.1+deb13u3"
+sha256 = "e0c6b63ce4602a036a526f60fe5e6c1586710688058d98fc1001b9b3147b7efd"
+archive = "debian"
+filename = "pool/main/libx/libxml2/libxml2_2.12.7+dfsg+really2.9.14-2.1+deb13u3_amd64.deb"
+architecture = "amd64"
+source = "libxml2"
+
+[[compare.package]]
+name = "libxxhash0"
+version = "0.8.3-2"
+sha256 = "81da7064d56fc044f5db4bb3c1e80ff50a4986dcbbf80d958eeca565b44c157f"
+archive = "debian"
+filename = "pool/main/x/xxhash/libxxhash0_0.8.3-2_amd64.deb"
+architecture = "amd64"
+source = "xxhash"
+
+[[compare.package]]
+name = "libzstd1"
+version = "1.5.7+dfsg-1"
+sha256 = "2f6a2aeacfc925eba8b00ac9139bc4bfccf8cacb09eb93de067074b26948eef9"
+archive = "debian"
+filename = "pool/main/libz/libzstd/libzstd1_1.5.7+dfsg-1_amd64.deb"
+architecture = "amd64"
+source = "libzstd"
+
+[[compare.package]]
+name = "lsb-release"
+version = "12.1-1"
+sha256 = "f81c836ce58d50c37039567ee85bbd76c0b6048c0b8f207e55529433694338ae"
+archive = "debian"
+filename = "pool/main/l/lsb-release-minimal/lsb-release_12.1-1_all.deb"
+architecture = "all"
+source = "lsb-release-minimal"
+
+[[compare.package]]
+name = "media-types"
+version = "13.0.0"
+sha256 = "0788e4b0b72db1bcf74a19cb24c3511e7770ad0b341f0f30e361701c3072f53e"
+archive = "debian"
+filename = "pool/main/m/media-types/media-types_13.0.0_all.deb"
+architecture = "all"
+source = "media-types"
+
+[[compare.package]]
+name = "netbase"
+version = "6.5"
+sha256 = "76bafa92947ebd37b0a6f9ec6570412041f56edebc1c66d323731216d318471e"
+archive = "debian"
+filename = "pool/main/n/netbase/netbase_6.5_all.deb"
+architecture = "all"
+source = "netbase"
+
+[[compare.package]]
+name = "openssl-provider-legacy"
+version = "3.5.7-1~deb13u3"
+sha256 = "c12e0266c4780749a4702b8959ac979689f4182e18eed85a8a5eb90ed0e16eab"
+archive = "debian-security"
+filename = "pool/updates/main/o/openssl/openssl-provider-legacy_3.5.7-1~deb13u3_amd64.deb"
+architecture = "amd64"
+source = "openssl"
+
+[[compare.package]]
+name = "python3"
+version = "3.13.5-1"
+sha256 = "c1388174dc7140e6c19a6dd39f8a0dcb38a835cd66c65644e0dded43d5223cb0"
+archive = "debian"
+filename = "pool/main/p/python3-defaults/python3_3.13.5-1_amd64.deb"
+architecture = "amd64"
+source = "python3-defaults"
+
+[[compare.package]]
+name = "python3-distro"
+version = "1.9.0-1"
+sha256 = "b48975ae9c1c6fcc06301a3febeee390a817b21604576228807f7f37af458473"
+archive = "debian"
+filename = "pool/main/p/python-distro/python3-distro_1.9.0-1_all.deb"
+architecture = "all"
+source = "python-distro"
+
+[[compare.package]]
+name = "python3-libarchive-c"
+version = "5.1-1"
+sha256 = "a466dc5cbe1c88ed3bb60bc94ec4280984b27f954f9fa95071b592a133870d9f"
+archive = "debian"
+filename = "pool/main/p/python-libarchive-c/python3-libarchive-c_5.1-1_all.deb"
+architecture = "all"
+source = "python-libarchive-c"
+
+[[compare.package]]
+name = "python3-magic"
+version = "2:0.4.27-3"
+sha256 = "6cffe27f4381ff4d4e56113f72a7c6b79ddd8b2bc92958d5b2051fb788def236"
+archive = "debian"
+filename = "pool/main/p/python-magic/python3-magic_0.4.27-3_all.deb"
+architecture = "all"
+source = "python-magic"
+
+[[compare.package]]
+name = "python3-minimal"
+version = "3.13.5-1"
+sha256 = "a5d2371bebf3689f676e3f3bae800371bcc4392a8a51269e23d528249b399615"
+archive = "debian"
+filename = "pool/main/p/python3-defaults/python3-minimal_3.13.5-1_amd64.deb"
+architecture = "amd64"
+source = "python3-defaults"
+
+[[compare.package]]
+name = "python3.13"
+version = "3.13.5-2+deb13u5"
+sha256 = "460c1fd72845516ac3ce9d1686916f3ab2e4c86f8a9746e14d26243a47e2b98d"
+archive = "debian"
+filename = "pool/main/p/python3.13/python3.13_3.13.5-2+deb13u5_amd64.deb"
+architecture = "amd64"
+source = "python3.13"
+
+[[compare.package]]
+name = "python3.13-minimal"
+version = "3.13.5-2+deb13u5"
+sha256 = "c1fda9e7b1bf15b2fa75a238d8a8710e142fe14c722fc650c5fc614f078c9073"
+archive = "debian"
+filename = "pool/main/p/python3.13/python3.13-minimal_3.13.5-2+deb13u5_amd64.deb"
+architecture = "amd64"
+source = "python3.13"
+
+[[compare.package]]
+name = "readline-common"
+version = "8.2-6"
+sha256 = "f77e8aa0bf0de618f11cb0b21658a4ed60f177d63b3cf26d7fc3706b6d0eaaa9"
+archive = "debian"
+filename = "pool/main/r/readline/readline-common_8.2-6_all.deb"
+architecture = "all"
+source = "readline"
+
+[[compare.package]]
+name = "tar"
+version = "1.35+dfsg-3.1"
+sha256 = "214c02e1aa291076a3147b8a4c4cae02fadf4c67df629186e3e313726faef1de"
+archive = "debian"
+filename = "pool/main/t/tar/tar_1.35+dfsg-3.1_amd64.deb"
+architecture = "amd64"
+source = "tar"
+
+[[compare.package]]
+name = "tzdata"
+version = "2026f-0+deb13u1"
+sha256 = "2c1c561091402883430d0d47c57a3c0aa00b44afc8a6239265065a87211a5c11"
+archive = "debian"
+filename = "pool/main/t/tzdata/tzdata_2026f-0+deb13u1_all.deb"
+architecture = "all"
+source = "tzdata"
+
+[[compare.package]]
+name = "xxd"
+version = "2:9.1.1230-2+deb13u2"
+sha256 = "057e1b68f5a651c5485ff0d013da9d0f47c32db4d3527d51e091036f007c7b17"
+archive = "debian-security"
+filename = "pool/updates/main/v/vim/xxd_9.1.1230-2+deb13u2_amd64.deb"
+architecture = "amd64"
+source = "vim"
+
+[[compare.package]]
+name = "zlib1g"
+version = "1:1.3.dfsg+really1.3.1-1+deb13u1"
+sha256 = "8c27c342230503b73dfde629642c3b352e87b554e06d60cf58772f236a305ceb"
+archive = "debian-security"
+filename = "pool/updates/main/z/zlib/zlib1g_1.3.dfsg+really1.3.1-1+deb13u1_amd64.deb"
+architecture = "amd64"
+source = "zlib"
+
+[faketime]
+release = "trixie"
+
+[[faketime.suite]]
+archive = "debian"
+name = "trixie"
+inrelease_sha256 = "0584fba32e13e0ab8285fb16c27adea1ec03a73669c18702821094fd6ca86675"
+
+[[faketime.suite]]
+archive = "debian"
+name = "trixie-updates"
+inrelease_sha256 = "871ca324ca5e0d5e848fafbd9be0b6ff245563ef2362f685d15ccefc55a0a294"
+
+[[faketime.suite]]
+archive = "debian-security"
+name = "trixie-security"
+inrelease_sha256 = "619dd69e766c1f8ea8dd5bb1741154960804a8b9849b021e14c8fd1c6af269ab"
+
+[[faketime.package]]
+name = "gcc-14-base"
+version = "14.2.0-19"
+sha256 = "5b6825de4263824b78c4c51f6476414f3b4e89c2ab63e81dc8b9b5501e867cf6"
+archive = "debian"
+filename = "pool/main/g/gcc-14/gcc-14-base_14.2.0-19_amd64.deb"
+architecture = "amd64"
+source = "gcc-14"
+
+[[faketime.package]]
+name = "libc6"
+version = "2.41-12+deb13u4"
+sha256 = "967aa62605721081c3eb2a17650611a792aa802d76a6511d1840242623d204c9"
+archive = "debian"
+filename = "pool/main/g/glibc/libc6_2.41-12+deb13u4_amd64.deb"
+architecture = "amd64"
+source = "glibc"
+
+[[faketime.package]]
+name = "libfaketime"
+version = "0.9.10+2024-06-05+gba9ed5b2-0.6"
+sha256 = "4ecb98d7f6149e4c297a5946c4fa231a1b794d203053962e295dd3a18a47f269"
+archive = "debian"
+filename = "pool/main/f/faketime/libfaketime_0.9.10+2024-06-05+gba9ed5b2-0.6_amd64.deb"
+architecture = "amd64"
+source = "faketime"
+
+[[faketime.package]]
+name = "libgcc-s1"
+version = "14.2.0-19"
+sha256 = "3c71917b490d1a17aed43196a2787a256ecf060526cdb20216a74bedc061b150"
+archive = "debian"
+filename = "pool/main/g/gcc-14/libgcc-s1_14.2.0-19_amd64.deb"
+architecture = "amd64"
+source = "gcc-14"
 
 [bootstrap]
 release = "trixie"

@@ -16,6 +16,8 @@ Any mismatch exits non-zero before anything is built.
 
   fetch_image.py --out DIR          the image build's inputs
   fetch_image.py --out DIR --boot   only the packages the boot test runs on
+  fetch_image.py --out DIR --compare   only the packages the comparison job runs on
+  fetch_image.py --out DIR --faketime  only libfaketime
 """
 import argparse
 import json
@@ -108,6 +110,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", type=pathlib.Path, required=True)
     parser.add_argument("--boot", action="store_true", help="fetch only the boot test's packages")
+    parser.add_argument("--compare", action="store_true", help="fetch only the comparison job's packages (diffoscope)")
+    parser.add_argument("--faketime", action="store_true", help="fetch only libfaketime")
     parser.add_argument("--target-arch", default="x86_64", choices=sorted(ARCH))
     args = parser.parse_args()
 
@@ -122,11 +126,16 @@ def main() -> int:
     if arch != ARCH[args.target_arch]:
         fail(f"the lock is for {arch}, not {ARCH[args.target_arch]}")
 
-    sets = ("boot",) if args.boot else ("root", "tools")
+    chosen = [n for n in ("boot", "compare", "faketime") if getattr(args, n)]
+    if len(chosen) > 1:
+        fail("--boot, --compare and --faketime are separate runs")
+    only = chosen[0] if chosen else None
+    # libfaketime is always fetched with the build's inputs: the rebuild uses it.
+    sets = (only,) if only else ("root", "tools", "faketime")
     for which in sets:
         fetch_release(out, lock, which, arch, snapshot)
     n = fetch_debs(out, lock, snapshot, sets)
-    if args.boot:
+    if only:
         print(f"fetched {n} packages into {out}")
         return 0
 

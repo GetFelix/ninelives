@@ -125,10 +125,26 @@ impl Pid1 {
                     }
                 }
                 Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => {
-                    panic!("no matching line; saw:\n{}", self.seen.join("\n"))
+                    panic!(
+                        "no matching line; saw:\n{}\n{}",
+                        self.seen.join("\n"),
+                        self.diagnose()
+                    )
                 }
             }
         }
+    }
+
+    /// What the init is doing, for a failure message.
+    fn diagnose(&mut self) -> String {
+        let mut out = format!("exited: {:?}\n", self.child.try_wait());
+        for file in ["status", "wchan", "stack", "mountinfo"] {
+            let o = sudo(&["cat", &format!("/proc/{}/{file}", self.pid)]);
+            out += &format!("--- {file}\n{}\n", String::from_utf8_lossy(&o.stdout));
+        }
+        let o = sudo(&["ls", "-l", &format!("/proc/{}/fd", self.pid)]);
+        out += &format!("--- fd\n{}", String::from_utf8_lossy(&o.stdout));
+        out
     }
 
     fn signal(&self, name: &str) {

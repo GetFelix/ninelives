@@ -1,6 +1,6 @@
 # 0008: CA keys live offline and on issuer machines; machines renew their own certificates
 
-**Status:** Proposed, 2026-11-18. Answers
+**Status:** Accepted, 2026-11-18. Answers
 [#16](https://github.com/GetFelix/ninelives/issues/16) for M1.
 
 ## Context

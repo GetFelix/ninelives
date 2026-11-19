@@ -15,6 +15,9 @@
 # COMMIT and SOURCE_DATE_EPOCH come from the environment (the container has no git).
 set -euo pipefail
 
+# The caller's umask must not reach the build: apt reads the keyring and the store
+# as its own user, and a mode left by umask 077 locks it out.
+umask 022
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 export PYTHONDONTWRITEBYTECODE=1
 args=("$@")

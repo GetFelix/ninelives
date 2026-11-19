@@ -35,8 +35,7 @@ tree, puts the kernel, its command line and the root hash into one unified
 kernel image (UKI), and lays these out on a GPT disk. It checks the result
 against the rules below and fails on any violation. CI runs the whole build
 twice, the second time on a clean runner with no cache, and fails unless the
-outputs are identical (*not built yet:* the first slice builds once,
-[#94](https://github.com/GetFelix/ninelives/issues/94)). That proves the build is deterministic. From the first
+outputs are identical. That proves the build is deterministic. From the first
 published image, an independent rebuild on other hardware must also match
 before the maintainer signs the release's update metadata offline. One
 pinned signing workflow, and only it, gets the UKI signed (from M3), and the
@@ -50,10 +49,10 @@ dm-verity, the UKI with its command line, the GPT disk, and every check in
 [Checks](#checks) except the three it names there. The outputs are the `.raw`,
 `.root.erofs`, `.root.verity`, `.roothash`, `.efi`, `.inventory.json`,
 `.files.json` and `SHA256SUMS`, plus `.origins.json`. The `boot` job then
-boots the `.raw` (see [Boot test](#boot-test)). The slice does not build
+boots the `.raw` (see [Boot test](#boot-test)). The `image-rebuild` and
+`image-compare` jobs build it a second time and compare ([Reproducibility](#reproducibility)). The slice does not build
 aarch64, so nothing boots it either
-([#99](https://github.com/GetFelix/ninelives/issues/99)), a second
-build to compare ([#94](https://github.com/GetFelix/ninelives/issues/94)), or the
+([#99](https://github.com/GetFelix/ninelives/issues/99)), or the
 SBOM, source or provenance outputs
 ([#100](https://github.com/GetFelix/ninelives/issues/100)).
 

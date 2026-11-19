@@ -12,6 +12,7 @@
 # written, if the builds differ. It does not retry.
 set -euo pipefail
 
+umask 022  # apt reads the keyring and the store as its own user
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 export PYTHONDONTWRITEBYTECODE=1 LC_ALL=C
 a="" b="" report="" work=""

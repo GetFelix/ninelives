@@ -49,9 +49,11 @@ RESIDUE = [
     # base-files' shell and login skeleton
     "/etc/profile", "/etc/environment", "/etc/motd", "/etc/update-motd.d", "/root/.bashrc", "/root/.profile",
     # timers and docs from removed packages, and links into /run that nothing writes
-    "/etc/systemd", "/usr/share/info", "/usr/local/man", "/usr/lib/clock-epoch", "/var/lock", "/var/run", "/var/spool/mail",
+    "/etc/systemd", "/usr/share/info", "/usr/local/man", "/usr/lib/clock-epoch", "/var/spool/mail",
 ]
 # Files a maintainer script copies from the package's own data, so the copy can be held to the member.
+# Links into /run, the init's tmpfs, that base-files makes in its postinst.
+RUN_LINKS = {"/var/run": "/run", "/var/lock": "/run/lock"}
 COPIES = {"/etc/nsswitch.conf": "/usr/share/base-files/nsswitch.conf"}
 LD_SO_CONF = "include /etc/ld.so.conf.d/*.conf\n"
 TOP_LEVEL_LINKS = {"/bin": "usr/bin", "/sbin": "usr/sbin", "/lib": "usr/lib", "/lib64": "usr/lib64"}
@@ -99,6 +101,20 @@ def remove_packages(root: pathlib.Path, keep: set[str]) -> list[str]:
         if not os.listdir(dirpath) and not os.path.islink(dirpath):
             os.rmdir(dirpath)
     return removed
+
+
+def prune_files(root: pathlib.Path, rules: list[dict]) -> None:
+    for rule in rules:
+        if not rule.get("reason"):
+            raise SystemExit("rootfs/prune.toml: an entry has no reason")
+        for path in [*([rule["path"]] if "path" in rule else []), *rule.get("paths", [])]:
+            t = root / path.lstrip("/")
+            if t.is_symlink() or t.is_file():
+                t.unlink()
+            elif t.is_dir():
+                shutil.rmtree(t)
+            else:
+                raise SystemExit(f"rootfs/prune.toml: {path} is not in the root")
 
 
 def safe_unpack(archive: pathlib.Path, wanted: dict[str, str], root: pathlib.Path) -> dict[str, str]:
@@ -206,6 +222,7 @@ def main() -> int:
         inventory.append({k: p[k] for k in ("name", "version", "sha256", "source")})
 
     removed = remove_packages(root, keep)
+    prune_files(root, ic.load_toml(ic.ROOT / "rootfs" / "prune.toml").get("prune", []))
     for dest, src in COPIES.items():
         member = origins.get(src)
         target = root / dest.lstrip("/")
@@ -258,6 +275,10 @@ def main() -> int:
         osr.unlink(missing_ok=True)
         osr.symlink_to("../usr/lib/os-release")
     origins["/etc/os-release"] = {"type": "symlink", "mode": 0o777, "link": "../usr/lib/os-release", "origin": "generated", "package": "ninelives-image"}
+    for link, target in RUN_LINKS.items():
+        if os.readlink(root / link.lstrip("/")) != target:
+            raise SystemExit(f"{link} does not point to {target}")
+        origins[link] = {"type": "symlink", "mode": 0o777, "link": target, "origin": "generated", "package": "ninelives-image"}
     for link, target in TOP_LEVEL_LINKS.items():
         origins[link] = {"type": "symlink", "mode": 0o777, "link": target, "origin": "generated", "package": "ninelives-image"}
     for mp in MOUNT_POINTS:

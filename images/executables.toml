@@ -37,22 +37,7 @@ origin = "libc6"
 requirement = "S1"
 
 [[executable]]
-path = "/usr/lib/x86_64-linux-gnu/libBrokenLocale.so.1"
-origin = "libc6"
-requirement = "S1"
-
-[[executable]]
-path = "/usr/lib/x86_64-linux-gnu/libanl.so.1"
-origin = "libc6"
-requirement = "S1"
-
-[[executable]]
 path = "/usr/lib/x86_64-linux-gnu/libc.so.6"
-origin = "libc6"
-requirement = "S1"
-
-[[executable]]
-path = "/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so.0"
 origin = "libc6"
 requirement = "S1"
 
@@ -67,42 +52,12 @@ origin = "libc6"
 requirement = "S1"
 
 [[executable]]
-path = "/usr/lib/x86_64-linux-gnu/libmemusage.so"
-origin = "libc6"
-requirement = "S1"
-
-[[executable]]
-path = "/usr/lib/x86_64-linux-gnu/libmvec.so.1"
-origin = "libc6"
-requirement = "S1"
-
-[[executable]]
-path = "/usr/lib/x86_64-linux-gnu/libnsl.so.1"
-origin = "libc6"
-requirement = "S1"
-
-[[executable]]
-path = "/usr/lib/x86_64-linux-gnu/libnss_compat.so.2"
-origin = "libc6"
-requirement = "S1"
-
-[[executable]]
 path = "/usr/lib/x86_64-linux-gnu/libnss_dns.so.2"
 origin = "libc6"
 requirement = "S1"
 
 [[executable]]
 path = "/usr/lib/x86_64-linux-gnu/libnss_files.so.2"
-origin = "libc6"
-requirement = "S1"
-
-[[executable]]
-path = "/usr/lib/x86_64-linux-gnu/libnss_hesiod.so.2"
-origin = "libc6"
-requirement = "S1"
-
-[[executable]]
-path = "/usr/lib/x86_64-linux-gnu/libpcprofile.so"
 origin = "libc6"
 requirement = "S1"
 
@@ -118,21 +73,6 @@ requirement = "S1"
 
 [[executable]]
 path = "/usr/lib/x86_64-linux-gnu/librt.so.1"
-origin = "libc6"
-requirement = "S1"
-
-[[executable]]
-path = "/usr/lib/x86_64-linux-gnu/libthread_db.so.1"
-origin = "libc6"
-requirement = "S1"
-
-[[executable]]
-path = "/usr/lib/x86_64-linux-gnu/libutil.so.1"
-origin = "libc6"
-requirement = "S1"
-
-[[executable]]
-path = "/usr/lib/x86_64-linux-gnu/gconv/*.so"
 origin = "libc6"
 requirement = "S1"
 

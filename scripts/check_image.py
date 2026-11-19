@@ -225,6 +225,18 @@ def check_needed(entries, allowlist: list[dict]):
     return out
 
 
+def check_needed_resolve(entries):
+    """Every shared library an ELF names is somewhere in the root."""
+    libs = {posixpath.basename(e.path) for e in entries if e.kind in ("file", "symlink")}
+    out = []
+    for e in entries:
+        if e.kind == "file" and e.content()[:4] == b"\x7fELF":
+            for n in ic.Elf(e.content()).needed:
+                if n not in libs:
+                    out.append(f"DT_NEEDED: {e.path} needs {n}, which is not in the root")
+    return out
+
+
 def check_packages(stage: dict, keep: list[dict], lock: dict):
     out = []
     have = {p["name"]: p for p in stage["packages"]}
@@ -480,7 +492,7 @@ def main() -> int:
                 return 0
             errors += check_setuid(entries) + check_xattrs(entries) + check_ownership(entries)
             errors += check_special(entries, links) + check_users(entries, users)
-            errors += check_executables(entries, execs) + check_elf(entries) + check_needed(entries, execs)
+            errors += check_executables(entries, execs) + check_elf(entries) + check_needed(entries, execs) + check_needed_resolve(entries)
             errors += check_packages(stage, keep, lock) + check_origins(entries, origins) + check_secrets(entries)
             files = [{"path": e.path, "type": e.kind, "mode": e.mode, "uid": e.uid, "gid": e.gid, "size": e.size,
                       **({"sha256": e.sha256()} if e.kind == "file" else {}), **({"link": e.link} if e.link else {})}

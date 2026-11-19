@@ -71,6 +71,15 @@ class Checks(unittest.TestCase):
     def test_fifo(self):
         self.assertTrue(ci.check_special(with_(clean(), ci.Entry("/run/x", "fifo")), {}))
 
+    def test_relative_link_inside_the_root_passes(self):
+        e = with_(clean(), ci.Entry("/usr/share/doc", "dir", 0o555), ci.Entry("/usr/share/doc/README", "file", 0o444),
+                  ci.Entry("/usr/share/doc/FAQ", "symlink", 0o777, link="README"),
+                  ci.Entry("/usr/lib/up", "symlink", 0o777, link="../share/data"))
+        self.assertEqual(ci.check_special(e, {}), [])
+
+    def test_dangling_relative_link_fails(self):
+        self.assertTrue(ci.check_special(with_(clean(), ci.Entry("/lib32", "symlink", 0o777, link="usr/lib32")), {}))
+
     def test_link_into_writable_storage(self):
         e = with_(clean(), ci.Entry("/data", "dir", 0o555), ci.Entry("/etc/l", "symlink", 0o777, link="/data/x"),
                   ci.Entry("/data/x", "file", 0o444))
@@ -112,6 +121,11 @@ class Checks(unittest.TestCase):
     def test_executable_stack(self):
         e = with_(clean(), ci.Entry("/usr/lib/liby.so.1", "file", 0o444, content=elf(flags_stack=7)))
         self.assertTrue(ci.check_elf(e))
+
+    def test_pruned_library_something_still_needs(self):
+        e = with_(clean(), ci.Entry("/usr/bin/tool", "file", 0o555, content=elf(needed=("libgone.so.1",))), drop=["/usr/bin/tool"])
+        self.assertTrue(ci.check_needed_resolve(e))
+        self.assertEqual(ci.check_needed_resolve(with_(e, ci.Entry("/usr/lib/libgone.so.1", "file", 0o444, content=elf(needed=())))), [])
 
     def test_changed_dt_needed(self):
         e = with_(clean(), ci.Entry("/usr/bin/tool", "file", 0o555, content=elf(needed=("libc.so.6", "libssl.so.3"))), drop=["/usr/bin/tool"])

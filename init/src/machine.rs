@@ -59,6 +59,8 @@ pub(crate) enum Event {
     Reaped(u64),
     /// The worker finished the shutdown sync.
     SyncDone,
+    /// No thread could run the sync; this errno says why.
+    SyncFailed(i32),
     /// `reboot(2)` returned this errno.
     RebootFailed(i32),
     /// The loop woke up; deadlines are checked against the time.
@@ -136,6 +138,20 @@ impl Machine {
                     actions.push(Action::Record(Record {
                         step: Some("sync"),
                         result: Some("done"),
+                        ..Record::new(MachineState::Stopping)
+                    }));
+                    self.reboot(kind, &mut actions);
+                }
+            }
+            Event::SyncFailed(errno) => {
+                // Running sync() on the loop's thread would hold the loop
+                // without a bound, so the machine goes down without it, as
+                // after a passed bound, and says so first.
+                if let Phase::Syncing { kind, .. } = self.phase {
+                    actions.push(Action::Record(Record {
+                        step: Some("sync"),
+                        result: Some("not run"),
+                        error: Some(errno),
                         ..Record::new(MachineState::Stopping)
                     }));
                     self.reboot(kind, &mut actions);
@@ -270,7 +286,7 @@ impl Machine {
     }
 }
 
-fn emergency_record(failure: Failure) -> Record {
+pub(crate) fn emergency_record(failure: Failure) -> Record {
     Record {
         step: Some(failure.step),
         error: Some(failure.errno),

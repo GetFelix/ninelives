@@ -18,14 +18,17 @@ and the kernel starts it with `init=`. In order:
 
 1. Blocks every signal, so a stop request sent during boot is kept for the
    loop instead of being discarded.
-2. Mounts `/dev` (devtmpfs, `nosuid,noexec`), opens the console on any of
-   fds 0 to 2 that is closed, and opens its own non-blocking handle on it.
+2. Mounts `/dev` (devtmpfs, `nosuid,noexec`) and opens its own
+   non-blocking handle on the console, `/dev/kmsg` if there is none. Fds 0
+   to 2 are the console the kernel opened; any that is closed, on a machine
+   with no console device, is filled so later descriptors cannot land there.
 3. Mounts `/proc` (`hidepid=invisible`), `/sys`, `/sys/fs/cgroup` (cgroup2,
    `nsdelegate,memory_recursiveprot`), `/run` (`mode=0755,size=16m`) and
    `/tmp` (`mode=1777,size=64m`), all `nosuid,nodev,noexec`. The first
    failure stops the mounts and the machine goes `emergency`.
-4. Bind-remounts `/proc/sys` read-only, so no later process can change a
-   sysctl. A failure here is also `emergency`.
+4. Bind-remounts `/proc/sys` read-only whenever `/proc` is mounted, even
+   after a later mount failed, so no later process can change a sysctl. A
+   failure here is also `emergency`.
 5. Turns Ctrl-Alt-Del into `SIGINT` (`reboot(LINUX_REBOOT_CMD_CAD_OFF)`).
 6. Opens a signalfd, starts the worker thread, writes the ready line and
    enters the event loop.
@@ -33,7 +36,8 @@ and the kernel starts it with `init=`. In order:
 The loop reaps every exited child on `SIGCHLD` (I2), records and ignores
 signals it has no use for, and on a stop request runs the final steps of
 the ordered shutdown: `sync()` on the worker thread, bounded at 30 s, then
-`reboot(2)`. `SIGTERM` and `SIGINT` reboot, `SIGUSR2` powers off, and a
+`reboot(2)`. If no thread can run the sync, it is skipped and recorded
+rather than run unbounded on the loop. `SIGTERM` and `SIGINT` reboot, `SIGUSR2` powers off, and a
 request during shutdown can only turn a reboot into a power-off. In
 `emergency` the machine runs nothing else, repeats the reason every 30 s,
 and still reaps and stops. If the signalfd cannot be set up, the loop could
@@ -76,9 +80,10 @@ The fields are in [init.md](../docs/components/init.md#state-reports).
 | Module | What |
 |---|---|
 | `machine` | The decision logic: a pure state machine from events to actions. |
+| `boot_plan` | The order of the boot steps and what a failure stops, over a `BootOps` trait. |
 | `event_loop` | The loop, over an `Os` trait so it runs against a fake in tests. |
-| `signals`, `mounts`, `record` | The signal table, the mount table, the record encoder. Pure. |
-| `boot`, `host`, `console`, `clock` | Linux only: the boot steps, the real `Os`, the console sink and panic hook. |
+| `signals`, `mounts`, `record` | The signal table, the mount table, the record encoder and sink state. Pure. |
+| `boot`, `host`, `console`, `clock` | Linux only: the boot system calls, the real `Os`, the console and panic hook. |
 | `sys` | Every `unsafe` in the crate: the C entry point, the signal mask and `signalfd`. |
 
 ## Dependencies
@@ -101,11 +106,16 @@ cargo deny check
 python3 ../scripts/check_unsafe.py .   # unsafe only in mod sys
 ```
 
-The unit tests cover the signal table, the mount table, the record format,
-the state machine and the loop, including random event sequences that check
-I1, I2 and I10. On Linux, `tests/pid1.rs` runs the real binary as PID 1 of
+The unit tests cover the signal table, the mount table (read against
+init.md itself), the boot order and its fail-closed rules, the record
+format, drop counting and torn lines, the capped panic line, the state
+machine and the loop, including random event sequences that check I1, I2
+and I10. On Linux, `tests/pid1.rs` runs the real binary as PID 1 of
 a new PID and mount namespace through `sudo unshare` and checks the ready
 line, the mounts and their options, the read-only `/proc/sys`, orphan
-reaping and the exit through `reboot(2)` for each stop signal. Without
+reaping, the exit through `reboot(2)` for each stop signal, and a failed
+mount that leaves the machine `emergency` with `/proc/sys` still locked.
+Not yet tested end to end: the panic hook firing and the signalfd and worker
+failures, which need the test image's fault hooks. Without
 passwordless sudo those tests skip; CI sets `NL_INIT_ROOT_TESTS=1` so they
 fail instead. Booting the image in qemu is [#2](https://github.com/GetFelix/ninelives/issues/2).

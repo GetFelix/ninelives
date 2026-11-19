@@ -4,6 +4,12 @@
 //! machine: the init is killed with SIGINT for a power-off and SIGHUP for a
 //! restart, so the exit status shows which one it asked for.
 //!
+//! Before the init starts, a shell in the new namespace unmounts the host's
+//! `/dev`, `/sys` and `/proc` there, as a real boot has none of them. The
+//! kernel refuses to mount a filesystem on top of itself (`EBUSY`), and
+//! devtmpfs and sysfs are one filesystem for the whole machine, so the
+//! host's would otherwise block the init's.
+//!
 //! The tests need `sudo -n`, `unshare` and `nsenter`. Without sudo they skip,
 //! unless `NL_INIT_ROOT_TESTS` is set, as CI sets it, so CI cannot pass by
 //! skipping.
@@ -68,6 +74,15 @@ struct Pid1 {
 impl Pid1 {
     /// Starts the init and waits for its ready line.
     fn start() -> Pid1 {
+        let mut init = Pid1::spawn(&["/dev", "/sys", "/proc"]);
+        init.expect(|l| l.contains(r#""machine":"up""#));
+        init
+    }
+
+    /// Starts the init after unmounting `unmount` in its namespace. `exec`
+    /// keeps the shell's pid, so the init is still PID 1.
+    fn spawn(unmount: &[&str]) -> Pid1 {
+        let script = format!("umount -l \"$@\" && exec {INIT}");
         let mut child = Command::new("sudo")
             .args([
                 "-n",
@@ -79,8 +94,12 @@ impl Pid1 {
                 "private",
                 "--kill-child",
                 "--",
-                INIT,
+                "/bin/sh",
+                "-c",
+                &script,
+                "sh",
             ])
+            .args(unmount)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -98,14 +117,12 @@ impl Pid1 {
             }
         });
         let pid = find_namespace_init(child.id());
-        let mut init = Pid1 {
+        Pid1 {
             child,
             lines,
             seen: Vec::new(),
             pid,
-        };
-        init.expect(|l| l.contains(r#""machine":"up""#));
-        init
+        }
     }
 
     /// The next line matching `pred`. Every line must be one record.
@@ -444,5 +461,35 @@ fn mounts_match_init_md_and_proc_sys_is_read_only() {
     );
 
     init.signal("USR2");
+    assert!(powered_off(init.wait()));
+}
+
+/// A failed early mount: `emergency` with the step and errno, nothing marked
+/// up, /proc/sys still locked because /proc was mounted (I19), and a stop
+/// request still powers off.
+#[test]
+fn a_failed_mount_is_an_emergency_that_still_locks_and_stops() {
+    if !root_available() {
+        return;
+    }
+    // The host's sysfs stays, so mounting /sys fails with EBUSY.
+    let mut init = Pid1::spawn(&["/dev", "/proc"]);
+    let line = init.expect(|l| l.contains(r#""machine":"emergency""#));
+    assert!(
+        line.contains(r#""step":"mount /sys","error":"EBUSY""#),
+        "{line}"
+    );
+    assert!(!init.seen.iter().any(|l| l.contains(r#""machine":"up""#)));
+
+    let out =
+        init.nsenter("v=$(cat /proc/sys/vm/swappiness) && echo \"$v\" > /proc/sys/vm/swappiness");
+    assert!(!out.status.success(), "a sysctl write succeeded");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("Read-only file system"),
+        "{out:?}"
+    );
+
+    init.signal("USR2");
+    init.expect(|l| l.contains(r#""step":"reboot","action":"poweroff""#));
     assert!(powered_off(init.wait()));
 }

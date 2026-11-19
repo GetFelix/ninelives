@@ -118,6 +118,66 @@ impl<const N: usize> std::fmt::Write for FixedBuf<N> {
     }
 }
 
+/// What a sink keeps between records: the boot id, the drop count, and
+/// whether the last write stopped mid-line.
+pub(crate) struct Sink {
+    boot: Option<String>,
+    buf: Vec<u8>,
+    dropped: u64,
+    torn: bool,
+}
+
+impl Sink {
+    pub(crate) fn new() -> Sink {
+        Sink {
+            boot: None,
+            buf: Vec::with_capacity(512),
+            dropped: 0,
+            torn: false,
+        }
+    }
+
+    pub(crate) fn set_boot_id(&mut self, boot: Option<String>) {
+        self.boot = boot;
+    }
+
+    /// Encodes `record` and hands it to `write`, one non-blocking write that
+    /// returns how much it wrote, or `None` on an error. A record that does
+    /// not go out whole is dropped and counted (I16), and the next one says
+    /// how many. After a short write the next record starts with a newline,
+    /// so it keeps its prefix and a reader can still find the ready line.
+    pub(crate) fn emit(
+        &mut self,
+        mono: Duration,
+        wall: Option<Duration>,
+        record: &Record,
+        write: impl FnOnce(&[u8]) -> Option<usize>,
+    ) {
+        self.buf.clear();
+        if self.torn {
+            self.buf.push(b'\n');
+        }
+        let header = Header {
+            boot: self.boot.as_deref(),
+            mono,
+            wall,
+            dropped: self.dropped,
+        };
+        encode(&mut self.buf, &header, record);
+        match write(&self.buf) {
+            Some(n) if n == self.buf.len() => {
+                self.dropped = 0;
+                self.torn = false;
+            }
+            Some(n) => {
+                self.dropped = self.dropped.saturating_add(1);
+                self.torn = self.torn || n > 0;
+            }
+            None => self.dropped = self.dropped.saturating_add(1),
+        }
+    }
+}
+
 /// Writes `ninelives-init {...}\n`. Fields come in a fixed order so a
 /// reader can match on a substring such as `"machine":"up"`.
 pub(crate) fn encode(out: &mut impl Out, header: &Header<'_>, record: &Record) {
@@ -169,17 +229,34 @@ pub(crate) fn encode(out: &mut impl Out, header: &Header<'_>, record: &Record) {
     out.put(b"}\n");
 }
 
-/// The panic hook's line. It has no boot id or wall time: it must not touch
-/// anything that could itself fail.
-pub(crate) fn encode_panic(out: &mut impl Out, mono: Duration, message: &[u8]) {
+/// The longest panic line: under `/dev/kmsg`'s limit for one write (1 KiB
+/// less the kernel's 32-byte prefix), in case the console is that.
+pub(crate) const PANIC_LINE_MAX: usize = 960;
+
+/// The panic hook's line. It starts with a newline, since the hook cannot
+/// know whether the console was left mid-line, and carries no boot id or
+/// wall time: it must not touch anything that could itself fail. A long
+/// message is cut so the line stays whole.
+pub(crate) fn panic_line(mono: Duration, message: &[u8]) -> FixedBuf<PANIC_LINE_MAX> {
+    const TAIL: &[u8] = b"\"}\n";
+    let mut out = FixedBuf::new();
+    out.put(b"\n");
     out.put(PREFIX);
     out.put(b"{\"v\":");
-    put_u64(out, FORMAT_VERSION);
+    put_u64(&mut out, FORMAT_VERSION);
     out.put(b",\"mono_ms\":");
-    put_u64(out, millis(mono));
-    out.put(b",\"panic\":");
-    put_str(out, message);
-    out.put(b"}\n");
+    put_u64(&mut out, millis(mono));
+    out.put(b",\"panic\":\"");
+    for &b in message {
+        let mut piece = FixedBuf::<6>::new();
+        put_escaped(&mut piece, b);
+        if out.len.saturating_add(piece.len).saturating_add(TAIL.len()) > PANIC_LINE_MAX {
+            break;
+        }
+        out.put(piece.as_bytes());
+    }
+    out.put(TAIL);
+    out
 }
 
 fn millis(d: Duration) -> u64 {
@@ -213,14 +290,18 @@ fn hex(nibble: u8) -> u8 {
 fn put_str(out: &mut impl Out, s: &[u8]) {
     out.put(b"\"");
     for &b in s {
-        match b {
-            b'"' => out.put(b"\\\""),
-            b'\\' => out.put(b"\\\\"),
-            0x20..=0x7e => out.put(&[b]),
-            _ => out.put(&[b'\\', b'u', b'0', b'0', hex(b >> 4), hex(b & 0x0f)]),
-        }
+        put_escaped(out, b);
     }
     out.put(b"\"");
+}
+
+fn put_escaped(out: &mut impl Out, b: u8) {
+    match b {
+        b'"' => out.put(b"\\\""),
+        b'\\' => out.put(b"\\\\"),
+        0x20..=0x7e => out.put(&[b]),
+        _ => out.put(&[b'\\', b'u', b'0', b'0', hex(b >> 4), hex(b & 0x0f)]),
+    }
 }
 
 fn put_errno(out: &mut impl Out, errno: i32) {

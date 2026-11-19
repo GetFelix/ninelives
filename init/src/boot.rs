@@ -1,5 +1,5 @@
-//! Boot, as root (init.md): the steps of that section this slice performs,
-//! in order. Everything else in it is marked where it will go.
+//! Boot, as root (init.md): the system calls behind `boot_plan`, which
+//! holds the order and the fail-closed rules.
 
 use std::ffi::CString;
 use std::os::fd::OwnedFd;
@@ -9,10 +9,11 @@ use rustix::io::{Errno, read};
 use rustix::mount::{MountFlags, mount, mount_bind, mount_remount};
 use rustix::system::{RebootCommand, reboot};
 
+use crate::boot_plan::{self, BootOps};
 use crate::console::{self, Console};
 use crate::machine::{BootOutcome, Failure};
 use crate::mounts::{self, Flags, Mount};
-use crate::record::{self, MachineState, Record};
+use crate::record::{self, Record};
 use crate::sys;
 
 pub(crate) struct Booted {
@@ -26,52 +27,14 @@ pub(crate) fn run() -> Booted {
     // kernel discards a signal sent to PID 1 that has its default action.
     let mask = sys::block_all_signals();
 
-    let mut console = Console::absent();
-    let mut emergency = None;
-    // Step 1, failing closed: the first failure ends the mounts.
-    for m in &mounts::EARLY {
-        let mounted = mount_one(m);
-        if m.target == "/dev" {
-            // Even without /dev, fd 1 may be a console the kernel opened,
-            // and the failure has to be reported somewhere.
-            console = Console::open(console::fill_stdio());
-        }
-        if let Err(e) = mounted {
-            emergency = Some(failure(m.step, e));
-            break;
-        }
-        if m.target == "/proc" {
-            console.set_boot_id(read_boot_id());
-            console.write(&Record::new(MachineState::Booting));
-        }
-    }
-    // TODO(#48): steps 2 to 6: the config and its [[mount]] entries, the data
-    // partition (#4), the directories and the cgroup tree.
-
-    // Step 7, the part this slice needs.
-    if emergency.is_none()
-        && let Err(e) = lock_proc_sys()
-    {
-        // The lockdown is what keeps every later process from changing a
-        // sysctl (I19), so failing it is failing closed.
-        emergency = Some(failure("remount /proc/sys", e));
-    }
-    // Without this Ctrl-Alt-Del reboots at once, with no sync. Losing it
-    // costs only that, so it is recorded and boot goes on.
-    if let Err(e) = reboot(RebootCommand::CadOff) {
-        console.write(&Record {
-            step: Some("ctrl-alt-del off"),
-            error: Some(e.raw_os_error()),
-            ..Record::new(MachineState::Booting)
-        });
-    }
-    // TODO(#48): the rest of step 7 (host name, loopback, rlimits), step 8
-    // (watchdog, /dev/kmsg reader, power button: #86) and steps 9 and 10.
-    // TODO(#68): step 11, the privilege drop. Until then PID 1 stays root.
+    let mut ops = Linux {
+        console: Console::absent(),
+    };
+    let emergency = boot_plan::run(&mut ops);
 
     let signals = match mask {
-        Ok(set) => sys::signalfd(&set).map_err(|e| failure("signalfd", errno_of(&e))),
-        Err(e) => Err(failure("block signals", errno_of(&e))),
+        Ok(set) => sys::signalfd(&set).map_err(|e| failure("signalfd", &e)),
+        Err(e) => Err(failure("block signals", &e)),
     };
     let (signals, outcome) = match (signals, emergency) {
         (Err(f), _) => (None, BootOutcome::PowerOff(f)),
@@ -79,25 +42,51 @@ pub(crate) fn run() -> Booted {
         (Ok(fd), None) => (Some(fd), BootOutcome::Up),
     };
     Booted {
-        console,
+        console: ops.console,
         signals,
         outcome,
     }
 }
 
-fn mount_one(m: &Mount) -> Result<(), Errno> {
-    let data = CString::new(m.data).map_err(|_| Errno::INVAL)?;
-    let data = (!m.data.is_empty()).then_some(data.as_c_str());
-    mount(m.fstype, m.target, m.fstype, mount_flags(m.flags), data)
+struct Linux {
+    console: Console,
 }
 
-fn lock_proc_sys() -> Result<(), Errno> {
-    mount_bind(mounts::PROC_SYS, mounts::PROC_SYS)?;
-    mount_remount(
-        mounts::PROC_SYS,
-        MountFlags::BIND | MountFlags::RDONLY | mount_flags(mounts::PROC_SYS_FLAGS),
-        "",
-    )
+impl BootOps for Linux {
+    fn mount(&mut self, m: &Mount) -> Result<(), i32> {
+        let data = CString::new(m.data).map_err(|_| Errno::INVAL.raw_os_error())?;
+        let data = (!m.data.is_empty()).then_some(data.as_c_str());
+        mount(m.fstype, m.target, m.fstype, mount_flags(m.flags), data)
+            .map_err(|e| e.raw_os_error())
+    }
+
+    fn open_console(&mut self) {
+        self.console = Console::open(console::fill_stdio());
+    }
+
+    fn read_boot_id(&mut self) {
+        self.console.set_boot_id(read_boot_id());
+    }
+
+    fn lock_proc_sys(&mut self) -> Result<(), i32> {
+        mount_bind(mounts::PROC_SYS, mounts::PROC_SYS)
+            .and_then(|()| {
+                mount_remount(
+                    mounts::PROC_SYS,
+                    MountFlags::BIND | MountFlags::RDONLY | mount_flags(mounts::PROC_SYS_FLAGS),
+                    "",
+                )
+            })
+            .map_err(|e| e.raw_os_error())
+    }
+
+    fn ctrl_alt_del_off(&mut self) -> Result<(), i32> {
+        reboot(RebootCommand::CadOff).map_err(|e| e.raw_os_error())
+    }
+
+    fn record(&mut self, record: &Record) {
+        self.console.write(record);
+    }
 }
 
 fn mount_flags(f: Flags) -> MountFlags {
@@ -121,13 +110,9 @@ fn read_boot_id() -> Option<String> {
     record::parse_boot_id(buf.get(..n)?).map(str::to_owned)
 }
 
-fn failure(step: &'static str, e: Errno) -> Failure {
+fn failure(step: &'static str, e: &std::io::Error) -> Failure {
     Failure {
         step,
-        errno: e.raw_os_error(),
+        errno: e.raw_os_error().unwrap_or(0),
     }
-}
-
-fn errno_of(e: &std::io::Error) -> Errno {
-    Errno::from_raw_os_error(e.raw_os_error().unwrap_or(0))
 }

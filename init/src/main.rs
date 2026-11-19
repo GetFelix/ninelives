@@ -10,6 +10,7 @@
 #![cfg_attr(all(target_os = "linux", not(test)), no_main)]
 #![cfg_attr(any(test, not(target_os = "linux")), allow(dead_code))]
 
+mod boot_plan;
 mod event_loop;
 mod machine;
 mod mounts;

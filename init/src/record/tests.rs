@@ -63,18 +63,30 @@ fn unknown_boot_and_wall_time_are_null() {
 }
 
 #[test]
-fn every_record_is_one_ascii_line() {
-    let mut out = Vec::new();
-    encode_panic(
-        &mut out,
+fn a_panic_line_is_one_ascii_line_on_a_line_of_its_own() {
+    let line = panic_line(
         Duration::from_secs(1),
         "bad\n\"thing\"\\\u{7f}\u{1b}[2J é".as_bytes(),
     );
-    let s = String::from_utf8(out).unwrap();
+    let s = std::str::from_utf8(line.as_bytes()).unwrap();
     assert!(s.is_ascii());
-    assert_eq!(s.matches('\n').count(), 1);
+    assert!(s.starts_with("\nninelives-init {\"v\":1,\"mono_ms\":1000,"));
+    assert_eq!(s.matches('\n').count(), 2);
     assert!(s.ends_with("}\n"));
     assert!(s.contains(r#""panic":"bad\u000a\"thing\"\\\u007f\u001b[2J \u00c3\u00a9""#));
+}
+
+#[test]
+fn a_long_panic_line_is_cut_and_stays_whole() {
+    let message = vec![0x01u8; 10_000];
+    let line = panic_line(Duration::from_secs(1), &message);
+    let s = std::str::from_utf8(line.as_bytes()).unwrap();
+    assert!(s.len() <= PANIC_LINE_MAX);
+    assert!(s.len() > PANIC_LINE_MAX - 6, "cut too early: {}", s.len());
+    assert!(s.ends_with("\"}\n"));
+    // Never half an escape.
+    let body = &s[s.find("\"panic\":\"").unwrap() + 9..s.len() - 3];
+    assert_eq!(body.len() % 6, 0);
 }
 
 #[test]
@@ -163,4 +175,57 @@ fn boot_id_must_be_a_lowercase_uuid() {
     ] {
         assert_eq!(parse_boot_id(bad.as_bytes()), None, "{bad:?}");
     }
+}
+
+fn emit(sink: &mut Sink, accept: Option<usize>, out: &mut Vec<u8>) {
+    sink.emit(
+        Duration::ZERO,
+        None,
+        &Record::new(MachineState::Up),
+        |bytes| {
+            let n = accept.map(|a| a.min(bytes.len()));
+            if let Some(n) = n {
+                out.extend_from_slice(&bytes[..n]);
+            }
+            n
+        },
+    );
+}
+
+#[test]
+fn drops_are_counted_and_reported_by_the_next_record() {
+    let mut sink = Sink::new();
+    let mut out = Vec::new();
+    emit(&mut sink, None, &mut out);
+    emit(&mut sink, Some(0), &mut out);
+    assert!(out.is_empty());
+    emit(&mut sink, Some(usize::MAX), &mut out);
+    let s = String::from_utf8(out).unwrap();
+    assert!(s.starts_with("ninelives-init {"));
+    assert!(s.ends_with(",\"dropped\":2}\n"), "{s}");
+    // The count resets once it has been reported.
+    let mut out = Vec::new();
+    emit(&mut sink, Some(usize::MAX), &mut out);
+    assert!(!String::from_utf8(out).unwrap().contains("dropped"));
+}
+
+#[test]
+fn a_record_after_a_short_write_starts_on_its_own_line() {
+    let mut sink = Sink::new();
+    let mut out = Vec::new();
+    emit(&mut sink, Some(10), &mut out);
+    // A failed write in between keeps the line torn.
+    emit(&mut sink, None, &mut out);
+    emit(&mut sink, Some(usize::MAX), &mut out);
+    let s = String::from_utf8(out).unwrap();
+    let lines: Vec<&str> = s.lines().collect();
+    assert_eq!(lines.len(), 2, "{s}");
+    assert_eq!(lines[0], "ninelives-");
+    assert!(lines[1].starts_with("ninelives-init {"));
+    assert!(lines[1].contains(r#""machine":"up""#));
+    assert!(lines[1].ends_with(r#""dropped":2}"#));
+    // Whole again, so no leading newline next time.
+    let mut out = Vec::new();
+    emit(&mut sink, Some(usize::MAX), &mut out);
+    assert!(out.starts_with(b"ninelives-init {"));
 }

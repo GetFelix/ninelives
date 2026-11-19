@@ -3,14 +3,14 @@
 
 use std::fmt::Write as _;
 use std::io::{stderr, stdin, stdout};
-use std::os::fd::{AsFd, AsRawFd, IntoRawFd, OwnedFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, IntoRawFd, OwnedFd};
 use std::sync::OnceLock;
 
 use rustix::fs::{Mode, OFlags, open};
-use rustix::io::{fcntl_dupfd_cloexec, fcntl_getfd, write};
+use rustix::io::{FdFlags, fcntl_dupfd_cloexec, fcntl_getfd, fcntl_setfd, write};
 
 use crate::clock;
-use crate::record::{self, FixedBuf, Header, Record};
+use crate::record::{self, FixedBuf, Record, Sink};
 
 /// A second handle on the console for the panic hook, which cannot borrow
 /// the loop's.
@@ -18,9 +18,7 @@ static PANIC_CONSOLE: OnceLock<OwnedFd> = OnceLock::new();
 
 pub(crate) struct Console {
     fd: Option<OwnedFd>,
-    boot: Option<String>,
-    buf: Vec<u8>,
-    dropped: u64,
+    sink: Sink,
 }
 
 impl Console {
@@ -29,18 +27,20 @@ impl Console {
     pub(crate) fn absent() -> Console {
         Console {
             fd: None,
-            boot: None,
-            buf: Vec::with_capacity(512),
-            dropped: 0,
+            sink: Sink::new(),
         }
     }
 
-    /// Opens the console once `/dev` is mounted. Fd 1 is the console by then
-    /// ([`fill_stdio`]), or whatever started the init in a test, so the sink
-    /// is a non-blocking duplicate of it. `/dev/kmsg` is the fallback when
-    /// there is no console.
+    /// Opens the console after the `/dev` attempt. Fd 1 is the console by
+    /// then, as the kernel opened it or [`fill_stdio`] did, or whatever
+    /// started the init in a test, so the sink is a duplicate of it.
+    /// `/dev/kmsg` is the fallback when there is no console.
+    ///
+    /// The duplicate is set non-blocking, which also sets fds 0 to 2: the
+    /// kernel opens the console once for all three. That is intended. Only
+    /// std writes to them, on its abort path, and losing that message to a
+    /// full console is better than PID 1 blocking on it (I14).
     pub(crate) fn open(stdout_is_console: bool) -> Console {
-        let mut console = Console::absent();
         let fd = stdout_is_console
             .then(|| fcntl_dupfd_cloexec(stdout().as_fd(), 3).ok())
             .flatten()
@@ -58,31 +58,23 @@ impl Console {
         {
             let _ = PANIC_CONSOLE.set(dup);
         }
-        console.fd = fd;
-        console
+        Console {
+            fd,
+            sink: Sink::new(),
+        }
     }
 
     pub(crate) fn set_boot_id(&mut self, boot: Option<String>) {
-        self.boot = boot;
+        self.sink.set_boot_id(boot);
     }
 
-    /// Writes one record without blocking. A record that does not fit is
-    /// dropped and counted, and the next one written carries the count.
+    /// Writes one record without blocking; see [`Sink::emit`].
     pub(crate) fn write(&mut self, record: &Record) {
-        self.buf.clear();
-        let header = Header {
-            boot: self.boot.as_deref(),
-            mono: clock::monotonic(),
-            wall: clock::realtime(),
-            dropped: self.dropped,
-        };
-        record::encode(&mut self.buf, &header, record);
-        let written = self.fd.as_ref().and_then(|fd| write(fd, &self.buf).ok());
-        if written == Some(self.buf.len()) {
-            self.dropped = 0;
-        } else {
-            self.dropped = self.dropped.saturating_add(1);
-        }
+        let fd = self.fd.as_ref();
+        self.sink
+            .emit(clock::monotonic(), clock::realtime(), record, |bytes| {
+                fd.and_then(|fd| write(fd, bytes).ok())
+            });
     }
 }
 
@@ -91,19 +83,25 @@ fn set_nonblocking(fd: &OwnedFd) -> rustix::io::Result<()> {
     rustix::fs::fcntl_setfl(fd, flags | OFlags::NONBLOCK)
 }
 
-/// Opens the console on any of fds 0 to 2 that is closed, as the kernel does
-/// for PID 1 when the root has `/dev/console`. Ours has no device nodes, so
-/// the init does it once `/dev` is mounted. Until then the three are free,
-/// and the next descriptors the init opened would land on them, where any
-/// write to stdout or stderr (std's own, on an allocation failure) would go.
+/// Makes sure fds 0 to 2 are open, and marks all three close-on-exec.
 ///
-/// Returns false when fd 1 had to be `/dev/null` because there is no console.
+/// The kernel opens the console on them before it mounts the root, from its
+/// built-in rootfs, so they are closed only on a machine with no console
+/// device. Then the next descriptors the init opened (the signalfd, the
+/// worker's eventfd) would land on them, where any write to stdout or
+/// stderr, std's own on an allocation failure, would go. So a closed one gets
+/// the console, else `/dev/null`, else an `O_PATH` handle on `/`, which no
+/// write can go through.
+///
+/// Close-on-exec on all three, the kernel's included, because init.md makes
+/// every init fd close-on-exec: nothing PID 1 holds reaches a launcher or a
+/// service by accident (#48 gives services their own 0 to 2).
+///
+/// Returns false when fd 1 is not the console.
 pub(crate) fn fill_stdio() -> bool {
-    let closed = [
-        fcntl_getfd(stdin().as_fd()).is_err(),
-        fcntl_getfd(stdout().as_fd()).is_err(),
-        fcntl_getfd(stderr().as_fd()).is_err(),
-    ];
+    let (stdin, stdout, stderr) = (stdin(), stdout(), stderr());
+    let fds: [BorrowedFd<'_>; 3] = [stdin.as_fd(), stdout.as_fd(), stderr.as_fd()];
+    let closed = fds.map(|fd| fcntl_getfd(fd).is_err());
     let mut stdout_is_console = true;
     for (expected, closed) in closed.into_iter().enumerate() {
         if !closed {
@@ -115,8 +113,9 @@ pub(crate) fn fill_stdio() -> bool {
             Mode::empty(),
         );
         let is_console = console.is_ok();
-        let opened =
-            console.or_else(|_| open("/dev/null", OFlags::RDWR | OFlags::CLOEXEC, Mode::empty()));
+        let opened = console
+            .or_else(|_| open("/dev/null", OFlags::RDWR | OFlags::CLOEXEC, Mode::empty()))
+            .or_else(|_| open("/", OFlags::PATH | OFlags::CLOEXEC, Mode::empty()));
         // open returns the lowest free descriptor, which is `expected` when
         // everything below it is open. Kept open for the life of PID 1.
         match opened {
@@ -129,6 +128,9 @@ pub(crate) fn fill_stdio() -> bool {
             _ if expected == 1 => stdout_is_console = false,
             _ => {}
         }
+    }
+    for fd in fds {
+        let _ = fcntl_setfd(fd, FdFlags::CLOEXEC);
     }
     stdout_is_console
 }
@@ -143,8 +145,7 @@ pub(crate) fn install_panic_hook() {
         // Fixed buffers: the hook must not depend on the heap.
         let mut message = FixedBuf::<512>::new();
         let _ = write!(message, "{info}");
-        let mut line = FixedBuf::<3200>::new();
-        record::encode_panic(&mut line, clock::monotonic(), message.as_bytes());
+        let line = record::panic_line(clock::monotonic(), message.as_bytes());
         if let Some(fd) = PANIC_CONSOLE.get() {
             let _ = write(fd, line.as_bytes());
         }

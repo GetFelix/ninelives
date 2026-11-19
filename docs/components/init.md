@@ -905,9 +905,13 @@ up. Publishing records to Felix is M4.
   build one without the heap. Each dependency gets its sentence in the pull
   request that adds it.
 - The binary is `no_main`. Rust's usual entry opens `/dev/null` on any of
-  fds 0 to 2 that is closed and aborts if it cannot. Our root has no device
-  nodes, so all three are closed when PID 1 starts and the abort would panic
-  the kernel before the init ran.
+  fds 0 to 2 that is closed and aborts if it cannot. The kernel opens the
+  console on them from its built-in rootfs, so they are closed only on a
+  machine with no console device; there our root has no `/dev/null` until
+  PID 1 mounts `/dev`, and the abort would panic the kernel before the init
+  ran. After the `/dev` attempt the init fills any closed one (the console,
+  else `/dev/null`, else an `O_PATH` handle) so later descriptors never land
+  on 0 to 2, and marks all three close-on-exec.
 
 ## Invariants
 

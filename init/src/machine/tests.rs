@@ -229,12 +229,13 @@ impl Rng {
     }
 
     fn event(&mut self) -> Event {
-        match self.next() % 7 {
+        match self.next() % 8 {
             0 => Event::Signal((self.next() % 65) as u32),
             1 => Event::Signal([SIGTERM, SIGINT, SIGUSR2][(self.next() % 3) as usize]),
             2 => Event::Signal(SIGCHLD),
             3 => Event::Reaped(self.next() % 4),
             4 => Event::SyncDone,
+            7 => Event::SyncFailed(11),
             5 => Event::RebootFailed((self.next() % 40) as i32),
             _ => Event::Tick,
         }
@@ -245,8 +246,9 @@ impl Rng {
 /// - I1: once stopping, the machine always has a deadline to wake for, so a
 ///   failed step can never leave it wedged;
 /// - I2: every SIGCHLD yields a reap;
-/// - I10: reboot(2) is asked for only after the sync started and then either
-///   finished or ran out its bound, which is recorded first.
+/// - I10: reboot(2) is asked for only after the sync started and then
+///   finished, could not run, or ran out its bound; the last two are
+///   recorded first.
 #[test]
 fn i1_i2_i10_hold_over_random_event_sequences() {
     for seed in 1..=500u64 {
@@ -271,7 +273,8 @@ fn i1_i2_i10_hold_over_random_event_sequences() {
                 assert!(sync_started_at.is_none(), "seed {seed}: one sync per stop");
                 sync_started_at = Some(now);
             }
-            if event == Event::SyncDone && sync_started_at.is_some() {
+            if matches!(event, Event::SyncDone | Event::SyncFailed(_)) && sync_started_at.is_some()
+            {
                 sync_done = true;
             }
             if let Some(i) = actions.iter().position(|a| matches!(a, Action::Reboot(_))) {
@@ -299,4 +302,15 @@ fn i1_i2_i10_hold_over_random_event_sequences() {
             }
         }
     }
+}
+
+#[test]
+fn a_sync_with_no_thread_is_recorded_and_the_machine_goes_down() {
+    let mut m = up();
+    m.handle(T0, Event::Signal(SIGUSR2));
+    let actions = m.handle(T0, Event::SyncFailed(11));
+    let recs = records(&actions);
+    assert_eq!(recs[0].result, Some("not run"));
+    assert_eq!(recs[0].error, Some(11));
+    assert_eq!(reboots(&actions), vec![StopKind::PowerOff]);
 }

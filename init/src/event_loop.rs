@@ -17,7 +17,9 @@ pub(crate) trait Os {
     /// Reaps every exited child and returns how many.
     fn reap(&mut self) -> u64;
     fn record(&mut self, record: &Record);
-    fn start_sync(&mut self);
+    /// Hands the sync to a worker thread, which reports `SyncDone`. An
+    /// error means no thread could run it.
+    fn start_sync(&mut self) -> Result<(), i32>;
     /// Returns only if `reboot(2)` failed, with its errno.
     fn reboot(&mut self, kind: StopKind) -> i32;
 }
@@ -58,10 +60,7 @@ fn execute_all(os: &mut impl Os, machine: &mut Machine, now: Duration, actions: 
                 os.record(&record);
                 None
             }
-            Action::StartSync => {
-                os.start_sync();
-                None
-            }
+            Action::StartSync => os.start_sync().err().map(Event::SyncFailed),
             Action::Reboot(kind) => Some(Event::RebootFailed(os.reboot(kind))),
         };
         if let Some(event) = follow_up {

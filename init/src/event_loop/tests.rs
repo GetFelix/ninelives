@@ -25,6 +25,7 @@ struct FakeOs {
     calls: Vec<Call>,
     children: u64,
     reboot_errno: i32,
+    sync_errno: Option<i32>,
 }
 
 impl FakeOs {
@@ -38,6 +39,7 @@ impl FakeOs {
             calls: Vec::new(),
             children: 0,
             reboot_errno: 1,
+            sync_errno: None,
         }
     }
 }
@@ -63,8 +65,9 @@ impl Os for FakeOs {
         self.calls.push(Call::Record(*record));
     }
 
-    fn start_sync(&mut self) {
+    fn start_sync(&mut self) -> Result<(), i32> {
         self.calls.push(Call::StartSync);
+        self.sync_errno.map_or(Ok(()), Err)
     }
 
     fn reboot(&mut self, kind: StopKind) -> i32 {
@@ -164,4 +167,22 @@ fn deadlines_are_checked_on_every_wakeup() {
     let mut machine = boot(&mut os);
     run_script(&mut os, &mut machine);
     assert!(os.calls.contains(&Call::Reboot(StopKind::PowerOff)));
+}
+
+/// With no thread for the sync, the loop does not run it itself, unbounded;
+/// it records why and goes down at once.
+#[test]
+fn no_sync_thread_means_no_unbounded_sync() {
+    let mut os = FakeOs::new(vec![(0, vec![Event::Signal(SIGUSR2)])]);
+    os.sync_errno = Some(11);
+    let mut machine = boot(&mut os);
+    run_script(&mut os, &mut machine);
+    let sync = os.calls.iter().position(|c| *c == Call::StartSync).unwrap();
+    assert!(matches!(
+        &os.calls[sync + 1],
+        Call::Record(r) if r.step == Some("sync") && r.result == Some("not run") && r.error == Some(11)
+    ));
+    assert!(os.calls[sync..].contains(&Call::Reboot(StopKind::PowerOff)));
+    // No wait came between the request and the reboot.
+    assert!(!os.calls[sync..].iter().any(|c| matches!(c, Call::Wait(_))));
 }

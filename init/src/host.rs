@@ -26,8 +26,6 @@ pub(crate) struct LinuxOs {
     console: Console,
     signals: Option<OwnedFd>,
     worker: Option<Worker>,
-    /// Set when the sync ran on the loop's own thread for want of a worker.
-    synced_inline: bool,
 }
 
 /// The thread that runs the calls that can block in the kernel (init.md,
@@ -58,7 +56,6 @@ impl LinuxOs {
             console,
             signals,
             worker,
-            synced_inline: false,
         }
     }
 
@@ -102,11 +99,6 @@ impl Os for LinuxOs {
     }
 
     fn wait(&mut self, deadline: Option<Duration>, events: &mut Vec<Event>) {
-        if self.synced_inline {
-            self.synced_inline = false;
-            events.push(Event::SyncDone);
-            return;
-        }
         let timeout = deadline.map(|d| clock::to_timespec(d.saturating_sub(self.now())));
         let done = self.worker.as_ref().map(|w| Arc::clone(&w.done));
         let mut fds = Vec::with_capacity(2);
@@ -156,15 +148,21 @@ impl Os for LinuxOs {
         self.console.write(record);
     }
 
-    fn start_sync(&mut self) {
+    fn start_sync(&mut self) -> Result<(), i32> {
         if let Some(w) = &self.worker
             && w.jobs.send(()).is_ok()
         {
-            return;
+            return Ok(());
         }
-        // No worker: sync here, unbounded. Skipping it would risk the data.
-        rustix::fs::sync();
-        self.synced_inline = true;
+        // The worker never started or has gone: try once more now, since the
+        // sync must not run on the loop's thread, where nothing bounds it.
+        let worker = Worker::start().map_err(|e| e.raw_os_error())?;
+        worker
+            .jobs
+            .send(())
+            .map_err(|_| Errno::AGAIN.raw_os_error())?;
+        self.worker = Some(worker);
+        Ok(())
     }
 
     fn reboot(&mut self, kind: StopKind) -> i32 {

@@ -24,12 +24,13 @@ const _: () = {
 /// The program's entry point, called by the C runtime.
 ///
 /// Rust's usual `main` wrapper opens `/dev/null` on any of fds 0 to 2 that
-/// is closed, and aborts if it cannot. On our image all three are closed when
-/// PID 1 starts: the root has no device nodes, so the kernel could not open
-/// `/dev/console`, and `/dev/null` does not exist until PID 1 mounts `/dev`.
-/// The wrapper would abort, and the kernel panic, before the init ran a line.
-/// So the binary is `no_main` and starts here.
-#[cfg(not(test))]
+/// is closed, and aborts if it cannot. The kernel opens the console on them
+/// from its built-in rootfs before mounting ours, so they are closed only on
+/// a machine with no console device. On that machine our root, which has no
+/// device nodes, has no `/dev/null` either until PID 1 mounts `/dev`, so the
+/// wrapper would abort and the kernel panic before the init ran a line. The
+/// binary is `no_main` and starts here, so that machine still boots, with
+/// records going to `/dev/kmsg`. The qemu boot (#2) shows the usual case.
 // SAFETY: nothing else in the program defines the symbol `main`: the crate is
 // `no_main`, and no dependency defines one.
 #[unsafe(no_mangle)]
@@ -45,13 +46,15 @@ pub(crate) struct SignalSet(libc::sigset_t);
 /// glibc uses internally (thread cancellation and `setxid` across threads),
 /// so blocking this set does not break its thread machinery.
 pub(crate) fn block_all_signals() -> io::Result<SignalSet> {
-    let mut set = MaybeUninit::<libc::sigset_t>::uninit();
-    // SAFETY: `set` is valid, writable storage for one sigset_t, which
-    // sigfillset initialises in full.
+    // Zeroed first: the all-zero bytes are a valid, empty sigset_t on every
+    // libc, whatever part of it sigfillset writes.
+    let mut set = MaybeUninit::<libc::sigset_t>::zeroed();
+    // SAFETY: `set` points to writable storage for one sigset_t.
     if unsafe { libc::sigfillset(set.as_mut_ptr()) } != 0 {
         return Err(io::Error::last_os_error());
     }
-    // SAFETY: sigfillset returned 0, so it initialised `set`.
+    // SAFETY: sigset_t is plain integers, so the zeroed storage was already a
+    // valid value, and sigfillset only wrote more of them.
     let set = unsafe { set.assume_init() };
     // SAFETY: `set` is an initialised sigset_t that outlives the call, and a
     // null pointer for the old mask is allowed.

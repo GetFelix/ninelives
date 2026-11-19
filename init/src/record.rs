@@ -7,6 +7,8 @@
 
 use std::time::Duration;
 
+use crate::privilege::State;
+
 /// Starts every line the init writes to the console.
 pub(crate) const PREFIX: &[u8] = b"ninelives-init ";
 
@@ -42,6 +44,8 @@ pub(crate) struct Record {
     pub(crate) result: Option<&'static str>,
     pub(crate) error: Option<i32>,
     pub(crate) orphans_reaped: Option<u64>,
+    /// What the kernel reported after the privilege drop.
+    pub(crate) privilege: Option<State>,
 }
 
 impl Record {
@@ -54,6 +58,7 @@ impl Record {
             result: None,
             error: None,
             orphans_reaped: None,
+            privilege: None,
         }
     }
 }
@@ -222,11 +227,66 @@ pub(crate) fn encode(out: &mut impl Out, header: &Header<'_>, record: &Record) {
         out.put(b",\"orphans_reaped\":");
         put_u64(out, n);
     }
+    if let Some(p) = &record.privilege {
+        put_privilege(out, p);
+    }
     if header.dropped > 0 {
         out.put(b",\"dropped\":");
         put_u64(out, header.dropped);
     }
     out.put(b"}\n");
+}
+
+/// The drop's readback. The sets are hex like `/proc/<pid>/status` shows
+/// them, so a test can compare the two.
+fn put_privilege(out: &mut impl Out, p: &State) {
+    out.put(b",\"uid\":");
+    put_ids(out, p.uid);
+    out.put(b",\"gid\":");
+    put_ids(out, p.gid);
+    out.put(b",\"groups\":");
+    put_u64(out, u64::try_from(p.groups).unwrap_or(u64::MAX));
+    for (key, set) in [
+        (&b",\"cap_prm\":"[..], p.permitted),
+        (b",\"cap_eff\":", p.effective),
+        (b",\"cap_inh\":", p.inheritable),
+        (b",\"cap_amb\":", p.ambient),
+        (b",\"cap_bnd\":", p.bounding),
+    ] {
+        out.put(key);
+        put_hex64(out, set);
+    }
+    out.put(b",\"securebits\":");
+    put_u64(out, u64::from(p.securebits));
+    out.put(b",\"no_new_privs\":");
+    put_u64(out, u64::from(p.no_new_privs));
+    out.put(b",\"dumpable\":");
+    put_u64(out, u64::from(p.dumpable));
+    out.put(b",\"fsuid\":");
+    put_u64(out, u64::from(p.fsuid));
+    out.put(b",\"fsgid\":");
+    put_u64(out, u64::from(p.fsgid));
+}
+
+fn put_ids(out: &mut impl Out, ids: [u32; 3]) {
+    out.put(b"[");
+    for (i, id) in ids.into_iter().enumerate() {
+        if i > 0 {
+            out.put(b",");
+        }
+        put_u64(out, u64::from(id));
+    }
+    out.put(b"]");
+}
+
+/// Sixteen lowercase hex digits in a string.
+fn put_hex64(out: &mut impl Out, n: u64) {
+    out.put(b"\"");
+    for shift in (0..16u32).rev() {
+        // The nibble is masked to 4 bits, so the cast cannot truncate.
+        out.put(&[hex(((n >> shift.saturating_mul(4)) & 0xf) as u8)]);
+    }
+    out.put(b"\"");
 }
 
 /// The longest panic line: under `/dev/kmsg`'s limit for one write (1 KiB

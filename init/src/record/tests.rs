@@ -48,6 +48,42 @@ fn optional_fields_appear_in_a_fixed_order() {
 }
 
 #[test]
+fn the_drop_record_carries_what_the_kernel_reported() {
+    use crate::privilege::{KEPT, SECUREBITS, State};
+    let state = State {
+        uid: [900; 3],
+        gid: [900; 3],
+        groups: 0,
+        permitted: KEPT,
+        effective: 0,
+        inheritable: 0,
+        ambient: 0,
+        bounding: KEPT,
+        securebits: SECUREBITS,
+        no_new_privs: true,
+        dumpable: false,
+        fsuid: 900,
+        fsgid: 900,
+    };
+    let record = Record {
+        step: Some("drop root"),
+        result: Some("ok"),
+        privilege: Some(state),
+        ..Record::new(MachineState::Booting)
+    };
+    // scripts/boot_image.py reads these fields by name.
+    assert_eq!(
+        line(&header(0), &record),
+        "ninelives-init {\"v\":1,\"boot\":\"0f6c2a3e-6d3c-4c58-9c55-6a4b1f3e2d10\",\
+         \"mono_ms\":1234,\"wall_ms\":1763500000000,\"machine\":\"booting\",\
+         \"step\":\"drop root\",\"result\":\"ok\",\"uid\":[900,900,900],\"gid\":[900,900,900],\
+         \"groups\":0,\"cap_prm\":\"0000000000400020\",\"cap_eff\":\"0000000000000000\",\
+         \"cap_inh\":\"0000000000000000\",\"cap_amb\":\"0000000000000000\",\
+         \"cap_bnd\":\"0000000000400020\",\"securebits\":207,\"no_new_privs\":1,\"dumpable\":0,\"fsuid\":900,\"fsgid\":900}\n"
+    );
+}
+
+#[test]
 fn unknown_boot_and_wall_time_are_null() {
     let h = Header {
         boot: None,

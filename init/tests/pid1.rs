@@ -495,3 +495,68 @@ fn a_failed_mount_is_an_emergency_that_still_locks_and_stops() {
     init.expect(|l| l.contains(r#""action":"poweroff","step":"reboot""#));
     assert!(powered_off(init.wait()));
 }
+
+/// What `/proc/<pid>/status` says about a process, read as root.
+fn status(pid: u32) -> HashMap<String, String> {
+    let out = sudo(&["cat", &format!("/proc/{pid}/status")]);
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| l.split_once(':'))
+        .map(|(k, v)| (k.to_owned(), v.trim().to_owned()))
+        .collect()
+}
+
+/// S24, I17: PID 1 is not root after boot and keeps only CAP_KILL and
+/// CAP_SYS_BOOT, permitted. The kernel's own view, not the init's.
+#[test]
+fn pid1_drops_root_and_keeps_two_capabilities() {
+    if !root_available() {
+        return;
+    }
+    let mut init = Pid1::start();
+    let status = status(init.pid);
+    assert_eq!(status["Uid"], "900\t900\t900\t900", "{status:?}");
+    assert_eq!(status["Gid"], "900\t900\t900\t900", "{status:?}");
+    assert_eq!(status["Groups"], "", "{status:?}");
+    assert_eq!(status["CapPrm"], "0000000000400020", "{status:?}");
+    assert_eq!(status["CapEff"], "0000000000000000", "{status:?}");
+    assert_eq!(status["CapInh"], "0000000000000000", "{status:?}");
+    assert_eq!(status["CapAmb"], "0000000000000000", "{status:?}");
+    assert_eq!(status["CapBnd"], "0000000000400020", "{status:?}");
+    assert_eq!(status["NoNewPrivs"], "1", "{status:?}");
+
+    let drop = init
+        .seen
+        .iter()
+        .find(|l| l.contains(r#""step":"drop root""#))
+        .unwrap();
+    assert!(drop.contains(r#""uid":[900,900,900]"#), "{drop}");
+    assert!(drop.contains(r#""securebits":207"#), "{drop}");
+    assert!(drop.contains(r#""dumpable":0"#), "{drop}");
+
+    // The drop leaves a PID 1 that can still reboot: reboot(2) needs the
+    // capability it raises for the call.
+    init.signal("USR2");
+    init.expect(|l| l.contains(r#""action":"poweroff","step":"reboot""#));
+    assert!(powered_off(init.wait()));
+}
+
+/// The drop happens in an emergency too: no root PID 1, whatever failed.
+#[test]
+fn an_emergency_machine_has_dropped_root_as_well() {
+    if !root_available() {
+        return;
+    }
+    let mut init = Pid1::spawn(&["/dev", "/proc"]);
+    init.expect(|l| l.contains(r#""machine":"emergency""#));
+    assert!(
+        init.seen
+            .iter()
+            .any(|l| l.contains(r#""step":"drop root""#)),
+        "{:?}",
+        init.seen
+    );
+    assert_eq!(status(init.pid)["Uid"], "900\t900\t900\t900");
+    init.signal("USR2");
+    assert!(powered_off(init.wait()));
+}

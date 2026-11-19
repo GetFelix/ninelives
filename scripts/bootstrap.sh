@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Install the bootstrap packages into the pinned base container, each checked
+# against images/debian.lock (docs/components/image.md, "Bootstrap").
+#
+#   bootstrap.sh [LOCK]
+#
+# Runs as root before python3 exists, so it uses only what the digest-pinned
+# Debian image has: bash, awk, sha256sum, dpkg and apt's download helper. No
+# apt index is read and nothing is resolved: the lock names every .deb, the
+# bytes are checked against its SHA-256, and dpkg unpacks them. A package the
+# container already has is left as it is, since the digest vouches for it.
+#
+# The seams below exist for scripts/tests/test_bootstrap.py.
+#   NL_BOOTSTRAP_GET         URL DEST, fetches one file (default: apt-helper)
+#   NL_BOOTSTRAP_DPKG        installs the .debs given as arguments (default: dpkg -i)
+#   NL_BOOTSTRAP_DPKG_QUERY  dpkg-query
+#   NL_BOOTSTRAP_DIR         where the .debs are kept
+set -euo pipefail
+
+repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+lock=${1:-$repo/images/debian.lock}
+dir=${NL_BOOTSTRAP_DIR:-/var/cache/ninelives-bootstrap}
+query=${NL_BOOTSTRAP_DPKG_QUERY:-dpkg-query}
+base_url=${NL_BOOTSTRAP_URL:-http://snapshot.debian.org/archive}
+
+get() { # get URL DEST
+  if [[ -n ${NL_BOOTSTRAP_GET:-} ]]; then
+    "$NL_BOOTSTRAP_GET" "$1" "$2"
+  else
+    # The URL is plain http: the SHA-256 from the lock is the check, and the
+    # image has no CA certificates yet. apt-helper downloads as root here.
+    /usr/lib/apt/apt-helper -o APT::Sandbox::User=root -o Acquire::Retries=5 download-file "$1" "$2"
+  fi
+}
+
+install_debs() {
+  if [[ -n ${NL_BOOTSTRAP_DPKG:-} ]]; then
+    "$NL_BOOTSTRAP_DPKG" "$@"
+  else
+    DEBIAN_FRONTEND=noninteractive dpkg -i "$@"
+  fi
+}
+
+installed_version() { # installed_version NAME: the version, or nothing
+  # shellcheck disable=SC2016  # dpkg-query format, not shell
+  "$query" -W -f '${db:Status-Abbrev} ${Version}\n' "$1" 2>/dev/null | sed -n 's/^ii  *//p'
+}
+
+snapshot=$(sed -n 's/^snapshot = "\(.*\)"$/\1/p' "$lock" | head -n1)
+[[ $snapshot =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || { echo "bootstrap: no snapshot in $lock" >&2; exit 1; }
+
+# One line per package: name version sha256 archive filename. The lock is
+# written by scripts/image_lock.py, one key per line.
+mapfile -t entries < <(awk '
+  /^\[\[/ { if (inset) emit(); inset = ($0 == "[[bootstrap.package]]"); next }
+  /^\[/ { if (inset) emit(); inset = 0; next }
+  inset && match($0, /^[a-z0-9_]+ = "/) {
+    key = substr($0, 1, index($0, " ") - 1)
+    val = substr($0, RLENGTH + 1); sub(/"$/, "", val)
+    f[key] = val
+  }
+  function emit() { if (f["name"] != "") print f["name"], f["version"], f["sha256"], f["archive"], f["filename"]; delete f }
+  END { if (inset) emit() }
+' "$lock")
+[[ ${#entries[@]} -gt 0 ]] || { echo "bootstrap: $lock has no [[bootstrap.package]]" >&2; exit 1; }
+
+mkdir -p "$dir"
+debs=() want=()
+for line in "${entries[@]}"; do
+  read -r name version sha archive filename <<<"$line"
+  [[ $sha =~ ^[0-9a-f]{64}$ && $filename =~ ^pool/[A-Za-z0-9+._~%/-]+\.deb$ && $archive =~ ^debian(-security)?$ ]] \
+    || { echo "bootstrap: bad lock entry for $name" >&2; exit 1; }
+  if [[ -n $(installed_version "$name") ]]; then
+    continue
+  fi
+  deb=$dir/$sha.deb
+  [[ -s $deb ]] || get "$base_url/$archive/$snapshot/$filename" "$deb"
+  got=$(sha256sum "$deb" | cut -d' ' -f1)
+  if [[ $got != "$sha" ]]; then
+    rm -f "$deb"
+    echo "bootstrap: $name $version is $got, the lock pins $sha" >&2
+    exit 1
+  fi
+  debs+=("$deb")
+  want+=("$name=$version")
+done
+
+if [[ ${#debs[@]} -gt 0 ]]; then
+  install_debs "${debs[@]}"
+fi
+for w in "${want[@]}"; do
+  [[ $(installed_version "${w%%=*}") == "${w#*=}" ]] || { echo "bootstrap: $w is not installed" >&2; exit 1; }
+done
+echo "bootstrap: ${#debs[@]} packages installed, each checked against the lock"

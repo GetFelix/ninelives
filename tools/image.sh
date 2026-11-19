@@ -7,7 +7,8 @@
 # DIR for --kernel holds the bzImage and .config of the kernel job's
 # kernel-qemu-x86_64 artifact; FILE is the init binary
 # (cargo build --release --locked in init/). Needs docker or podman, and
-# network for the fetch phase. The container is privileged because the build
+# network for the fetch phase. The container has no git: the commit and its
+# time are read here and passed in. The container is privileged because the build
 # mounts the root filesystem it makes to check it.
 set -euo pipefail
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)

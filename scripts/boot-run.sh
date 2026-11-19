@@ -43,29 +43,9 @@ print(d)' "$@"
 
 prepare() {
   if ! command -v python3 >/dev/null; then
-    # Before python3 there is no way to read tools.toml, so sed does it. This is
-    # the one step the lock does not cover (#92): apt checks the snapshot against
-    # the container's own keyring, and the fetch phase runs on what it installs.
-    local snap keyring
-    snap=$(sed -n 's/^snapshot = "\(.*\)"/\1/p' "$repo/images/tools.toml")
-    keyring=$(sed -n 's/^Signed-By: //p' /etc/apt/sources.list.d/debian.sources | head -n1)
-    test -s "$keyring"
-    rm -f /etc/apt/sources.list.d/debian.sources
-    cat > /etc/apt/sources.list.d/snapshot.sources <<SRC
-Types: deb
-URIs: http://snapshot.debian.org/archive/debian/$snap
-Suites: trixie trixie-updates
-Components: main
-Signed-By: $keyring
-
-Types: deb
-URIs: http://snapshot.debian.org/archive/debian-security/$snap
-Suites: trixie-security
-Components: main
-Signed-By: $keyring
-SRC
-    apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Retries=5 update
-    apt-get -o Acquire::Retries=5 install -y --no-install-recommends gpgv python3
+    # python3, gpgv, xz-utils and ca-certificates, each .deb checked against
+    # debian.lock before dpkg unpacks it.
+    "$repo/scripts/bootstrap.sh" "$repo/images/debian.lock"
   fi
   python3 -I "$repo/scripts/image_lock.py" check
   # The lock must be what resolution gives for the pins, so a hand edit cannot add a package.
@@ -104,8 +84,8 @@ SRC
   apt-get update
   local pkgs
   mapfile -t pkgs < <(python3 -I "$repo/scripts/image_lock.py" boot)
-  # --reinstall: the bootstrap put some of these on the machine from the
-  # unverified step, and the same version would otherwise stay as it is.
+  # --reinstall: the bootstrap may have put some of these on the machine, and
+  # the same version would otherwise stay as it is.
   apt-get install -y --no-install-recommends --allow-downgrades --reinstall "${pkgs[@]}"
   local installed
   installed=$(dpkg-query -W -f '${db:Status-Abbrev}${Package}=${Version}\n' | sed -n 's/^ii //p' | LC_ALL=C sort)

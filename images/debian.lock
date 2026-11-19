@@ -1,5 +1,6 @@
 # Every Debian package the image build uses, by name, version and SHA-256,
-# for the root, the build tools and the boot test's tools separately. Written by
+# for the root, the build tools, the boot test's tools and the bootstrap
+# step's packages separately. Written by
 # scripts/image_lock.py; CI regenerates it and fails on a difference, so
 # a hand edit cannot add a package resolution would not. Change it only in
 # a reviewed pull request that touches pin files and nothing else
@@ -2250,6 +2251,393 @@ architecture = "all"
 source = "seabios"
 
 [[boot.package]]
+name = "zlib1g"
+version = "1:1.3.dfsg+really1.3.1-1+deb13u1"
+sha256 = "8c27c342230503b73dfde629642c3b352e87b554e06d60cf58772f236a305ceb"
+archive = "debian-security"
+filename = "pool/updates/main/z/zlib/zlib1g_1.3.dfsg+really1.3.1-1+deb13u1_amd64.deb"
+architecture = "amd64"
+source = "zlib"
+
+[bootstrap]
+release = "trixie"
+
+[[bootstrap.suite]]
+archive = "debian"
+name = "trixie"
+inrelease_sha256 = "0584fba32e13e0ab8285fb16c27adea1ec03a73669c18702821094fd6ca86675"
+
+[[bootstrap.suite]]
+archive = "debian"
+name = "trixie-updates"
+inrelease_sha256 = "871ca324ca5e0d5e848fafbd9be0b6ff245563ef2362f685d15ccefc55a0a294"
+
+[[bootstrap.suite]]
+archive = "debian-security"
+name = "trixie-security"
+inrelease_sha256 = "619dd69e766c1f8ea8dd5bb1741154960804a8b9849b021e14c8fd1c6af269ab"
+
+[[bootstrap.package]]
+name = "ca-certificates"
+version = "20250419+deb13u1"
+sha256 = "c10585ac22c7f617a73d394eea29ba71d0356f350ae973b19043d1b017f80f54"
+archive = "debian-security"
+filename = "pool/updates/main/c/ca-certificates/ca-certificates_20250419+deb13u1_all.deb"
+architecture = "all"
+source = "ca-certificates"
+
+[[bootstrap.package]]
+name = "debconf"
+version = "1.5.91"
+sha256 = "1ddc7e6c5925f748eefb7ca811d98e049f18c158bb21fbc7e122262ce6011e49"
+archive = "debian"
+filename = "pool/main/d/debconf/debconf_1.5.91_all.deb"
+architecture = "all"
+source = "debconf"
+
+[[bootstrap.package]]
+name = "dpkg"
+version = "1.22.22"
+sha256 = "3e800c6d75e8e709007ed1c356e5fa8509a75c1694fb0a1183709abc9cfdc1f3"
+archive = "debian"
+filename = "pool/main/d/dpkg/dpkg_1.22.22_amd64.deb"
+architecture = "amd64"
+source = "dpkg"
+
+[[bootstrap.package]]
+name = "gcc-14-base"
+version = "14.2.0-19"
+sha256 = "5b6825de4263824b78c4c51f6476414f3b4e89c2ab63e81dc8b9b5501e867cf6"
+archive = "debian"
+filename = "pool/main/g/gcc-14/gcc-14-base_14.2.0-19_amd64.deb"
+architecture = "amd64"
+source = "gcc-14"
+
+[[bootstrap.package]]
+name = "gpgv"
+version = "2.4.7-21+deb13u1+b5"
+sha256 = "104e4c57b98f0b883aa94c68fbe7ec7b48bcdec7c0f9dedf2a51a5054aaeb5ae"
+archive = "debian"
+filename = "pool/main/g/gnupg2/gpgv_2.4.7-21+deb13u1+b5_amd64.deb"
+architecture = "amd64"
+source = "gnupg2"
+
+[[bootstrap.package]]
+name = "libacl1"
+version = "2.3.2-2+b1"
+sha256 = "08074f01e384bc07c0c2d79a58cf4a6523f71cf75d1808101c79617656c9a39d"
+archive = "debian"
+filename = "pool/main/a/acl/libacl1_2.3.2-2+b1_amd64.deb"
+architecture = "amd64"
+source = "acl"
+
+[[bootstrap.package]]
+name = "libbz2-1.0"
+version = "1.0.8-6"
+sha256 = "cba4cda04244b5e481bb15524bc3c983a7d1b6f330013b9b381706a2fcb65310"
+archive = "debian"
+filename = "pool/main/b/bzip2/libbz2-1.0_1.0.8-6_amd64.deb"
+architecture = "amd64"
+source = "bzip2"
+
+[[bootstrap.package]]
+name = "libc6"
+version = "2.41-12+deb13u4"
+sha256 = "967aa62605721081c3eb2a17650611a792aa802d76a6511d1840242623d204c9"
+archive = "debian"
+filename = "pool/main/g/glibc/libc6_2.41-12+deb13u4_amd64.deb"
+architecture = "amd64"
+source = "glibc"
+
+[[bootstrap.package]]
+name = "libdb5.3t64"
+version = "5.3.28+dfsg2-9"
+sha256 = "18d02510ee78b67e4504ba050176797a200ff24214a7cd318082ab60ad7bf3fc"
+archive = "debian"
+filename = "pool/main/d/db5.3/libdb5.3t64_5.3.28+dfsg2-9_amd64.deb"
+architecture = "amd64"
+source = "db5.3"
+
+[[bootstrap.package]]
+name = "libexpat1"
+version = "2.9.0-1~deb13u1"
+sha256 = "feff874772cae904ae4d24e917b35664952bec4b4ae9100a4edda5a7fa746832"
+archive = "debian-security"
+filename = "pool/updates/main/e/expat/libexpat1_2.9.0-1~deb13u1_amd64.deb"
+architecture = "amd64"
+source = "expat"
+
+[[bootstrap.package]]
+name = "libffi8"
+version = "3.4.8-2"
+sha256 = "0ebdc340de33333639c3c63874cd4b15ac2e83dfa1ef3053b7eefaf4919f4f68"
+archive = "debian"
+filename = "pool/main/libf/libffi/libffi8_3.4.8-2_amd64.deb"
+architecture = "amd64"
+source = "libffi"
+
+[[bootstrap.package]]
+name = "libgcc-s1"
+version = "14.2.0-19"
+sha256 = "3c71917b490d1a17aed43196a2787a256ecf060526cdb20216a74bedc061b150"
+archive = "debian"
+filename = "pool/main/g/gcc-14/libgcc-s1_14.2.0-19_amd64.deb"
+architecture = "amd64"
+source = "gcc-14"
+
+[[bootstrap.package]]
+name = "libgcrypt20"
+version = "1.11.0-7+deb13u1"
+sha256 = "f0eb41f8cb40896e0822e9ab65611e8383c12b721c76c54764f744abb4a8c247"
+archive = "debian"
+filename = "pool/main/libg/libgcrypt20/libgcrypt20_1.11.0-7+deb13u1_amd64.deb"
+architecture = "amd64"
+source = "libgcrypt20"
+
+[[bootstrap.package]]
+name = "libgpg-error0"
+version = "1.51-4"
+sha256 = "22b95570fd41c113ef6f5651563b4d748292844baab1278a46eb940c1dec2322"
+archive = "debian"
+filename = "pool/main/libg/libgpg-error/libgpg-error0_1.51-4_amd64.deb"
+architecture = "amd64"
+source = "libgpg-error"
+
+[[bootstrap.package]]
+name = "liblzma5"
+version = "5.8.1-1+deb13u2"
+sha256 = "b38acab30f295bf1066a6632e31cbd0a1980f2924b38040cda131d5dea5384ec"
+archive = "debian-security"
+filename = "pool/updates/main/x/xz-utils/liblzma5_5.8.1-1+deb13u2_amd64.deb"
+architecture = "amd64"
+source = "xz-utils"
+
+[[bootstrap.package]]
+name = "libmd0"
+version = "1.1.0-2+b1"
+sha256 = "7244ec3839b61fac0c1884fe08aaa040f26e8f1f35f1f5d3482eacefd30d1b44"
+archive = "debian"
+filename = "pool/main/libm/libmd/libmd0_1.1.0-2+b1_amd64.deb"
+architecture = "amd64"
+source = "libmd"
+
+[[bootstrap.package]]
+name = "libncursesw6"
+version = "6.5+20250216-2"
+sha256 = "47baa2e11579583654583a066b69bd5a5d2f22423081f707ed6c0c3ba6d538b7"
+archive = "debian"
+filename = "pool/main/n/ncurses/libncursesw6_6.5+20250216-2_amd64.deb"
+architecture = "amd64"
+source = "ncurses"
+
+[[bootstrap.package]]
+name = "libpcre2-8-0"
+version = "10.46-1~deb13u3"
+sha256 = "e226f661d918f04daf38cdbc4806b7ed7d6ef95c7eb0ade692fc350e31970040"
+archive = "debian-security"
+filename = "pool/updates/main/p/pcre2/libpcre2-8-0_10.46-1~deb13u3_amd64.deb"
+architecture = "amd64"
+source = "pcre2"
+
+[[bootstrap.package]]
+name = "libpython3-stdlib"
+version = "3.13.5-1"
+sha256 = "7e142ed64a81ccdd39714f213467bd365736ef341adb2be11be981f638b9175f"
+archive = "debian"
+filename = "pool/main/p/python3-defaults/libpython3-stdlib_3.13.5-1_amd64.deb"
+architecture = "amd64"
+source = "python3-defaults"
+
+[[bootstrap.package]]
+name = "libpython3.13-minimal"
+version = "3.13.5-2+deb13u5"
+sha256 = "a4aa6a9a8c77f87bfe545e1d14ec42c001d189ace90e3aa75deec882b39dee49"
+archive = "debian"
+filename = "pool/main/p/python3.13/libpython3.13-minimal_3.13.5-2+deb13u5_amd64.deb"
+architecture = "amd64"
+source = "python3.13"
+
+[[bootstrap.package]]
+name = "libpython3.13-stdlib"
+version = "3.13.5-2+deb13u5"
+sha256 = "db161322a3481d2c0c3b9a3b9a03c3ab0e2b1718f54b88755fb4a3f939165b84"
+archive = "debian"
+filename = "pool/main/p/python3.13/libpython3.13-stdlib_3.13.5-2+deb13u5_amd64.deb"
+architecture = "amd64"
+source = "python3.13"
+
+[[bootstrap.package]]
+name = "libreadline8t64"
+version = "8.2-6"
+sha256 = "eeadf2b5e755c9f183883feea2d9b5b28560284275d5f54d3e55d0923b1d0967"
+archive = "debian"
+filename = "pool/main/r/readline/libreadline8t64_8.2-6_amd64.deb"
+architecture = "amd64"
+source = "readline"
+
+[[bootstrap.package]]
+name = "libselinux1"
+version = "3.8.1-1"
+sha256 = "68bb8d32bd8d6d7d2f5952a169db03d1484b46ae1e52abccdec42a19dccea5d5"
+archive = "debian"
+filename = "pool/main/libs/libselinux/libselinux1_3.8.1-1_amd64.deb"
+architecture = "amd64"
+source = "libselinux"
+
+[[bootstrap.package]]
+name = "libsqlite3-0"
+version = "3.46.1-7+deb13u2"
+sha256 = "0a459adaffd901109f7811ab65f58e7a957b4907d05539cf3d1184efdcde0468"
+archive = "debian"
+filename = "pool/main/s/sqlite3/libsqlite3-0_3.46.1-7+deb13u2_amd64.deb"
+architecture = "amd64"
+source = "sqlite3"
+
+[[bootstrap.package]]
+name = "libssl3t64"
+version = "3.5.7-1~deb13u3"
+sha256 = "ff16bc048bcd7d1b256094450b79c77947d8e76fe2a24bd99b91021d591fa074"
+archive = "debian-security"
+filename = "pool/updates/main/o/openssl/libssl3t64_3.5.7-1~deb13u3_amd64.deb"
+architecture = "amd64"
+source = "openssl"
+
+[[bootstrap.package]]
+name = "libtinfo6"
+version = "6.5+20250216-2"
+sha256 = "8b9f6a7983e9418564e48a627518de4c03917b56efe68d7f3e93bd8fffa1cc10"
+archive = "debian"
+filename = "pool/main/n/ncurses/libtinfo6_6.5+20250216-2_amd64.deb"
+architecture = "amd64"
+source = "ncurses"
+
+[[bootstrap.package]]
+name = "libuuid1"
+version = "2.41.5-0+deb13u1"
+sha256 = "c1bf4c4c3ff48c57fabf93307dfb56996b60cfa33927afc4158b5db36fb2721e"
+archive = "debian"
+filename = "pool/main/u/util-linux/libuuid1_2.41.5-0+deb13u1_amd64.deb"
+architecture = "amd64"
+source = "util-linux"
+
+[[bootstrap.package]]
+name = "libzstd1"
+version = "1.5.7+dfsg-1"
+sha256 = "2f6a2aeacfc925eba8b00ac9139bc4bfccf8cacb09eb93de067074b26948eef9"
+archive = "debian"
+filename = "pool/main/libz/libzstd/libzstd1_1.5.7+dfsg-1_amd64.deb"
+architecture = "amd64"
+source = "libzstd"
+
+[[bootstrap.package]]
+name = "media-types"
+version = "13.0.0"
+sha256 = "0788e4b0b72db1bcf74a19cb24c3511e7770ad0b341f0f30e361701c3072f53e"
+archive = "debian"
+filename = "pool/main/m/media-types/media-types_13.0.0_all.deb"
+architecture = "all"
+source = "media-types"
+
+[[bootstrap.package]]
+name = "netbase"
+version = "6.5"
+sha256 = "76bafa92947ebd37b0a6f9ec6570412041f56edebc1c66d323731216d318471e"
+archive = "debian"
+filename = "pool/main/n/netbase/netbase_6.5_all.deb"
+architecture = "all"
+source = "netbase"
+
+[[bootstrap.package]]
+name = "openssl"
+version = "3.5.7-1~deb13u3"
+sha256 = "43a9cbcf2a8a0e1f0a1c3f5a33ee1f56b269690e7a2129f2b2d0582e789589d7"
+archive = "debian-security"
+filename = "pool/updates/main/o/openssl/openssl_3.5.7-1~deb13u3_amd64.deb"
+architecture = "amd64"
+source = "openssl"
+
+[[bootstrap.package]]
+name = "openssl-provider-legacy"
+version = "3.5.7-1~deb13u3"
+sha256 = "c12e0266c4780749a4702b8959ac979689f4182e18eed85a8a5eb90ed0e16eab"
+archive = "debian-security"
+filename = "pool/updates/main/o/openssl/openssl-provider-legacy_3.5.7-1~deb13u3_amd64.deb"
+architecture = "amd64"
+source = "openssl"
+
+[[bootstrap.package]]
+name = "python3"
+version = "3.13.5-1"
+sha256 = "c1388174dc7140e6c19a6dd39f8a0dcb38a835cd66c65644e0dded43d5223cb0"
+archive = "debian"
+filename = "pool/main/p/python3-defaults/python3_3.13.5-1_amd64.deb"
+architecture = "amd64"
+source = "python3-defaults"
+
+[[bootstrap.package]]
+name = "python3-minimal"
+version = "3.13.5-1"
+sha256 = "a5d2371bebf3689f676e3f3bae800371bcc4392a8a51269e23d528249b399615"
+archive = "debian"
+filename = "pool/main/p/python3-defaults/python3-minimal_3.13.5-1_amd64.deb"
+architecture = "amd64"
+source = "python3-defaults"
+
+[[bootstrap.package]]
+name = "python3.13"
+version = "3.13.5-2+deb13u5"
+sha256 = "460c1fd72845516ac3ce9d1686916f3ab2e4c86f8a9746e14d26243a47e2b98d"
+archive = "debian"
+filename = "pool/main/p/python3.13/python3.13_3.13.5-2+deb13u5_amd64.deb"
+architecture = "amd64"
+source = "python3.13"
+
+[[bootstrap.package]]
+name = "python3.13-minimal"
+version = "3.13.5-2+deb13u5"
+sha256 = "c1fda9e7b1bf15b2fa75a238d8a8710e142fe14c722fc650c5fc614f078c9073"
+archive = "debian"
+filename = "pool/main/p/python3.13/python3.13-minimal_3.13.5-2+deb13u5_amd64.deb"
+architecture = "amd64"
+source = "python3.13"
+
+[[bootstrap.package]]
+name = "readline-common"
+version = "8.2-6"
+sha256 = "f77e8aa0bf0de618f11cb0b21658a4ed60f177d63b3cf26d7fc3706b6d0eaaa9"
+archive = "debian"
+filename = "pool/main/r/readline/readline-common_8.2-6_all.deb"
+architecture = "all"
+source = "readline"
+
+[[bootstrap.package]]
+name = "tar"
+version = "1.35+dfsg-3.1"
+sha256 = "214c02e1aa291076a3147b8a4c4cae02fadf4c67df629186e3e313726faef1de"
+archive = "debian"
+filename = "pool/main/t/tar/tar_1.35+dfsg-3.1_amd64.deb"
+architecture = "amd64"
+source = "tar"
+
+[[bootstrap.package]]
+name = "tzdata"
+version = "2026f-0+deb13u1"
+sha256 = "2c1c561091402883430d0d47c57a3c0aa00b44afc8a6239265065a87211a5c11"
+archive = "debian"
+filename = "pool/main/t/tzdata/tzdata_2026f-0+deb13u1_all.deb"
+architecture = "all"
+source = "tzdata"
+
+[[bootstrap.package]]
+name = "xz-utils"
+version = "5.8.1-1+deb13u2"
+sha256 = "66b060ef2f09722c947ba019da5e9a63f6bac9d7bf90b32339a72c0390acc53f"
+archive = "debian-security"
+filename = "pool/updates/main/x/xz-utils/xz-utils_5.8.1-1+deb13u2_amd64.deb"
+architecture = "amd64"
+source = "xz-utils"
+
+[[bootstrap.package]]
 name = "zlib1g"
 version = "1:1.3.dfsg+really1.3.1-1+deb13u1"
 sha256 = "8c27c342230503b73dfde629642c3b352e87b554e06d60cf58772f236a305ceb"

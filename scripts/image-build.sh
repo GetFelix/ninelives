@@ -2,7 +2,9 @@
 # Build the x86_64 qemu production image (docs/components/image.md).
 #
 # Runs as root inside the pinned bootstrap container (images/tools.toml);
-# tools/image.sh starts it there, and CI runs it in the same container.
+# tools/image.sh starts it there, and CI runs it in the same container. The
+# fetch phase's own tools are installed first by scripts/bootstrap.sh, each
+# .deb checked against images/debian.lock.
 # Two phases: fetch downloads and verifies every input and has the network,
 # then the build re-runs itself in a network namespace with only loopback and
 # reads nothing but the verified store.
@@ -10,7 +12,7 @@
 #   image-build.sh --kernel DIR --init FILE --out DIR [--work DIR]
 #
 # DIR for --kernel is the kernel-qemu-x86_64 artifact (bzImage, .config).
-# COMMIT and SOURCE_DATE_EPOCH come from the environment, or from git.
+# COMMIT and SOURCE_DATE_EPOCH come from the environment (the container has no git).
 set -euo pipefail
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -46,46 +48,16 @@ for k in sys.argv[2:]: d=d[k]
 print(d)' "$@"
 }
 
-snapshot_sources() { # snapshot_sources SNAPSHOT: apt reads the snapshot over plain http
-  # apt checks the Release files against the container's own archive keyring.
-  # This is the one unpinned step (#92): it installs the git, python3, gpgv and
-  # xz-utils that the fetch phase runs on, so the fetch phase itself runs on
-  # code only the image's keyring vouched for. The build phase reinstalls the
-  # locked tools from the verified store; git and ca-certificates stay as
-  # installed and the build phase does not run them.
-  local keyring
-  keyring=$(sed -n 's/^Signed-By: //p' /etc/apt/sources.list.d/debian.sources | head -n1)
-  test -s "$keyring"
-  rm -f /etc/apt/sources.list.d/debian.sources
-  cat > /etc/apt/sources.list.d/snapshot.sources <<SRC
-Types: deb
-URIs: http://snapshot.debian.org/archive/debian/$1
-Suites: trixie trixie-updates
-Components: main
-Signed-By: $keyring
-
-Types: deb
-URIs: http://snapshot.debian.org/archive/debian-security/$1
-Suites: trixie-security
-Components: main
-Signed-By: $keyring
-SRC
-}
-
 if [[ ${NL_IMAGE_PHASE:-fetch} == fetch ]]; then
   if ! command -v python3 >/dev/null; then
     # What the container holds before the bootstrap touches it, so the build
     # phase can tell what the bootstrap added or changed.
     installed_list > "$bootstrap_base"
-    # Before python3 there is no way to read tools.toml, so sed does it.
-    snap=$(sed -n 's/^snapshot = "\(.*\)"/\1/p' "$repo/images/tools.toml")
-    snapshot_sources "$snap"
-    apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Retries=5 update
-    apt-get -o Acquire::Retries=5 install -y --no-install-recommends ca-certificates git gpgv python3 xz-utils
+    # python3, gpgv, xz-utils and ca-certificates, each .deb checked against
+    # debian.lock before dpkg unpacks it. No apt resolution, no keyring.
+    "$repo/scripts/bootstrap.sh" "$repo/images/debian.lock"
   fi
-  git config --global --add safe.directory "$repo"
-  export COMMIT=${COMMIT:-$(git -C "$repo" rev-parse HEAD)}
-  export SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-$(git -C "$repo" log -1 --format=%ct)}
+  [[ -n ${COMMIT:-} && -n ${SOURCE_DATE_EPOCH:-} ]] || { echo "COMMIT and SOURCE_DATE_EPOCH must be set: the container has no git" >&2; exit 2; }
 
   python3 -I "$repo/scripts/image_lock.py" check
   # The lock must be what resolution gives for the pins, so a hand edit cannot add a package.
@@ -137,8 +109,10 @@ Signed-By: $keyring
 SRC
 }
 
-# Packages the bootstrap step added or upgraded were fetched without the pinned
-# keys. Fail on an upgrade, purge what it added, then install the locked tools.
+# The bootstrap step installs only what the lock names, but it runs before the
+# lock is verified against the signed archive. Fail if it upgraded a package
+# the container had, purge what it added beyond the locked tools, then install
+# the tools from the verified store.
 [[ -s $bootstrap_base ]] || { echo "the bootstrap step did not record the container's packages" >&2; exit 1; }
 mapfile -t tool_pkgs < <(python3 -I "$repo/scripts/image_lock.py" tools)
 tool_names=()
@@ -164,7 +138,8 @@ write_apt_config /etc/apt
 sources "$(toml "$repo/images/tools.toml" tools release)" > /etc/apt/sources.list.d/ninelives.sources
 apt-get update
 # --reinstall, because the bootstrap already put some of these on the machine
-# and a plain install of the same version would leave them as they are.
+# and a plain install of the same version would leave them as they are. The
+# verified store, not the bootstrap download, is what the image build uses.
 apt-get install -y --no-install-recommends --allow-downgrades --reinstall "${tool_pkgs[@]}"
 diff <(printf '%s\n' "${tool_pkgs[@]}" | sort) \
   <(installed_list | awk -F= 'NR==FNR {t[$1]=1; next} $1 in t' <(printf '%s\n' "${tool_names[@]}") -) \

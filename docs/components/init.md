@@ -1,9 +1,11 @@
 # init (PID 1)
 
 The scope is fixed by [0002](../decisions/0002-our-own-init.md). This page
-says how the init meets it. Nothing here is built yet; the first slice is
-[#47](https://github.com/GetFelix/ninelives/issues/47) (M0) and the services
-and shutdown are [#48](https://github.com/GetFelix/ninelives/issues/48) (M1).
+says how the init meets it. The first slice,
+[#47](https://github.com/GetFelix/ninelives/issues/47) (M0), is in
+[`init/`](../../init/); its README lists which parts of this page it
+implements. The services and shutdown are
+[#48](https://github.com/GetFelix/ninelives/issues/48) (M1).
 
 Paths below use `$DATA` for the data partition's mount point, which the
 image config names. Requirement S24 (no root after early boot) and the
@@ -257,6 +259,9 @@ and reads only the kernel, the read-only root and directory entries on
    | `/dev` | devtmpfs | `nosuid,noexec` | `CONFIG_DEVTMPFS_MOUNT` is off, so PID 1 mounts it. |
    | `/sys/fs/cgroup` | cgroup2 | `nosuid,nodev,noexec,nsdelegate,memory_recursiveprot` | |
    | `/run` | tmpfs | `nosuid,nodev,noexec,mode=0755,size=16m` | The root is read-only (S3). |
+
+   `/dev` is mounted first: the root has no device nodes, so nothing can
+   reach the console until it exists.
 
 2. Read and check the config. It is on the read-only root and no service has
    run yet, so nothing untrusted can have written it. It has to be read as
@@ -861,6 +866,19 @@ The filesystem's reserved blocks belong to the init's uid (set when #4
 creates the filesystem), so records still land when a service has filled
 everything else, and the fill is visible.
 
+Each console line is `ninelives-init `, then one JSON object on one line,
+ASCII only (any other byte is escaped). Its fields come in a fixed order:
+`v` (the format version, 1), `boot` (the kernel's boot id, `null` until
+`/proc` is mounted), `mono_ms`, `wall_ms`, `machine`, then whichever of
+`signal`, `action`, `step`, `result`, `error`, `orphans_reaped` and
+`dropped` apply. The panic hook's line carries only `v`, `mono_ms` and
+`panic`. The ready line is the first that starts with
+`ninelives-init {` and contains `"machine":"up"`:
+
+```
+ninelives-init {"v":1,"boot":"0f6c2a3e-6d3c-4c58-9c55-6a4b1f3e2d10","mono_ms":1234,"wall_ms":1763500000000,"machine":"up"}
+```
+
 None of this needs Felix, which is how state is reported before Felix is
 up. Publishing records to Felix is M4.
 
@@ -881,9 +899,19 @@ up. Publishing records to Felix is M4.
   testable without a VM.
 - `unsafe` lives in `mod sys` ([0005](../decisions/0005-rust-and-unsafe.md)):
   `clone3` and the child's setup, the seccomp loads, `capset`, and whatever
-  rustix does not cover. Dependencies: rustix, serde and toml for the
-  config, serde_json for the records. Each one gets its sentence in the pull
+  rustix does not cover. Dependencies: rustix, libc for the signal mask
+  and `signalfd` (rustix wraps neither), serde and toml for the config.
+  Records are written by a small encoder of our own, so the panic hook can
+  build one without the heap. Each dependency gets its sentence in the pull
   request that adds it.
+- The binary is `no_main`. Rust's usual entry opens `/dev/null` on any of
+  fds 0 to 2 that is closed and aborts if it cannot. The kernel opens the
+  console on them from its built-in rootfs, so they are closed only on a
+  machine with no console device; there our root has no `/dev/null` until
+  PID 1 mounts `/dev`, and the abort would panic the kernel before the init
+  ran. After the `/dev` attempt the init fills any closed one (the console,
+  else `/dev/null`, else an `O_PATH` handle) so later descriptors never land
+  on 0 to 2, and marks all three close-on-exec.
 
 ## Invariants
 
@@ -915,8 +943,9 @@ up. Publishing records to Felix is M4.
   one.
 - **I10.** `reboot(2)` follows a `syncfs` attempt on the `$DATA` fd opened at
   mount, made after every
-  service cgroup was empty or reported stuck, except where a bound passed,
-  which is recorded on the console first.
+  service cgroup was empty or reported stuck, except where a bound passed or
+  no thread could be started to run it, either of which is recorded on the
+  console first.
 - **I11.** A service's environment contains exactly its `env` and its
   listed `join_env` names, and it inherits no file descriptor besides 0, 1
   and 2.
@@ -1000,6 +1029,7 @@ PID 1 exiting panics the kernel, which reboots after 10 s. The rows marked
 | Data partition full despite quotas | Write errors | Dropped and counted on the console | yes |
 | Console blocked or absent | `EAGAIN`, open failure | Dropped and counted; `/dev/kmsg`, opened in boot step 8, used if the console cannot be opened | yes |
 | Disk hangs during shutdown | `syncfs` bound passes | Recorded on the console, `reboot(2)` anyway; `previous_shutdown` reads `forced` | yes |
+| No thread can be started to run the sync (the worker is gone and one more spawn fails) | The spawn's error | The sync is not run on the loop's thread, where it could block without bound. A `sync` record with `"result":"not run"` and the error goes out, then `reboot(2)`; `previous_shutdown` reads `forced` | yes |
 | Power cut during shutdown | Next boot reads `previous_shutdown: unknown` | Felix recovers as after any crash | yes (the next boot) |
 | Platform cuts power before the budget we assumed | Same as a power cut | Same; the budget table is wrong and is fixed | yes (the next boot) |
 | Clock stepped by time sync | Not needed | Deadlines are monotonic | yes |

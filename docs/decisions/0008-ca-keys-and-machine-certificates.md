@@ -68,14 +68,18 @@ trusts whatever chains to the bundle it is given: with a shared root, a
 worker's client certificate would chain on the Raft listener.
 
 Separate roots keep a worker off the Raft and internal listeners, but a
-chain to the right root is still only authentication. Consul's
-CVE-2021-37219, where any agent with a certificate from the cluster CA could
-reach server-only Raft calls, is the lesson. Felix must check the role a
+chain to the right root is still only authentication. A widely
+used service mesh's CVE-2021-37219, where any agent with a certificate from
+the cluster CA could reach server-only Raft calls, is the lesson. Felix must check the role a
 certificate names on every privileged call, and the Raft listener must check
 that the member id and incarnation a peer claims are the ones in its
-certificate ([felix#2802](https://github.com/GetFelix/felix/issues/2802)).
-With that check in place, the shared Raft peer token adds nothing and can
-go.
+certificate ([felix#2802](https://github.com/GetFelix/felix/issues/2802), which now
+asks for the node id plus an incarnation id). Binding certificates to member
+ids does not by itself make the shared Raft peer token redundant: state
+imports still need an operator credential that no member holds. The broker's
+internal port has a separate gap: it serves requests before an
+identity-checked Hello and has no per-request authorization
+([felix#2819](https://github.com/GetFelix/felix/issues/2819)).
 
 The issuer gets its own root for the same reason. Every machine holds a leaf
 under the cluster root, so a joining machine that trusted any certificate
@@ -94,7 +98,8 @@ machine.
 
 **Lifetimes.** Roots: 10 years. Intermediates and issuer certificates: one
 year, replaced at a yearly ceremony. Machine certificates: 24 hours, renewed
-at 12 hours with up to an hour of jitter. Keys are ECDSA P-256, which every
+at 12 hours with up to an hour of jitter. Raft members are staggered 2 hours
+apart, so jitter never makes two of them renew together. Keys are ECDSA P-256, which every
 TLS stack on the path verifies. A leaf file holds the leaf and its
 intermediate, so trust bundles hold only roots and do not change when an
 intermediate does.
@@ -237,8 +242,8 @@ Felix reads Raft certificates only at startup
 ([felix#2815](https://github.com/GetFelix/felix/issues/2815)), so until that
 lands M1 restarts each control-plane member after its Raft renewal, every
 12 hours. `nl-renew` asks the init for the restart; the init does nothing
-else with it. Raft renewals are staggered by member an hour apart, so only
-one member is down at a time. The cost: twice a day per member, the cluster
+else with it. Raft renewals are staggered by member 2 hours apart, more than the
+jitter, so only one member is down at a time. The cost: twice a day per member, the cluster
 runs a few seconds with one member missing, which in a three-member cluster
 leaves no spare vote, and a restart of the leader costs an election and a
 few seconds without control-plane writes. Data-path traffic on the brokers
@@ -251,7 +256,18 @@ its data partition from the old incarnation is discarded. There is no
 automatic re-enrollment: all the machine could present is an expired
 certificate or the key behind it, and a thief who copied the disk holds
 exactly the same, so accepting them would make the 24-hour lifetime
-meaningless. SPIRE reaches the same answer: its agents do not rebootstrap
+meaningless.
+
+**Break-glass after an issuer outage.** If every issuer is down for more
+than 24 hours, every certificate expires, and the rule above would make
+every machine rejoin as a new incarnation and discard its data: total data
+loss. So the issuer has an operator break-glass. Given an authorization
+signed by the offline root, it renews a certificate after expiry, but only
+when the presented serial and incarnation are the current ones in its
+registry and the machine is still a member. This is the only exception to
+"never renew after expiry". Every use is logged and alerted. A thief with a
+copied disk gets nothing from it unless the operator has opened the window
+and the stolen serial is still the current one. SPIRE reaches the same answer: its agents do not rebootstrap
 on their own by default. Node tokens and their refresh are
 not certificates and stay with
 [#73](https://github.com/GetFelix/ninelives/issues/73) and
@@ -277,16 +293,26 @@ not certificates and stay with
   offline root, and new bundles reach a running member only by restart or
   rejoin, since bundles are read at startup. The tenant signing keys it held
   must still be rotated through Felix (T24, T25); that is Felix's gap, not
-  the CA's.
+  the CA's. The old tenant key is retired at once, with no verify-only
+  window: the thief holds it and can mint tokens with a fresh issue time,
+  which the revocation cutoff does not catch. Clients re-exchange their
+  tokens, so expect a short auth disruption.
 - **An issuer machine.** Its intermediates must be treated as stolen. This
   is the only case in which a CA, intermediate or root, is rotated. Felix
   has no revocation, so a stolen intermediate stays trusted until it
   expires, up to a year, unless its root is replaced. Recovery is a new
   ceremony: new roots for every CA that issuer held and for the issuer CA,
   new bundles on every machine, and a restart of every Felix service, since
-  bundles are read at startup. Until a trust update path exists (see
-  Consequences), new bundles reach a machine only by wiping and rejoining
-  it, one machine at a time.
+  bundles are read at startup. Machines on the new root and machines on the
+  old root reject each other on mutual TLS, so they cannot be moved one at a
+  time. Recovering from an issuer compromise therefore means a cluster
+  rebuild, or a staged dual-root bundle period: add the new root to every
+  bundle first, using the staged rotation, then reissue every certificate
+  under the new root, then remove the old root. This works only if the
+  attacker cannot use the old root during the overlap, which a stolen
+  intermediate allows until the old root is removed, so the overlap must be
+  short and the compromised issuer must already be off the network. It also
+  needs the trust update path described in Consequences.
 
 **Later proofs of identity.** TPM attestation comes with measured boot
 (M3, S13, S16) as a second factor: the issuer then also checks that the key
@@ -357,9 +383,11 @@ and under this record it is not needed. S25's core machine clause is now:
 > rotated, which in Felix today means restarting every remaining member
 > together, an outage until
 > [felix#2813](https://github.com/GetFelix/felix/issues/2813) lands; then
-> every tenant signing key is staged and activated, and the old one is kept
-> for verifying only until the longest token lifetime has passed, then
-> retired. The CAs are not rotated, since no CA key was on the machine: its Raft and
+> every tenant signing key is staged, activated and the old one retired at
+> once, with no verify-only window, because the thief holds the old key and
+> could mint tokens with a fresh issue time that Felix's revocation cutoff
+> does not catch (the same guidance Felix gives for a leaked key). The cost
+> is a short auth disruption while clients re-exchange their tokens. The CAs are not rotated, since no CA key was on the machine: its Raft and
 > broker certificates are refused renewal and expire within one certificate
 > lifetime, 24 hours at most. A CA, intermediate or root, is rotated only
 > when an issuer machine is compromised.

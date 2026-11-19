@@ -41,11 +41,8 @@ provider for machine principals.** The join never handles a Felix token.
   access and refresh tokens into the service's directory. Refresh then runs
   as Felix already does it.
 - The cluster tenant trusts the issuer with its public keys configured
-  inline (`jwks`), so the control plane fetches nothing
-  ([felix#2836](https://github.com/GetFelix/felix/issues/2836), on Felix main
-  after v0.7.2 as [felix#2843](https://github.com/GetFelix/felix/issues/2843)),
-  with `single_use_jti` on and `max_token_lifetime_seconds` at 60, the
-  assertion lifetime. Grants are
+  inline, so the control plane fetches nothing
+  ([felix#2836](https://github.com/GetFelix/felix/issues/2836)). Grants are
   made to the issuer's groups (`group:<iss>#felixd`,
   `group:<iss>#node-<id>`), never to a principal by name. The issuer holds
   no Felix token or admin credential, but its assertion key works as a
@@ -71,43 +68,59 @@ The full flow is in the [join design](../components/join.md#felix-tokens-after-t
 
 ## Consequences
 
-- No new Felix endpoint. Inline identity-provider keys and single-use
-  assertions are on Felix main, after v0.7.2, in
-  [felix#2843](https://github.com/GetFelix/felix/pull/2843). The `jti`
-  record is in memory per control-plane replica, so on the 3-core cluster a
-  replayed assertion that lands on a replica that has not seen it succeeds
-  once there, within its 120 seconds
-  ([felix#2844](https://github.com/GetFelix/felix/issues/2844)). The exchange
-  also needs a certificate issued to the principal, so the replay needs the
-  machine's key too.
+- No new Felix endpoint. Felix needs inline identity-provider keys
+  ([felix#2836](https://github.com/GetFelix/felix/issues/2836)), and its
+  exchange should refuse a reused assertion (`jti`, same issue).
 - The issuer holds one more key, the assertion-signing key, with the same
   custody as its intermediates: online on the issuer, replaced at the yearly
   ceremony, and recovered the same way after an issuer compromise. Rotation
-  overlaps by configuring two keys at the control plane. Taking the old key
-  out revokes every principal in the cluster tenant, so each service then
-  takes a new exchange.
-- Whoever holds `tenant.manage:cluster:*` on the cluster tenant can replace
-  the issuer's keys and so mint machine principals. The cluster tenant has no
+  overlaps by configuring two keys at the control plane.
+- Whoever holds `tenant.manage` on the cluster tenant can replace the
+  issuer's keys and so mint machine principals. The cluster tenant has no
   tenant admins except operators.
 - A machine has one principal (felixd) or two (felixd and the broker), so
   revoking a machine is one issuer call and one Felix revocation per
   principal. The operator tool does both, and waits 150 seconds between
   them, because Felix's revocation cutoff does not refuse an assertion
   issued before it ([felix#2839](https://github.com/GetFelix/felix/issues/2839)).
-- M1 needs a Felix release that contains felix#2843 (inline keys, `jti`) and
-  [felix#2841](https://github.com/GetFelix/felix/pull/2841) (the internal
-  role), both on main after v0.7.2. It pins the first one, expected to be
-  v0.8.0-preview.1, in `components.toml` under 0004. A tagged preview is a
-  release; a nightly is not, and 0004 does not allow pinning one. There is
-  no fallback.
-- Core brokers run with `FELIX_NODE_ROLE=internal`. Clearing the role needs
-  `node.manage` on `cluster:*`; the issuer's groups hold it only over
-  `node:<id>`, so an issuer compromise cannot lift it.
+- M1 is blocked on [felix#2836](https://github.com/GetFelix/felix/issues/2836),
+  with no fallback.
 - A storage or core token's creation also writes one Felix grant,
   `node.manage` over `node:<id>` for `group:<iss>#node-<id>`, with the
   operator's own Felix credential.
 - felixd's token is refreshed by its renewal helper until felixd refreshes
   it itself ([felixd#276](https://github.com/GetFelix/felixd/issues/276)).
+
+## Amended 2026-11-19
+
+Felix changes on main after v0.7.2 resolve the two M1 blockers.
+
+- **Inline keys and single-use assertions**
+  ([felix#2836](https://github.com/GetFelix/felix/issues/2836), merged as
+  [felix#2843](https://github.com/GetFelix/felix/pull/2843)). The cluster
+  tenant's issuer config sets `jwks`, `single_use_jti` and
+  `max_token_lifetime_seconds: 60`. The `jti` record is in memory per
+  control-plane replica, so a replayed assertion succeeds once on each
+  replica that has not seen it: 2 extra on the 3-core cluster, within 120
+  seconds ([felix#2844](https://github.com/GetFelix/felix/issues/2844)).
+  Changing the keys needs `tenant.manage:cluster:*`, not `tenant.manage`.
+  Taking an inline key out revokes every principal in the tenant, operators
+  included ([felix#2850](https://github.com/GetFelix/felix/issues/2850)), so
+  retiring the old assertion key is a planned cluster-wide re-exchange.
+- **The internal role** ([felix#2840](https://github.com/GetFelix/felix/issues/2840),
+  merged as [felix#2841](https://github.com/GetFelix/felix/pull/2841)).
+  Core brokers run with `FELIX_NODE_ROLE=internal` and hold no shard.
+  Clearing the role needs `node.manage` on `cluster:*`; the issuer's groups
+  hold it only over `node:<id>`, so an issuer compromise cannot lift it.
+- **Releases.** M1 needs a Felix release that contains both, and pins the
+  first one, expected v0.8.0-preview.1, in `components.toml` under
+  [0004](0004-components-from-pinned-releases.md). A nightly cannot be pinned.
+  The sentence "M1 is blocked on felix#2836, with no fallback" now reads:
+  M1 needs that release, with no fallback.
+- **Operator certificates.** With the control-plane API's client CA
+  ([felix#2821](https://github.com/GetFelix/felix/pull/2821)), the operator's
+  grant writes and Felix revocation need a client certificate issued to
+  `felix:principal:<operator>`; the operator tooling design owns issuing it.
 
 ## Reopen when
 

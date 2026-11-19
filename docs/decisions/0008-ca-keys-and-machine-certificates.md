@@ -3,6 +3,8 @@
 **Status:** Accepted, 2026-11-18. Answers
 [#16](https://github.com/GetFelix/ninelives/issues/16) for M1.
 
+**Amended 2026-11-19:** the row in Felix gaps below, "The control-plane API takes no client CA" ([felix#2811](https://github.com/GetFelix/felix/issues/2811)), is closed on Felix main after v0.7.2 by [felix#2821](https://github.com/GetFelix/felix/pull/2821).
+
 **Amended:** the join design refines step 4 of Joining: re-delivery after a
 lost answer, rate limits without a per-token limit or lockout, and, in
 production, operator approval of a core join's key fingerprint as a gate

@@ -35,7 +35,7 @@ The job that opens a bump pull request
 ([#52](https://github.com/GetFelix/ninelives/issues/52)) runs the same
 signature check before anyone reviews it, so for a signed component the
 reviewer is checking a hash the upstream vouched for, not one copied from a
-web page. For a component with no signature (Felix 0.7.2) the hash is
+web page. For a component with no signature (Felix today) the hash is
 trusted because a reviewer checked it when it was pinned, and nothing more.
 The manifest says so for that component, with the issue that fixes it, and
 CI refuses a change that drops, renames or removes a signed component.
@@ -76,15 +76,29 @@ visible in review.
 - This depends on both projects publishing Linux builds for every
   architecture NineLives targets, with signed checksums, built
   reproducibly. felixd does all three. Felix publishes its server for Linux
-  x86_64 only and does not check that its server build is reproducible. On
-  main, after v0.7.2, it signs the server `SHA256SUMS` with Sigstore
-  ([felix#2845](https://github.com/GetFelix/felix/pull/2845)), so the first
-  release that contains that can be checked like felixd. Only a tagged
-  release is pinned: a nightly is not, and its regenerated `SHA256SUMS`
-  drops the bundle
+  x86_64 only, does not sign its checksums, and does not check that its
+  server build is reproducible
   ([felix#2797](https://github.com/GetFelix/felix/issues/2797),
   [felix#2796](https://github.com/GetFelix/felix/issues/2796),
   [felix#2799](https://github.com/GetFelix/felix/issues/2799)).
+
+## Amended 2026-11-19
+
+- Only a tagged release is pinned. A nightly is not a release, and Felix's
+  nightly `SHA256SUMS` carries no usable signature bundle, so pinning one
+  is not allowed.
+- On Felix main, after v0.7.2, the server `SHA256SUMS` is signed with
+  Sigstore ([felix#2845](https://github.com/GetFelix/felix/pull/2845),
+  closing [felix#2796](https://github.com/GetFelix/felix/issues/2796)). Felix
+  0.7.2 has no signature, so its hash is checked by a reviewer only. The
+  first release that contains it, expected v0.8.0-preview.1, is pinned
+  with a Sigstore signature like felixd: identity
+  `https://github.com/GetFelix/felix/.github/workflows/release.yml@refs/tags/v<version>`,
+  issuer `https://token.actions.githubusercontent.com`. The signature
+  check in the fetch ([#93](https://github.com/GetFelix/ninelives/issues/93))
+  covers Felix as well as felixd. Felix still does not check that its
+  server build is reproducible
+  ([felix#2799](https://github.com/GetFelix/felix/issues/2799)).
 
 ## Reopen when
 

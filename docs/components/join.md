@@ -385,19 +385,19 @@ cluster. What that fixes here:
   registers the label `felix.dev/node-role=internal` in the request that
   creates the node. Placement then never gives it a stream or cache shard,
   at creation, balancing, failover or restoring a lost copy
-  ([`plan.rs`](https://github.com/GetFelix/felix/blob/main/services/felix-controlplane-service/src/cluster/placement/plan.rs)),
+  ([`plan.rs`](https://github.com/GetFelix/felix/blob/0a50ae1d111eda563532c49de4b9404e21283f9c/services/felix-controlplane-service/src/cluster/placement/plan.rs)),
   and an operator move onto it is refused
-  ([`operator.rs`](https://github.com/GetFelix/felix/blob/main/services/felix-controlplane-service/src/cluster/placement/operator.rs)).
+  ([`operator.rs`](https://github.com/GetFelix/felix/blob/0a50ae1d111eda563532c49de4b9404e21283f9c/services/felix-controlplane-service/src/cluster/placement/operator.rs)).
   There is no system-stream exception. An unknown role value fails broker
   startup, so a typo cannot leave a core machine open to shards. The role
   is kept once recorded: registering again without it is refused, and
   clearing it needs `node.manage` on `cluster:*`, which a broker's own
   `node:<id>` token does not carry
-  ([`nodes.rs`](https://github.com/GetFelix/felix/blob/main/services/felix-controlplane-service/src/api/nodes.rs)).
+  ([`nodes.rs`](https://github.com/GetFelix/felix/blob/0a50ae1d111eda563532c49de4b9404e21283f9c/services/felix-controlplane-service/src/api/nodes.rs)).
   Neither does the issuer's group grant, which is scoped to `node:<id>`
-  (0009), so an issuer compromise cannot clear it either. A registration
-  with the role waits until every control-plane member runs metadata level
-  44. This holds only with a Felix release that contains it; M1 pins the
+  (0009), so an issuer compromise cannot clear it either. Registering
+  with the role is refused (409) until every control-plane member runs
+  metadata level 44. This holds only with a Felix release that contains it; M1 pins the
   first one, expected to be v0.8.0-preview.1.
 - So a cluster that runs felixd or serves any client needs storage machines
   ([topology.md](../topology.md#cluster-sizes)); the fault-tolerant size is
@@ -631,15 +631,20 @@ signing keys (T24). So, as recorded in
    control plane fetches nothing and a token with an unknown `kid` is
    refused without a refresh. Felix has this on main, after v0.7.2
    ([felix#2836](https://github.com/GetFelix/felix/issues/2836), merged as [felix#2843](https://github.com/GetFelix/felix/issues/2843);
-   [`docs/auth.md`](https://github.com/GetFelix/felix/blob/main/docs/auth.md),
-   [`idp_registry.rs`](https://github.com/GetFelix/felix/blob/main/services/felix-controlplane-service/src/auth/idp_registry.rs)).
+   [`docs/auth.md`](https://github.com/GetFelix/felix/blob/82a3fe7a6a409bfaf7032cdaf048b01f5c41fe5a/docs/auth.md),
+   [`idp_registry.rs`](https://github.com/GetFelix/felix/blob/82a3fe7a6a409bfaf7032cdaf048b01f5c41fe5a/services/felix-controlplane-service/src/auth/idp_registry.rs)).
    The issuer's config sets `jwks` (two keys during a rotation),
    `single_use_jti: true` and `max_token_lifetime_seconds: 60`, the
    assertion lifetime, so Felix refuses an assertion whose `exp - iat` is
    larger; single use needs a bound of at most 600. Changing the keys needs
    `tenant.manage:cluster:*`, and taking a key out revokes every principal
    in the tenant, so retiring the old key at the yearly ceremony ends every
-   refresh chain and each service takes a new exchange. There is no
+   refresh chain, operators' included, and each service takes a new
+   exchange. That is a planned cluster-wide re-exchange: a renewal helper
+   whose refresh fails as revoked asks the issuer for a new assertion and
+   exchanges again, and the ceremony schedules it. Felix should revoke only
+   the principals this issuer vouched for
+   ([felix#2850](https://github.com/GetFelix/felix/issues/2850)). There is no
    fallback: it needs a Felix release that contains the change. M1 pins the
    first one that does, expected to be v0.8.0-preview.1, in
    `components.toml` under 0004.
@@ -665,7 +670,7 @@ signing keys (T24). So, as recorded in
    binds the exchange to the principal the assertion resolves to, so the
    helper presents the service's certificate and Felix refuses a certificate
    issued to anyone else ([felix#2821](https://github.com/GetFelix/felix/issues/2821),
-   [`server.rs`](https://github.com/GetFelix/felix/blob/main/services/felix-controlplane-service/src/server.rs)).
+   [`server.rs`](https://github.com/GetFelix/felix/blob/77dc0a9803987b775b222462b9bd61fcda1b1933/services/felix-controlplane-service/src/server.rs)).
 4. From then on the token is refreshed: by the broker itself from
    `FELIX_NODE_REFRESH_TOKEN_FILE`, which Felix 0.7.2 supports
    ([`config/env.rs`](https://github.com/GetFelix/felix/blob/v0.7.2/services/felix-broker-service/src/config/env.rs));
@@ -675,7 +680,7 @@ signing keys (T24). So, as recorded in
    Refresh needs one too: Felix refuses a certificate not issued to the
    refresh token's principal, and does not spend the token
    ([felix#2827](https://github.com/GetFelix/felix/issues/2827),
-   [`refresh.rs`](https://github.com/GetFelix/felix/blob/main/services/felix-controlplane-service/src/auth/refresh.rs)).
+   [`refresh.rs`](https://github.com/GetFelix/felix/blob/0440e0c65d2a11c617f006fa2441bb09151d7552/services/felix-controlplane-service/src/auth/refresh.rs)).
 
 Grants come from groups. Felix maps each group in an assertion to
 `group:<iss>#<name>` and evaluates RBAC through it, cluster scope included
@@ -867,6 +872,9 @@ runs in order:
    Felix should refuse such assertions itself
    ([felix#2839](https://github.com/GetFelix/felix/issues/2839)); the wait
    stays until it does.
+   The Felix steps need an operator certificate from the API's client CA,
+   issued to `felix:principal:<operator>`; the operator tooling design owns
+   how it is issued (S10).
 3. At the control plane: revoke each of the machine's service principals
    (`POST /v1/tenants/{t}/refresh-tokens/revoke`), which ends their refresh
    chains and the broker streams their tokens opened
@@ -908,7 +916,8 @@ After the revocation above:
 | [image design](image.md) | The config partition is written once more on the machine: zeroed by the join after a successful join | Updated in this change |
 | [image design](image.md) | The packet filter allows the join's uid TCP to the issuer port and, on cloud images, the metadata address, and nothing else | For the packet filter's ruleset (S18, [#62](https://github.com/GetFelix/ninelives/issues/62)) |
 | `nl-issuer` design | Every issuer check and message above; re-delivery; assertions for renewal helpers; inline assertion keys exported for formation | Not written |
-| `nl-renew` design | Assertion request, token exchange, felixd refresh until felixd#276 | Not written |
+| `nl-renew` design | Assertion request, token exchange, felixd refresh until felixd#276; a new exchange when a refresh fails as revoked | Not written |
+| Operator tooling design | Who issues operator client certificates (`felix:principal:<operator>`) for the Felix revocation and grant steps and for `felixctl` under the API's client CA | Not written |
 | Formation design | Register the issuer with inline keys on the cluster tenant; grant `group:<iss>#felixd`; deliver the Raft peer token to a new core member | Not written |
 | [0008](../decisions/0008-ca-keys-and-machine-certificates.md) | Two refinements, [below](#refinements-of-0008) | Stated here; 0008 is not edited |
 | Felix | Reload the broker's control-plane client certificate ([felix#2837](https://github.com/GetFelix/felix/issues/2837)); refuse assertions issued before a revocation cutoff ([felix#2839](https://github.com/GetFelix/felix/issues/2839)); replicate the single-use `jti` record ([felix#2844](https://github.com/GetFelix/felix/issues/2844)). Inline keys ([felix#2836](https://github.com/GetFelix/felix/issues/2836)) and the internal role ([felix#2840](https://github.com/GetFelix/felix/issues/2840)) are on Felix main after v0.7.2; M1 needs a release that contains them | Filed, v0.8.0 |
@@ -1086,7 +1095,7 @@ and T28 (node trims) belong to the formation design.
 
 | Gap | Effect here | Issue |
 |---|---|---|
-| The single-use `jti` record is in memory in each control-plane replica | An assertion replayed on a replica that has not seen it is exchanged once more there, inside its 120 s window: one extra chain per replica, up to three on the 3-core cluster. The exchange also needs a certificate issued to the principal (S10), so the thief needs the machine's key as well | [felix#2844](https://github.com/GetFelix/felix/issues/2844) |
+| The single-use `jti` record is in memory in each control-plane replica | An assertion replayed on a replica that has not seen it is exchanged once more there, inside its 120 s window: at most one chain per replica, N-1 beyond the legitimate one: 2 extra on the 3-core cluster. The exchange also needs a certificate issued to the principal (S10), so the thief needs the machine's key as well | [felix#2844](https://github.com/GetFelix/felix/issues/2844) |
 | Exchange sleeps past a revocation cutoff instead of refusing older assertions | The operator tool waits 150 s between the issuer and Felix revocation steps | [felix#2839](https://github.com/GetFelix/felix/issues/2839) |
 | The broker reads its control-plane client certificate once | A 24-hour certificate expires under a running broker | [felix#2837](https://github.com/GetFelix/felix/issues/2837) |
 | Connections outlive their certificate | A revoked machine's open connection outlives its certificate | [felix#2817](https://github.com/GetFelix/felix/issues/2817) |

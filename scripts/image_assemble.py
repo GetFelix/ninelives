@@ -147,7 +147,7 @@ def main() -> int:
     raw = out / f"{name}.raw"
     raw.unlink(missing_ok=True)
     run(["systemd-repart", "--empty=create", "--size=auto", f"--definitions={defs}",
-         f"--seed={derived_uuid(target['disk_seed'], arch, 'disk')}", "--offline=yes", "--dry-run=no", "--pretty=no", str(raw)], env=env)
+         f"--seed={derived_uuid(target['disk_seed'], arch, 'disk')}", "--sector-size=512", "--offline=yes", "--dry-run=no", "--pretty=no", str(raw)], env=env)
     shutil.rmtree(work)
     print(f"sealed {name}: root {size} bytes, root hash {roothash}")
     return 0

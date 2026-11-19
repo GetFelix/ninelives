@@ -52,6 +52,7 @@ class Verdicts(unittest.TestCase):
             ("panic", "[ 1.0] Kernel panic - not syncing: VFS: Unable to mount root fs on unknown-block(0,0)"),
             ("oops", "[ 1.0] Oops: 0000 [#1] SMP"),
             ("oops", "[ 1.0] BUG: unable to handle page fault"),
+            ("firmware", "UEFI Interactive Shell v2.2"),
             ("mount", "[ 1.0] VFS: Unable to mount root fs on /dev/dm-0"),
         ]:
             self.assertEqual(bi.failures(line)[0][0], kind, line)
@@ -59,6 +60,7 @@ class Verdicts(unittest.TestCase):
     def test_the_inits_own_records_are_not_scanned(self):
         rec = 'ninelives-init {"v":1,"machine":"emergency","detail":"verity error panic"}'
         self.assertEqual(bi.failures(rec), [])
+        self.assertEqual(bi.failures('ninelives-init {"v":1,"mono_ms":5,"panic":"boom"}')[0][0], "init panic")
         self.assertIsNone(bi.ready_line(rec))
 
     def test_a_ready_line_must_start_the_line(self):
@@ -175,6 +177,12 @@ class Run(unittest.TestCase):
         code, out, _ = self.run_boot([*VERITY_PANIC.split("\n"), "sleep 30"])
         self.assertEqual(code, 1)
         self.assertIn("panic", out)
+
+    def test_firmware_shell_fails_at_once_in_both_modes(self):
+        for extra in ((), ("--corrupt", "root")):
+            code, out, _ = self.run_boot(["UEFI Interactive Shell v2.2", "sleep 30"], *extra)
+            self.assertEqual(code, 1)
+            self.assertIn("firmware", out)
 
     def test_silence_times_out(self):
         code, out, _ = self.run_boot(["sleep 30"], timeout="1")

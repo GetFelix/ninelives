@@ -34,6 +34,8 @@ FAILURES = [
     ("panic", re.compile(r"Kernel panic - not syncing")),
     ("oops", re.compile(r"\b(Oops|BUG):|general protection fault")),
     ("mount", re.compile(r"VFS: Unable to mount root fs")),
+    # Firmware found nothing to boot and dropped to its shell: it would wait there until the timeout.
+    ("firmware", re.compile(r"UEFI Interactive Shell")),
 ]
 BLOCK = 4096
 # Block 0 of each partition is read on every boot: the erofs superblock is in
@@ -58,7 +60,10 @@ def failures(log: str) -> list[tuple[str, str]]:
     out = []
     for l in lines(log):
         if l.startswith("ninelives-init {"):
-            continue  # the init's own records are not kernel failures
+            # The init's own records are not kernel output, except its panic hook's.
+            if '"panic"' in l:
+                out.append(("init panic", l))
+            continue
         for kind, rx in FAILURES:
             if rx.search(l):
                 out.append((kind, l))
@@ -154,6 +159,8 @@ def watch(proc: subprocess.Popen, log: pathlib.Path, expect: str, timeout: float
             if ready_line(text):
                 time.sleep(SETTLE)
             return "ready" if ready_line(text) else "failure", elapsed
+        if any(k == "firmware" for k, _ in failures(text)):
+            return "failure", elapsed
         if expect == "verity" and ready_line(text):
             return "ready", elapsed
         if expect == "verity" and any(k in ("verity", "panic") for k, _ in failures(text)):

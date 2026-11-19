@@ -18,9 +18,10 @@ When it is, this directory holds:
   target needs it.
 - `resolved/`: the full resolved config per target and architecture. CI
   regenerates it and fails on any difference.
-- `cmdline/`: the exact kernel command line per target.
-- `policy.toml`: options that must be set or unset, expected sysctls and
-  forbidden command line words, read by CI and by the qemu tests.
+- `policy.toml`: options that must be set or unset, expected sysctls, and
+  the command line words the kernel policy requires or forbids, read by CI
+  and by the qemu tests. The exact command line is the
+  [image design's](../docs/components/image.md).
 - `hardening-exceptions.toml`: each kernel-hardening-checker finding that
   is not fixed, with the reason (requirement S2).
 

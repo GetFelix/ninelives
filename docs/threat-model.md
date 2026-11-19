@@ -209,14 +209,16 @@ would run that program as full root on the next crash. So:
   around them.** The packet filter is loaded before the drop. DHCP is split:
   an unprivileged parser reads replies from a packet socket the applier
   opened and handed to it, and passes a typed lease to the applier. The
-  applier binds that socket to one interface and attaches a classic BPF
-  filter that passes only DHCP, locked with `SO_LOCK_FILTER`; the parser's
+  applier opens the socket with protocol 0, attaches a classic BPF filter
+  that passes only DHCP and locks it with `SO_LOCK_FILTER`, and only then
+  binds it to one interface and the protocol, so it never receives stray
+  packets before the filter is on; the parser's
   seccomp filter denies `bind` and `setsockopt`, so it cannot widen what it
   receives. The applier's seccomp filter allows netlink sockets only for
   `NETLINK_ROUTE`, so `NETLINK_NETFILTER` is denied, and denies the xtables
   `setsockopt` options (`IPT_SO_SET_*`, `IP6T_SO_SET_*`, `EBT_SO_SET_*`,
-  `ARPT_SO_SET_*`), which change rules without netlink; S2 also leaves legacy
-  xtables out of the kernel. That does not cover tc: qdiscs, classifiers and
+  `ARPT_SO_SET_*`, `IP_VS_SO_SET_*`), which change rules without netlink; S2
+  also leaves legacy xtables and IPVS out of the kernel. That does not cover tc: qdiscs, classifiers and
   actions such as `pedit`, `nat` and `mirred` are configured over
   `NETLINK_ROUTE`, and run before netfilter on ingress and after it on
   egress, so they can rewrite or redirect what S7 and S18 allow. S2 builds the

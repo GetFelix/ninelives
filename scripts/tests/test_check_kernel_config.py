@@ -125,8 +125,17 @@ class ConfigCheck(unittest.TestCase):
             symbols = ckc.kconfig_symbols(src, "x86_64")
         policy = ckc.load_policy(FIX / "policy.toml", "x86_64")
         errors = ckc.check_config(ckc.parse_config(GOOD, "r"), {}, {}, policy, symbols)
-        self.assertIn("policy: CONFIG_MITIGATION_NEW exists in this tree but is not in the x86_64 set table",
-                      errors)
+        self.assertIn("policy: CONFIG_MITIGATION_NEW exists in this tree but is not in the x86_64 set "
+                      "or not_applicable table", errors)
+
+    def test_not_applicable_counts_as_listed_and_must_stay_unset(self):
+        policy = ckc.Policy(tomllib.loads(
+            '[x86_64]\nall_listed = ["CONFIG_MITIGATION_"]\n'
+            '[x86_64.not_applicable]\nCONFIG_MITIGATION_RETPOLINE = "r"\n'), "x86_64")
+        symbols = {"CONFIG_MITIGATION_RETPOLINE"}
+        self.assertEqual(ckc.check_config({}, {}, {}, policy, symbols), [])
+        errors = ckc.check_config({"CONFIG_MITIGATION_RETPOLINE": "y"}, {}, {}, policy, symbols)
+        self.assertEqual(errors, ["policy: CONFIG_MITIGATION_RETPOLINE is listed as not applicable but is y"])
 
     def test_other_architectures_kconfig_is_ignored(self):
         self.assertNotIn("CONFIG_ARM64_ONLY", ckc.kconfig_symbols(FIX / "source", "x86_64"))

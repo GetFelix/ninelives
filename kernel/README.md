@@ -85,7 +85,8 @@ releases").
    policy is a fragment change with a reason, never a quiet update of
    `resolved/`.
 4. A new `MITIGATION_*` option on x86_64 fails check 3 until it is added
-   to `[x86_64.set]` in `policy.toml` and to `fragments/x86_64.config`.
+   to `[x86_64.set]` in `policy.toml` and to `fragments/x86_64.config`, or
+   to `[x86_64.not_applicable]` with the reason it cannot apply.
 
 If a release is signed by a key not in `keys/fingerprints`, the bump
 fails. Adding a key is its own pull request: the fingerprint has to match

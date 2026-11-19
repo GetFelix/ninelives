@@ -99,6 +99,7 @@ class Policy:
             self.errors.append(f"policy: {sym} is both set and unset")
         self.not_applied = {**common.get("upstream_not_applied", {}), **own.get("upstream_not_applied", {})}
         self.all_listed = common.get("all_listed", []) + own.get("all_listed", [])
+        self.not_applicable = {**common.get("not_applicable", {}), **own.get("not_applicable", {})}
         self.sysctl = {**common.get("sysctl", {}), **own.get("sysctl", {})}
         cc, oc = common.get("cmdline", {}), own.get("cmdline", {})
         self.required = cc.get("required", []) + oc.get("required", [])
@@ -106,7 +107,9 @@ class Policy:
         self.forbidden = set(cc.get("forbidden", []) + oc.get("forbidden", []))
         self.forbidden_prefixes = cc.get("forbidden_prefixes", []) + oc.get("forbidden_prefixes", [])
         self.forbid_off = cc.get("forbid_off_values", False) or oc.get("forbid_off_values", False)
-        for sym in [*self.set, *self.unset, *self.not_applied]:
+        for sym in sorted(self.set.keys() & self.not_applicable.keys()):
+            self.errors.append(f"policy: {sym} is both set and not applicable")
+        for sym in [*self.set, *self.unset, *self.not_applied, *self.not_applicable]:
             if not re.fullmatch(r"CONFIG_[A-Z0-9_]+", sym):
                 self.errors.append(f"policy: {sym!r} is not a CONFIG_ option name")
         for word in self.required:
@@ -153,6 +156,9 @@ def check_config(
     for sym in sorted(policy.unset):
         if not landed(sym, UNSET):
             errors.append(f"policy: {sym} must not be set, is {resolved[sym]}")
+    for sym in sorted(policy.not_applicable):
+        if not landed(sym, UNSET):
+            errors.append(f"policy: {sym} is listed as not applicable but is {resolved[sym]}")
 
     # Check 2: every line we wrote is in the resolved config as written.
     ours: dict[str, tuple[str, str | None]] = {}
@@ -180,13 +186,14 @@ def check_config(
 
     if symbols is not None:
         # upstream_not_applied may name an option this architecture lacks.
-        named = set(policy.set) | policy.unset | set(ours)
+        named = set(policy.set) | policy.unset | set(policy.not_applicable) | set(ours)
         for sym in sorted(named - symbols):
             errors.append(f"{sym} is not an option in this kernel tree (misspelt or renamed upstream?)")
         for prefix in policy.all_listed:
             for sym in sorted(s for s in symbols if s.startswith(prefix)):
-                if sym not in policy.set:
-                    errors.append(f"policy: {sym} exists in this tree but is not in the {policy.arch} set table")
+                if sym not in policy.set and sym not in policy.not_applicable:
+                    errors.append(f"policy: {sym} exists in this tree but is not in the {policy.arch} set "
+                                  "or not_applicable table")
     return errors
 
 

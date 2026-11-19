@@ -1,0 +1,8 @@
+# Every kernel-hardening-checker finding that is not fixed, with the reason
+# (S2, docs/components/kernel.md check 4). scripts/check_kernel_config.py
+# fails on a finding missing here, and on an entry that no longer fails or
+# that the checker no longer reports.
+#
+# option: the checker's option name (CONFIG_ names for kconfig checks).
+# type:   kconfig (default), cmdline or sysctl.
+# arch:   the architectures the exception applies to.

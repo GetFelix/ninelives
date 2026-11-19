@@ -1,0 +1,414 @@
+# What the resolved kernel config must and must not contain, the sysctls the
+# kernel policy expects, and the command line words it requires and forbids
+# (docs/components/kernel.md). scripts/check_kernel_config.py reads this file;
+# the qemu tests will read it too.
+#
+# The [common] tables apply to both architectures; [x86_64] and [aarch64]
+# add to them. An option in "unset" passes when the resolved config says
+# "is not set" or does not mention it. This list is checked on its own, so
+# removing an entry is visible in review instead of lost in a config diff.
+
+[common]
+unset = [
+  # S2, T16: no code added at run time.
+  "CONFIG_MODULES",
+  "CONFIG_KEXEC",
+  "CONFIG_KEXEC_FILE",
+  "CONFIG_KEXEC_CORE",
+  "CONFIG_KEXEC_HANDOVER",
+  "CONFIG_CRASH_DUMP",
+  "CONFIG_HIBERNATION",
+  "CONFIG_SUSPEND",
+  "CONFIG_BINFMT_MISC",
+  "CONFIG_BINFMT_SCRIPT",
+  "CONFIG_UEVENT_HELPER",
+  "CONFIG_COREDUMP",
+  "CONFIG_ELF_CORE",
+  # S6, T16: interfaces that bypass or widen the sandbox.
+  "CONFIG_IO_URING",
+  "CONFIG_BPF_SYSCALL",
+  "CONFIG_BPF_LSM",
+  "CONFIG_USER_NS",
+  "CONFIG_NET_NS",
+  "CONFIG_IPC_NS",
+  "CONFIG_UTS_NS",
+  "CONFIG_TIME_NS",
+  "CONFIG_USERFAULTFD",
+  "CONFIG_KEYS",
+  "CONFIG_SYSVIPC",
+  "CONFIG_POSIX_MQUEUE",
+  "CONFIG_CHECKPOINT_RESTORE",
+  "CONFIG_KCMP",
+  "CONFIG_FHANDLE",
+  "CONFIG_SYSFS_SYSCALL",
+  "CONFIG_UID16",
+  "CONFIG_AIO",
+  "CONFIG_CRYPTO_USER",
+  "CONFIG_CRYPTO_USER_API",
+  "CONFIG_CRYPTO_USER_API_HASH",
+  "CONFIG_CRYPTO_USER_API_SKCIPHER",
+  "CONFIG_CRYPTO_USER_API_RNG",
+  "CONFIG_CRYPTO_USER_API_AEAD",
+  # T16: information that makes exploits reliable.
+  "CONFIG_KALLSYMS",
+  "CONFIG_DEBUG_FS",
+  "CONFIG_FTRACE",
+  "CONFIG_KPROBES",
+  "CONFIG_UPROBES",
+  "CONFIG_PROFILING",
+  "CONFIG_PROC_KCORE",
+  "CONFIG_MAGIC_SYSRQ",
+  "CONFIG_KGDB",
+  "CONFIG_DEVMEM",
+  "CONFIG_DEVPORT",
+  "CONFIG_ACPI_TABLE_UPGRADE",
+  "CONFIG_ACPI_DEBUGGER",
+  "CONFIG_EFIVAR_FS",
+  "CONFIG_SWAP",
+  # S6: no other LSMs.
+  "CONFIG_SECURITY_SELINUX",
+  "CONFIG_SECURITY_APPARMOR",
+  "CONFIG_SECURITY_SMACK",
+  "CONFIG_SECURITY_TOMOYO",
+  "CONFIG_SECURITY_LOADPIN",
+  "CONFIG_SECURITY_SAFESETID",
+  "CONFIG_SECURITY_IPE",
+  # T16: hardening that must not be weakened.
+  "CONFIG_CFI_PERMISSIVE",
+  "CONFIG_SLAB_MERGE_DEFAULT",
+  "CONFIG_COMPAT_BRK",
+  "CONFIG_LEGACY_PTYS",
+  "CONFIG_LDISC_AUTOLOAD",
+  "CONFIG_STRICT_DEVMEM",
+  "CONFIG_RANDSTRUCT_FULL",
+  "CONFIG_RANDSTRUCT_PERFORMANCE",
+  # S7, S18, T18, T70: nftables only, nothing that rewrites packets after it.
+  "CONFIG_NETFILTER_XTABLES",
+  "CONFIG_NETFILTER_XTABLES_LEGACY",
+  "CONFIG_NETFILTER_XTABLES_COMPAT",
+  "CONFIG_IP_NF_IPTABLES",
+  "CONFIG_IP_NF_IPTABLES_LEGACY",
+  "CONFIG_IP6_NF_IPTABLES",
+  "CONFIG_IP6_NF_IPTABLES_LEGACY",
+  "CONFIG_IP_NF_ARPTABLES",
+  "CONFIG_BRIDGE_NF_EBTABLES",
+  "CONFIG_BRIDGE_NF_EBTABLES_LEGACY",
+  "CONFIG_NFT_COMPAT",
+  "CONFIG_NF_TABLES_ARP",
+  "CONFIG_NF_TABLES_BRIDGE",
+  "CONFIG_NF_TABLES_NETDEV",
+  "CONFIG_NF_NAT",
+  "CONFIG_NFT_NAT",
+  "CONFIG_NF_CONNTRACK_FTP",
+  "CONFIG_NF_CONNTRACK_SIP",
+  "CONFIG_NF_CONNTRACK_H323",
+  "CONFIG_NF_CONNTRACK_IRC",
+  "CONFIG_NF_CONNTRACK_TFTP",
+  "CONFIG_NF_CONNTRACK_AMANDA",
+  "CONFIG_NF_CONNTRACK_PPTP",
+  "CONFIG_NF_CONNTRACK_SANE",
+  "CONFIG_NF_CONNTRACK_SNMP",
+  "CONFIG_NF_CONNTRACK_NETBIOS_NS",
+  "CONFIG_NF_CONNTRACK_BROADCAST",
+  "CONFIG_NF_CT_NETLINK",
+  "CONFIG_NETFILTER_NETLINK_QUEUE",
+  "CONFIG_NETFILTER_NETLINK_LOG",
+  "CONFIG_NETFILTER_NETLINK_ACCT",
+  "CONFIG_NETFILTER_NETLINK_OSF",
+  "CONFIG_NET_SCHED",
+  "CONFIG_NET_CLS",
+  "CONFIG_NET_CLS_ACT",
+  "CONFIG_NET_XGRESS",
+  "CONFIG_TUN",
+  "CONFIG_BRIDGE",
+  "CONFIG_VLAN_8021Q",
+  "CONFIG_MACVLAN",
+  "CONFIG_IPVLAN",
+  "CONFIG_VETH",
+  "CONFIG_VXLAN",
+  "CONFIG_GENEVE",
+  "CONFIG_NET_IPIP",
+  "CONFIG_NET_IPGRE",
+  "CONFIG_NET_IPGRE_DEMUX",
+  "CONFIG_NET_IPVTI",
+  "CONFIG_IPV6_SIT",
+  "CONFIG_IPV6_TUNNEL",
+  "CONFIG_IPV6_VTI",
+  "CONFIG_WIREGUARD",
+  "CONFIG_XFRM",
+  "CONFIG_XFRM_USER",
+  "CONFIG_MPLS",
+  "CONFIG_FIB_RULES",
+  "CONFIG_LWTUNNEL",
+  "CONFIG_NET_SHAPER",
+  "CONFIG_OPENVSWITCH",
+  # T16: protocol families no service uses.
+  "CONFIG_IP_SCTP",
+  "CONFIG_TIPC",
+  "CONFIG_RDS",
+  "CONFIG_L2TP",
+  "CONFIG_CAN",
+  "CONFIG_BT",
+  "CONFIG_WIRELESS",
+  "CONFIG_CFG80211",
+  "CONFIG_NFC",
+  "CONFIG_X25",
+  "CONFIG_AX25",
+  "CONFIG_ATM",
+  "CONFIG_VSOCKETS",
+  "CONFIG_INET_DIAG",
+  "CONFIG_PACKET_DIAG",
+  "CONFIG_UNIX_DIAG",
+  "CONFIG_NETLINK_DIAG",
+  # T54: buses, devices and filesystems no M0 to M2 target has.
+  "CONFIG_USB_SUPPORT",
+  "CONFIG_USB4",
+  "CONFIG_FIREWIRE",
+  "CONFIG_SOUND",
+  "CONFIG_DRM",
+  "CONFIG_FB",
+  "CONFIG_HID",
+  "CONFIG_WLAN",
+  "CONFIG_BLK_DEV_NVME",
+  "CONFIG_SCSI",
+  "CONFIG_KVM",
+  "CONFIG_VIRTIO_BALLOON",
+  "CONFIG_VIRTIO_VSOCKETS",
+  "CONFIG_VIRTIO_INPUT",
+  "CONFIG_DRM_VIRTIO_GPU",
+  "CONFIG_NET_9P",
+  "CONFIG_VT",
+  "CONFIG_FUSE_FS",
+  "CONFIG_OVERLAY_FS",
+  "CONFIG_NFS_FS",
+  "CONFIG_CIFS",
+  "CONFIG_SQUASHFS",
+  "CONFIG_VFAT_FS",
+  "CONFIG_MSDOS_FS",
+  # image: the root and how it is set up.
+  "CONFIG_BLK_DEV_INITRD",
+  "CONFIG_EROFS_FS_ZIP",
+  "CONFIG_EROFS_FS_XATTR",
+  "CONFIG_EROFS_FS_POSIX_ACL",
+  "CONFIG_DM_VERITY_FEC",
+  "CONFIG_DM_VERITY_VERIFY_ROOTHASH_SIG",
+  "CONFIG_DEVTMPFS_MOUNT",
+  "CONFIG_RUST",
+]
+
+# Values as they appear in the resolved .config.
+[common.set]
+# S2, S24: the kernel never starts a user program; the helper path is empty.
+CONFIG_STATIC_USERMODEHELPER = "y"
+CONFIG_STATIC_USERMODEHELPER_PATH = '""'
+# T16, T22, T47: lockdown in confidentiality mode from early boot.
+CONFIG_SECURITY = "y"
+CONFIG_SECURITYFS = "y"
+CONFIG_SECURITY_LOCKDOWN_LSM = "y"
+CONFIG_SECURITY_LOCKDOWN_LSM_EARLY = "y"
+CONFIG_LOCK_DOWN_KERNEL_FORCE_CONFIDENTIALITY = "y"
+# S6, T17: the LSMs that run, and only those.
+CONFIG_SECURITY_LANDLOCK = "y"
+CONFIG_SECURITY_YAMA = "y"
+CONFIG_LSM = '"landlock,lockdown,yama"'
+CONFIG_SECCOMP = "y"
+CONFIG_SECCOMP_FILTER = "y"
+CONFIG_PROC_MEM_NO_FORCE = "y"
+# T16: classic BPF is JIT-only.
+CONFIG_BPF_JIT = "y"
+CONFIG_BPF_JIT_ALWAYS_ON = "y"
+# T16: information leaks.
+CONFIG_SECURITY_DMESG_RESTRICT = "y"
+# T16: memory corruption hardening.
+CONFIG_STACKPROTECTOR_STRONG = "y"
+CONFIG_VMAP_STACK = "y"
+CONFIG_SCHED_STACK_END_CHECK = "y"
+CONFIG_RANDOMIZE_KSTACK_OFFSET_DEFAULT = "y"
+CONFIG_INIT_STACK_ALL_ZERO = "y"
+CONFIG_ZERO_CALL_USED_REGS = "y"
+CONFIG_HARDENED_USERCOPY = "y"
+CONFIG_FORTIFY_SOURCE = "y"
+CONFIG_UBSAN_BOUNDS = "y"
+CONFIG_UBSAN_TRAP = "y"
+CONFIG_INIT_ON_ALLOC_DEFAULT_ON = "y"
+CONFIG_INIT_ON_FREE_DEFAULT_ON = "y"
+CONFIG_SLAB_FREELIST_RANDOM = "y"
+CONFIG_SLAB_FREELIST_HARDENED = "y"
+CONFIG_SLAB_BUCKETS = "y"
+CONFIG_RANDOM_KMALLOC_CACHES = "y"
+CONFIG_SHUFFLE_PAGE_ALLOCATOR = "y"
+CONFIG_KFENCE = "y"
+CONFIG_LIST_HARDENED = "y"
+CONFIG_BUG_ON_DATA_CORRUPTION = "y"
+CONFIG_PAGE_TABLE_CHECK_ENFORCED = "y"
+CONFIG_DEBUG_WX = "y"
+CONFIG_STRICT_KERNEL_RWX = "y"
+CONFIG_RANDOMIZE_BASE = "y"
+CONFIG_DEFAULT_MMAP_MIN_ADDR = "65536"
+CONFIG_CFI = "y"
+CONFIG_RANDSTRUCT_NONE = "y"
+# T54: hostile DMA.
+CONFIG_IOMMU_SUPPORT = "y"
+CONFIG_IOMMU_DEFAULT_DMA_STRICT = "y"
+CONFIG_EFI_DISABLE_PCI_DMA = "y"
+# T56: CPU flaws.
+CONFIG_CPU_MITIGATIONS = "y"
+# init, felix: what the services depend on, so a missing one fails here
+# rather than at boot.
+CONFIG_MULTIUSER = "y"
+CONFIG_PID_NS = "y"
+CONFIG_CGROUPS = "y"
+CONFIG_MEMCG = "y"
+CONFIG_CGROUP_PIDS = "y"
+CONFIG_CGROUP_SCHED = "y"
+CONFIG_BLK_CGROUP_IOCOST = "y"
+CONFIG_SIGNALFD = "y"
+CONFIG_EPOLL = "y"
+CONFIG_TIMERFD = "y"
+CONFIG_EVENTFD = "y"
+CONFIG_FUTEX = "y"
+CONFIG_FILE_LOCKING = "y"
+CONFIG_MEMFD_CREATE = "y"
+CONFIG_QFMT_V2 = "y"
+CONFIG_WATCHDOG_NOWAYOUT = "y"
+CONFIG_IKCONFIG_PROC = "y"
+# image: the verified root.
+CONFIG_DM_INIT = "y"
+CONFIG_DM_VERITY = "y"
+CONFIG_EROFS_FS = "y"
+# S7, S18: the packet filter.
+CONFIG_NF_TABLES = "y"
+CONFIG_NF_TABLES_INET = "y"
+
+# Lines in upstream's hardening.config that cannot land here, with the reason.
+# The check fails on any other hardening.config line that does not land, and
+# on an entry here that did land.
+[common.upstream_not_applied]
+CONFIG_STRICT_MODULE_RWX = "needs CONFIG_MODULES, which is off"
+CONFIG_STRICT_DEVMEM = "needs CONFIG_DEVMEM, which is off: there is no /dev/mem to restrict"
+CONFIG_IO_STRICT_DEVMEM = "needs CONFIG_DEVMEM, which is off"
+
+# Set by the command line before PID 1 starts (kernel.md, "The command line").
+[common.sysctl]
+"kernel.kptr_restrict" = "2"
+"kernel.yama.ptrace_scope" = "3"
+"net.core.bpf_jit_harden" = "2"
+"vm.memfd_noexec" = "2"
+"fs.suid_dumpable" = "0"
+"fs.protected_symlinks" = "1"
+"fs.protected_hardlinks" = "1"
+"fs.protected_fifos" = "2"
+"fs.protected_regular" = "2"
+
+[common.cmdline]
+# Every sysctl above is also required as a sysctl.<name>=<value> word.
+required = ["ro", "panic=10", "oops=panic", "page_alloc.shuffle=1"]
+# Exact words that turn a protection off.
+forbidden = [
+  "rw",
+  "nokaslr", "nopti", "norandmaps", "nosmap", "nosmep", "noibrs", "noibpb",
+  "nospectre_v1", "nospectre_v2", "nospectre_bhb", "nospec_store_bypass_disable",
+  "slab_merge", "iommu=pt", "iommu.passthrough=1", "iommu.strict=0",
+  "init_on_alloc=0", "init_on_free=0", "kfence.sample_interval=0",
+  "no_hash_pointers", "sysrq_always_enabled", "ssbd=force-off",
+  "efi=no_disable_early_pci_dma",
+]
+# Any word that starts with one of these.
+forbidden_prefixes = [
+  "lsm=", "security=", "lockdown=", "module_blacklist=", "initcall_blacklist=",
+  "rodata=", "debugfs=", "cfi=", "tsx=", "vsyscall=", "ia32_emulation=",
+  "selinux=", "apparmor=", "kgdboc=", "ftrace=",
+]
+# Any key=off word: mitigations=off and every per-mitigation off switch.
+forbid_off_values = true
+
+[x86_64]
+# Every option in the tree with one of these prefixes must be in [x86_64.set].
+all_listed = ["CONFIG_MITIGATION_"]
+unset = [
+  "CONFIG_IA32_EMULATION",
+  "CONFIG_X86_X32_ABI",
+  "CONFIG_COMPAT",
+  "CONFIG_MODIFY_LDT_SYSCALL",
+  "CONFIG_X86_IOPL_IOPERM",
+  "CONFIG_X86_MSR",
+  "CONFIG_X86_CPUID",
+  "CONFIG_X86_16BIT",
+  "CONFIG_MICROCODE_LATE_LOADING",
+  "CONFIG_LEGACY_VSYSCALL_XONLY",
+  "CONFIG_X86_INTEL_TSX_MODE_ON",
+  "CONFIG_X86_INTEL_TSX_MODE_AUTO",
+]
+
+[x86_64.set]
+CONFIG_LEGACY_VSYSCALL_NONE = "y"
+CONFIG_X86_UMIP = "y"
+CONFIG_RANDOMIZE_MEMORY = "y"
+CONFIG_X86_KERNEL_IBT = "y"
+CONFIG_INTEL_IOMMU = "y"
+CONFIG_INTEL_IOMMU_DEFAULT_ON = "y"
+CONFIG_AMD_IOMMU = "y"
+CONFIG_ARCH_MMAP_RND_BITS = "32"
+CONFIG_X86_INTEL_TSX_MODE_OFF = "y"
+CONFIG_MICROCODE = "y"
+# T56, S17: every MITIGATION_* option in the pinned tree. A point release
+# that adds one fails the check until it is listed here.
+CONFIG_MITIGATION_PAGE_TABLE_ISOLATION = "y"
+CONFIG_MITIGATION_RETPOLINE = "y"
+CONFIG_MITIGATION_RETHUNK = "y"
+CONFIG_MITIGATION_UNRET_ENTRY = "y"
+CONFIG_MITIGATION_CALL_DEPTH_TRACKING = "y"
+CONFIG_MITIGATION_IBPB_ENTRY = "y"
+CONFIG_MITIGATION_IBRS_ENTRY = "y"
+CONFIG_MITIGATION_SRSO = "y"
+CONFIG_MITIGATION_SLS = "y"
+CONFIG_MITIGATION_GDS = "y"
+CONFIG_MITIGATION_RFDS = "y"
+CONFIG_MITIGATION_SPECTRE_BHI = "y"
+CONFIG_MITIGATION_MDS = "y"
+CONFIG_MITIGATION_TAA = "y"
+CONFIG_MITIGATION_MMIO_STALE_DATA = "y"
+CONFIG_MITIGATION_L1TF = "y"
+CONFIG_MITIGATION_RETBLEED = "y"
+CONFIG_MITIGATION_SPECTRE_V1 = "y"
+CONFIG_MITIGATION_SPECTRE_V2 = "y"
+CONFIG_MITIGATION_SRBDS = "y"
+CONFIG_MITIGATION_SSB = "y"
+CONFIG_MITIGATION_ITS = "y"
+CONFIG_MITIGATION_TSA = "y"
+CONFIG_MITIGATION_VMSCAPE = "y"
+
+[x86_64.upstream_not_applied]
+
+[x86_64.sysctl]
+"kernel.perf_event_paranoid" = "2"
+
+[x86_64.cmdline]
+required = ["pti=on"]
+
+[aarch64]
+unset = [
+  "CONFIG_COMPAT",
+  "CONFIG_PERF_EVENTS",
+]
+
+[aarch64.set]
+CONFIG_SHADOW_CALL_STACK = "y"
+CONFIG_ARM64_PTR_AUTH_KERNEL = "y"
+CONFIG_ARM64_BTI_KERNEL = "y"
+CONFIG_ARM64_MTE = "y"
+CONFIG_ARM64_E0PD = "y"
+CONFIG_ARM64_SW_TTBR0_PAN = "y"
+CONFIG_UNMAP_KERNEL_AT_EL0 = "y"
+CONFIG_MITIGATE_SPECTRE_BRANCH_HISTORY = "y"
+CONFIG_ARCH_MMAP_RND_BITS = "33"
+
+[aarch64.upstream_not_applied]
+CONFIG_RANDOMIZE_MEMORY = "x86 only; arm64 randomizes the linear map with RANDOMIZE_BASE"
+
+[aarch64.sysctl]
+
+[aarch64.cmdline]
+required = []
+# aarch64's switches that turn a protection off without an =off value.
+forbidden = ["kpti=0", "arm64.nobti", "arm64.nopauth", "arm64.nomte"]

@@ -122,11 +122,15 @@ class Bundle(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "does not list"):
             self.fetch(ARTIFACT_SHA, name="felixd-v0.1.0-riscv64-unknown-linux-gnu.tar.gz")
 
-    def fetch(self, pinned, name=ARTIFACT):
+    def test_fetch_component_refuses_an_unknown_signature_kind(self):
+        with self.assertRaisesRegex(SystemExit, "unknown signature kind"):
+            self.fetch(ARTIFACT_SHA, kind="Sigstore")
+
+    def fetch(self, pinned, name=ARTIFACT, kind="sigstore"):
         base = "https://github.com/GetFelix/felixd/releases/download/v0.1.0/"
         c = {
             "name": "felixd", "version": "0.1.0",
-            "signature": {"kind": "sigstore", "checksums": base + "SHA256SUMS",
+            "signature": {"kind": kind, "checksums": base + "SHA256SUMS",
                           "bundle": base + "SHA256SUMS.sigstore.json", "identity": IDENTITY, "issuer": ISSUER},
             "artifacts": {"x86_64": {"url": base + name, "sha256": pinned}},
         }

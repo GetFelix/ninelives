@@ -142,12 +142,19 @@ def fetch_component(c: dict, arch: str, out: pathlib.Path, verifier: tuple[pathl
             path.unlink(missing_ok=True)
             ic.download(url, path)
         try:
+            signed = sums.read_bytes()
             sv.verify_bundle(cosign, root, bundle, sums, sig["identity"], sig["issuer"])
-            sv.check_artifact(sv.parse_sums(sums.read_text(encoding="utf-8")), dest.name,
+            # Parse the bytes cosign checked, not a later read of the file.
+            if sums.read_bytes() != signed:
+                raise sv.VerifyError("SHA256SUMS changed during verification")
+            sv.check_artifact(sv.parse_sums(signed.decode("utf-8")), dest.name,
                               art["sha256"], ic.sha256_file(dest))
         except sv.VerifyError as e:
             dest.unlink(missing_ok=True)
             fail(f"{c['name']} {c['version']}: {e}")
+    elif sig["kind"] != "none":
+        dest.unlink(missing_ok=True)
+        fail(f"{c['name']}: unknown signature kind {sig['kind']!r}")
     return {"version": c["version"], "file": dest.name, "sha256": art["sha256"]}
 
 

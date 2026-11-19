@@ -91,7 +91,7 @@ reason = "A new compiler warning in a point release would block a security fix p
 option = "mitigations"
 type = "cmdline"
 arch = ["x86_64"]
-reason = "Wants auto,nosmt. SMT stays on (kernel.md, CPU flaws); auto is the default, and mitigations=off is forbidden."
+reason = "Wants auto,nosmt. SMT stays on (kernel.md, CPU flaws); auto is the default, and check 5 rejects mitigations=off."
 
 [[exception]]
 option = "nosmt"
@@ -100,22 +100,10 @@ arch = ["x86_64", "aarch64"]
 reason = "SMT stays on: in a guest nosmt halves the vCPUs and buys little. Reopened for bare metal (M5)."
 
 [[exception]]
-option = "hardened_usercopy"
-type = "cmdline"
-arch = ["x86_64", "aarch64"]
-reason = "HARDENED_USERCOPY_DEFAULT_ON sets it; the command line does not repeat config defaults, and turning it off is forbidden."
-
-[[exception]]
-option = "randomize_kstack_offset"
-type = "cmdline"
-arch = ["x86_64", "aarch64"]
-reason = "RANDOMIZE_KSTACK_OFFSET_DEFAULT sets it; the command line does not repeat config defaults, and turning it off is forbidden."
-
-[[exception]]
 option = "hash_pointers"
 type = "cmdline"
 arch = ["x86_64", "aarch64"]
-reason = "The default already hashes %p output, kptr_restrict=2 hides %pK, and no_hash_pointers is forbidden."
+reason = "The default already hashes %p output, kptr_restrict=2 hides %pK, and check 5 rejects no_hash_pointers."
 
 [[exception]]
 option = "iommu"
@@ -127,11 +115,11 @@ reason = "Wants iommu=force. The qemu target has no IOMMU; strict DMA mode is se
 option = "rodata"
 type = "cmdline"
 arch = ["aarch64"]
-reason = "rodata=full is the 6.18 default (RODATA_FULL_DEFAULT_ENABLED no longer exists), and any rodata= word is forbidden."
+reason = "rodata=full is the 6.18 default (RODATA_FULL_DEFAULT_ENABLED no longer exists), and check 5 rejects any rodata= word."
 
 # Each x86 per-mitigation word passes the checker only when present and not
 # off, or with mitigations=auto,nosmt. Absent, the kernel uses its default,
-# which the CONFIG_MITIGATION_* options set on; any =off word is forbidden.
+# which the CONFIG_MITIGATION_* options set on; check 5 rejects any word that sets them.
 
 [[exception]]
 option = "spectre_v2"
@@ -248,7 +236,7 @@ reason = "ARCH_MMAP_RND_BITS is at its maximum for the architecture in config."
 option = "kernel.randomize_va_space"
 type = "sysctl"
 arch = ["x86_64", "aarch64"]
-reason = "The kernel default is 2, /proc/sys is read-only after boot, and norandmaps is forbidden."
+reason = "The kernel default is 2, /proc/sys is read-only after boot, and check 5 rejects norandmaps."
 
 [[exception]]
 option = "kernel.dmesg_restrict"

@@ -1,5 +1,6 @@
 # What the resolved kernel config must and must not contain, the sysctls the
-# kernel policy expects, and the command line words it requires and forbids
+# kernel policy expects, the command line words it requires, and the only
+# other parameters the command line may carry
 # (docs/components/kernel.md). scripts/check_kernel_config.py reads this file;
 # the qemu tests will read it too.
 #
@@ -141,6 +142,7 @@ unset = [
   "CONFIG_FIB_RULES",
   "CONFIG_LWTUNNEL",
   "CONFIG_NET_SHAPER",
+  "CONFIG_IP_VS",
   "CONFIG_OPENVSWITCH",
   # T16: protocol families no service uses.
   "CONFIG_IP_SCTP",
@@ -214,7 +216,8 @@ CONFIG_LSM = '"landlock,lockdown,yama"'
 CONFIG_SECCOMP = "y"
 CONFIG_SECCOMP_FILTER = "y"
 CONFIG_PROC_MEM_NO_FORCE = "y"
-# T16: classic BPF is JIT-only.
+# T16: classic BPF is JIT-compiled. The interpreter is still built, because
+# BPF_JIT_ALWAYS_ON needs BPF_SYSCALL; bpf_jit_enable=1 below keeps it unused.
 CONFIG_BPF_JIT = "y"
 # T16: information leaks.
 CONFIG_SECURITY_DMESG_RESTRICT = "y"
@@ -292,6 +295,7 @@ CONFIG_KSTACK_ERASE = "needs CC_HAS_SANCOV_STACK_DEPTH_CALLBACK, which Debian 13
 [common.sysctl]
 "kernel.kptr_restrict" = "2"
 "kernel.yama.ptrace_scope" = "3"
+"net.core.bpf_jit_enable" = "1"
 "net.core.bpf_jit_harden" = "2"
 "vm.memfd_noexec" = "2"
 "fs.suid_dumpable" = "0"
@@ -303,25 +307,18 @@ CONFIG_KSTACK_ERASE = "needs CC_HAS_SANCOV_STACK_DEPTH_CALLBACK, which Debian 13
 [common.cmdline]
 # Every sysctl above is also required as a sysctl.<name>=<value> word.
 required = ["ro", "panic=10", "oops=panic", "page_alloc.shuffle=1"]
-# Exact words that turn a protection off.
-forbidden = [
-  "rw",
-  "nokaslr", "nopti", "norandmaps", "nosmap", "nosmep", "noibrs", "noibpb",
-  "nospectre_v1", "nospectre_v2", "nospectre_bhb", "nospec_store_bypass_disable",
-  "slab_merge", "iommu=pt", "iommu.passthrough=1", "iommu.strict=0",
-  "init_on_alloc=0", "init_on_free=0", "kfence.sample_interval=0",
-  "hardened_usercopy=0", "randomize_kstack_offset=0",
-  "no_hash_pointers", "sysrq_always_enabled", "ssbd=force-off",
-  "efi=no_disable_early_pci_dma",
+# The command line may hold only the required words and these parameters,
+# which the image design owns (image.md, "Boot without an initrd"): the root
+# and its dm-verity table, init, and the console. Any other word fails check
+# 5, so a protection cannot be turned off by a spelling nobody listed. Keys
+# compare with dashes and underscores alike, as the kernel compares them.
+image_keys = [
+  "root", "rootfstype", "rootflags", "rootwait",
+  "init",
+  "console", "earlycon", "loglevel", "quiet",
 ]
-# Any word that starts with one of these.
-forbidden_prefixes = [
-  "lsm=", "security=", "lockdown=", "module_blacklist=", "initcall_blacklist=",
-  "rodata=", "debugfs=", "cfi=", "tsx=", "vsyscall=", "ia32_emulation=",
-  "selinux=", "apparmor=", "kgdboc=", "ftrace=",
-]
-# Any key=off word: mitigations=off and every per-mitigation off switch.
-forbid_off_values = true
+# Any key that starts with one of these: dm-mod.create and dm-mod.waitfor.
+image_prefixes = ["dm-mod."]
 
 [x86_64]
 # Every option in the tree with one of these prefixes must be in [x86_64.set]
@@ -347,6 +344,7 @@ CONFIG_LEGACY_VSYSCALL_NONE = "y"
 CONFIG_X86_UMIP = "y"
 CONFIG_RANDOMIZE_MEMORY = "y"
 CONFIG_X86_KERNEL_IBT = "y"
+CONFIG_CFI_AUTO_DEFAULT = "y"
 CONFIG_INTEL_IOMMU = "y"
 CONFIG_INTEL_IOMMU_DEFAULT_ON = "y"
 CONFIG_AMD_IOMMU = "y"
@@ -396,6 +394,7 @@ required = ["pti=on"]
 unset = [
   "CONFIG_COMPAT",
   "CONFIG_PERF_EVENTS",
+  "CONFIG_KASAN",
 ]
 
 [aarch64.set]
@@ -408,13 +407,13 @@ CONFIG_ARM64_SW_TTBR0_PAN = "y"
 CONFIG_UNMAP_KERNEL_AT_EL0 = "y"
 CONFIG_MITIGATE_SPECTRE_BRANCH_HISTORY = "y"
 CONFIG_ARCH_MMAP_RND_BITS = "33"
+CONFIG_ARM64_GCS = "y"
 
 [aarch64.upstream_not_applied]
 CONFIG_RANDOMIZE_MEMORY = "x86 only; arm64 randomizes the linear map with RANDOMIZE_BASE"
+CONFIG_KASAN_HW_TAGS = "KASAN is off: it costs memory and CPU on every allocation, and it reports a bad access rather than panicking"
 
 [aarch64.sysctl]
 
 [aarch64.cmdline]
 required = []
-# aarch64's switches that turn a protection off without an =off value.
-forbidden = ["kpti=0", "arm64.nobti", "arm64.nopauth", "arm64.nomte"]

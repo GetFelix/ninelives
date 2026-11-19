@@ -10,6 +10,9 @@ maintainers signed. Any failure exits non-zero; files already in --out are
 verified again, never trusted.
 
   fetch_kernel.py --check                    check kernel/VERSION and kernel/keys/ only
+  fetch_kernel.py --check --base DIR         also compare with the target branch's
+                                             kernel/ in DIR: no downgrade, and the
+                                             keys never change with the pin
   fetch_kernel.py --out DIR                  download into DIR (reusing files there) and verify
   fetch_kernel.py --out DIR --bump 6.18.65   verify a new release's signature, then
                                              rewrite kernel/VERSION with its hash
@@ -29,6 +32,13 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 KERNEL = ROOT / "kernel"
 VERSION = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 FINGERPRINT = re.compile(r"[0-9A-F]{40}")
+# The pinned long-term line. Moving to the next one changes this, in a pull
+# request with nothing else in it (kernel.md, "The release and how it moves").
+SERIES = (6, 18)
+
+
+def version_tuple(v: str) -> tuple[int, ...]:
+    return tuple(int(x) for x in v.split("."))
 
 
 def load_pin(path: pathlib.Path) -> tuple[dict, list[str]]:
@@ -38,6 +48,8 @@ def load_pin(path: pathlib.Path) -> tuple[dict, list[str]]:
     if not m:
         return pin, [f"{path.name}: version {pin.get('version')!r} is not an exact x.y.z release"]
     v = pin["version"]
+    if version_tuple(v)[:2] != SERIES:
+        errors.append(f"{path.name}: {v} is not in the pinned {SERIES[0]}.{SERIES[1]}.y series")
     base = f"https://cdn.kernel.org/pub/linux/kernel/v{m.group(1)}.x/linux-{v}"
     if pin.get("url") != f"{base}.tar.xz":
         errors.append(f"{path.name}: url must be {base}.tar.xz")
@@ -60,6 +72,29 @@ def load_fingerprints(path: pathlib.Path) -> tuple[set[str], list[str]]:
     if not fprs:
         errors.append(f"{path.name}: no fingerprints")
     return fprs, errors
+
+
+def key_files(keys: pathlib.Path) -> dict[str, bytes]:
+    return {p.name: p.read_bytes() for p in sorted(keys.iterdir()) if p.is_file()} if keys.is_dir() else {}
+
+
+def check_against_base(kernel: pathlib.Path, base: pathlib.Path) -> list[str]:
+    """Compare the pin with the target branch's kernel/ directory in base.
+
+    A bump and a key change in one pull request would let a new key vouch for
+    the release it arrives with, so each has to be reviewed on its own.
+    """
+    if not (base / "VERSION").is_file():
+        return []
+    errors = []
+    old = tomllib.loads((base / "VERSION").read_text(encoding="utf-8")).get("version", "")
+    new = tomllib.loads((kernel / "VERSION").read_text(encoding="utf-8")).get("version", "")
+    if VERSION.fullmatch(old) and VERSION.fullmatch(new) and version_tuple(new) < version_tuple(old):
+        errors.append(f"VERSION: {new} is older than {old} on the target branch")
+    pin_changed = (base / "VERSION").read_bytes() != (kernel / "VERSION").read_bytes()
+    if pin_changed and key_files(base / "keys") != key_files(kernel / "keys"):
+        errors.append("kernel/keys/ and kernel/VERSION both change; change the keys in their own pull request")
+    return errors
 
 
 def crc24(data: bytes) -> int:
@@ -156,9 +191,12 @@ def main() -> int:
     group.add_argument("--check", action="store_true", help="check the pin files only, offline")
     group.add_argument("--out", type=pathlib.Path, help="directory to download into")
     parser.add_argument("--bump", metavar="VERSION", help="with --out: pin this release instead")
+    parser.add_argument("--base", type=pathlib.Path, help="with --check: the target branch's kernel/ directory")
     args = parser.parse_args()
     if args.bump and not args.out:
         parser.error("--bump needs --out")
+    if args.base and not args.check:
+        parser.error("--base needs --check")
 
     pin, errors = load_pin(KERNEL / "VERSION")
     fprs, more = load_fingerprints(KERNEL / "keys" / "fingerprints")
@@ -168,10 +206,16 @@ def main() -> int:
             dearmor(p.read_text(encoding="ascii"))
         except ValueError as e:
             errors.append(f"keys/{p.name}: {e}")
+    if args.base:
+        errors += check_against_base(KERNEL, args.base)
     if not errors and args.bump:
         m = VERSION.fullmatch(args.bump)
         if not m:
             parser.error(f"{args.bump!r} is not an exact x.y.z release")
+        if version_tuple(args.bump)[:2] != SERIES:
+            parser.error(f"{args.bump} is not in the pinned {SERIES[0]}.{SERIES[1]}.y series")
+        if version_tuple(args.bump) <= version_tuple(pin["version"]):
+            parser.error(f"{args.bump} is not newer than the pinned {pin['version']}")
         base = f"https://cdn.kernel.org/pub/linux/kernel/v{m.group(1)}.x/linux-{args.bump}"
         args.out.mkdir(parents=True, exist_ok=True)
         tarball, sig = args.out / f"linux-{args.bump}.tar.xz", args.out / f"linux-{args.bump}.tar.sign"

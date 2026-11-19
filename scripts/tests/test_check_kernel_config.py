@@ -173,9 +173,13 @@ class PolicyShape(unittest.TestCase):
         p = self.policy('[common]\nunset = ["IO_URING"]\n')
         self.assertIn("policy: 'IO_URING' is not a CONFIG_ option name", p.errors)
 
-    def test_required_word_that_is_forbidden(self):
-        p = self.policy('[common.cmdline]\nrequired = ["lsm=yama"]\nforbidden_prefixes = ["lsm="]\n')
-        self.assertIn("policy: required word 'lsm=yama' is also forbidden", p.errors)
+    def test_required_word_that_is_an_image_parameter(self):
+        p = self.policy('[common.cmdline]\nrequired = ["console=ttyS0"]\nimage_keys = ["console"]\n')
+        self.assertIn("policy: required word 'console=ttyS0' is also an image parameter", p.errors)
+
+    def test_image_prefix_must_end_with_a_dot(self):
+        p = self.policy('[common.cmdline]\nimage_prefixes = ["dm"]\n')
+        self.assertIn("policy: image prefix 'dm' must end with '.'", p.errors)
 
 
 class Fragments(unittest.TestCase):
@@ -237,10 +241,43 @@ class Cmdline(unittest.TestCase):
     def test_arch_word_not_required_elsewhere(self):
         self.assertEqual(self.errors(self.GOOD.replace(" pti=on", ""), "aarch64"), [])
 
-    def test_forbidden_words_fail(self):
-        for word in ("nokaslr", "lsm=selinux", "mitigations=off", "spectre_v2=off", "rw"):
+    def test_unlisted_words_fail(self):
+        # Each of these got past the old denylist; the allowlist rejects them all.
+        for word in ("nokaslr", "lsm=selinux", "mitigations=off", "spectre_v2=off", "rw",
+                     "mitigations=auto,no_user_kernel", "slub_merge", "init_on_free=n",
+                     "init_on_free=no", "init_on_free=false", "init-on-free=0",
+                     "clearcpuid=smep", "id_aa64pfr1.bt=0", "dm_verity.require_signatures=0"):
             with self.subTest(word=word):
-                self.assertIn(f"cmdline: forbidden word {word!r}", self.errors(self.GOOD + " " + word))
+                self.assertIn(f"cmdline: {word!r} is neither required nor an image parameter policy.toml allows",
+                              self.errors(self.GOOD + " " + word))
+
+    def test_unlisted_words_fail_on_aarch64_too(self):
+        line = self.GOOD.replace(" pti=on", "") + " id_aa64pfr1.bt=0"
+        self.assertEqual(self.errors(line, "aarch64"),
+                         ["cmdline: 'id_aa64pfr1.bt=0' is neither required nor an image parameter policy.toml allows"])
+
+    def test_dashes_and_underscores_compare_alike(self):
+        # The kernel reads dm_mod.x as dm-mod.x, so a dashed spelling can neither
+        # slip past a required key nor be refused where the underscore is allowed.
+        self.assertEqual(self.errors(self.GOOD + " dm_mod.waitfor=/dev/vda2"), [])
+        self.assertIn("cmdline: 'sysctl.kernel.kptr-restrict=0' conflicts with required "
+                      "'sysctl.kernel.kptr_restrict=2'",
+                      self.errors(self.GOOD + " sysctl.kernel.kptr-restrict=0"))
+        self.assertEqual(self.errors(self.GOOD.replace("sysctl.kernel.kptr_restrict=2",
+                                                       "sysctl.kernel.kptr-restrict=2")), [])
+
+    def test_repository_policy_takes_an_image_line(self):
+        for arch in ckc.SRCARCH:
+            policy = ckc.load_policy(ckc.KERNEL / "policy.toml", arch)
+            line = ('root=/dev/dm-0 rootfstype=erofs init=/usr/lib/ninelives/init console=ttyS0 '
+                    'dm-mod.create="root,,,ro,0 8 verity 1 /dev/vda2 /dev/vda3 4096 4096 1 0 sha256 aa bb" '
+                    + " ".join(policy.required))
+            with self.subTest(arch=arch):
+                self.assertEqual(ckc.check_cmdline(line, policy), [])
+                self.assertEqual(len(ckc.check_cmdline(line + " init_on_free=n", policy)), 1)
+
+    def test_flag_word_with_a_value_conflicts(self):
+        self.assertIn("cmdline: 'ro=0' conflicts with required 'ro'", self.errors(self.GOOD + " ro=0"))
 
     def test_later_override_of_required_value_fails(self):
         self.assertIn("cmdline: 'panic=0' conflicts with required 'panic=10'",
@@ -252,22 +289,23 @@ class Cmdline(unittest.TestCase):
             self.errors(self.GOOD + " sysctl.kernel.kptr_restrict=1"))
 
     def test_unlisted_sysctl_fails(self):
-        self.assertIn("cmdline: 'sysctl.kernel.panic_on_warn=1' sets a sysctl policy.toml does not list",
+        self.assertIn("cmdline: 'sysctl.kernel.panic_on_warn=1' is neither required nor an image parameter "
+                      "policy.toml allows",
                       self.errors(self.GOOD + " sysctl.kernel.panic_on_warn=1"))
 
     def test_words_after_double_dash_do_not_count(self):
         line = self.GOOD.replace(" pti=on", "") + " -- pti=on"
         self.assertIn("cmdline: missing required word 'pti=on'", self.errors(line))
 
-    def test_cli_seeded_missing_and_forbidden(self):
-        # The seeded line kernel.md's test plan asks for: one word missing, one forbidden.
+    def test_cli_seeded_missing_and_unlisted(self):
+        # The seeded line kernel.md's test plan asks for: one word missing, one not allowed.
         with tempfile.TemporaryDirectory() as d:
             path = pathlib.Path(d) / "cmdline"
             path.write_text(self.GOOD.replace(" panic=10", "") + " nokaslr\n")
             r = run("cmdline", "--arch", "x86_64", "--cmdline", str(path))
         self.assertEqual(r.returncode, 1)
         self.assertIn("missing required word 'panic=10'", r.stderr)
-        self.assertIn("forbidden word 'nokaslr'", r.stderr)
+        self.assertIn("'nokaslr' is neither required nor an image parameter", r.stderr)
 
     def test_emitted_line_passes(self):
         r = run("emit", "--arch", "x86_64", "cmdline")

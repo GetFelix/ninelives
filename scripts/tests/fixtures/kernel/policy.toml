@@ -14,9 +14,8 @@ CONFIG_STRICT_MODULE_RWX = "needs CONFIG_MODULES"
 
 [common.cmdline]
 required = ["ro", "panic=10"]
-forbidden = ["rw", "nokaslr"]
-forbidden_prefixes = ["lsm="]
-forbid_off_values = true
+image_keys = ["init", "console"]
+image_prefixes = ["dm-mod."]
 
 [x86_64]
 all_listed = ["CONFIG_MITIGATION_"]

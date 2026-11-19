@@ -138,8 +138,9 @@ kernel/
     qemu-x86_64.config        the full resolved .config, committed
     qemu-aarch64.config
   policy.toml                 options that must be set or unset, expected
-                              sysctls, required and forbidden command line
-                              words; a common table and one per architecture
+                              sysctls, required command line words and the
+                              image parameters allowed beside them; a common
+                              table and one per architecture
   hardening-exceptions.toml   each kernel-hardening-checker finding we do
                               not fix, with the reason
 ```
@@ -248,11 +249,14 @@ every point-release bump:
    the exact command line and checks it byte for byte. This check reads
    that line from the built UKI and fails unless it contains every word
    `policy.toml` requires for the architecture (see
-   [The command line](#the-command-line)). It also rejects any word that
-   turns a protection off: `mitigations=off` or any per-mitigation `=off`,
-   `nokaslr`, `nopti`, `lsm=`, `security=`, `lockdown=`, `init_on_alloc=0`,
-   `init_on_free=0`, `hardened_usercopy=off`, `slab_merge`, `iommu=pt`,
-   `module_blacklist`, and a `sysctl.` word that differs from `policy.toml`.
+   [The command line](#the-command-line)). Every other word must be a
+   parameter the image design owns, which `policy.toml` lists (the root,
+   `dm-mod.*`, `init`, the console). Anything else fails, so `nokaslr`,
+   `mitigations=auto,no_user_kernel`, `init-on-free=0`, `clearcpuid=smep`
+   and spellings nobody thought to list are all rejected. Keys are compared
+   with dashes and underscores alike, as the kernel compares them. A
+   required key with another value (`panic=0`, a `sysctl.` word that differs
+   from `policy.toml`) fails too.
 6. **The pinned kernel accepts the built-in AMD microcode.** From 6.14 the
    AMD loader refuses a patch whose SHA-256 is not in the kernel's own
    table (`arch/x86/kernel/cpu/microcode/amd_shas.c`), so a microcode
@@ -302,13 +306,13 @@ and is amended to match.
 |---|---|
 | `CONFIG_IO_URING=n` | io_uring performs file and network operations that seccomp never sees, and has been one of the largest sources of local privilege escalation. S6 and [0007](../decisions/0007-kernel-from-upstream-source.md). |
 | `CONFIG_BPF_SYSCALL=n` | No `bpf(2)` at all, so no unprivileged eBPF, no verifier to attack, no BPF LSM, no XDP. `kernel.unprivileged_bpf_disabled` does not exist and is not needed. Classic BPF stays: seccomp filters and socket filters are built on it. |
-| `CONFIG_BPF_JIT=y`, `CONFIG_BPF_JIT_ALWAYS_ON=y`, `net.core.bpf_jit_harden=2` | Classic BPF programs (seccomp filters, socket filters any process can attach) are JIT-compiled with constant blinding, and the interpreter, a known speculative execution gadget, is not built. |
+| `CONFIG_BPF_JIT=y`, `net.core.bpf_jit_enable=1`, `net.core.bpf_jit_harden=2` | Classic BPF programs (seccomp filters, socket filters any process can attach) are JIT-compiled with constant blinding. `CONFIG_BPF_JIT_ALWAYS_ON` would also remove the interpreter, a known speculative execution gadget, but it depends on `BPF_SYSCALL`, which is off. So the interpreter is still built, and the JIT is what keeps it unused: `bpf_jit_enable=1` is the default on both architectures, the command line sets it anyway so CI checks it, and `/proc/sys` is read-only after boot. |
 | `CONFIG_USER_NS=n` | Unprivileged user namespaces hand any process `CAP_NET_ADMIN` and `CAP_SYS_ADMIN` over objects it creates, which has exposed nf_tables, mount and filesystem code to unprivileged users for years. Compiled out, nobody can create one. Ubuntu and Debian restricted unprivileged user namespaces for the same reason: they were the first step of many privilege-escalation chains. |
 | No network, IPC, UTS or time namespaces (`NET_NS`, `IPC_NS`, `UTS_NS`, `TIME_NS` off) | Nothing in the image uses them: the init isolates services with uids, cgroups, Landlock and seccomp ([init design](init.md#what-it-does-not-do)). |
 | `CONFIG_PID_NS=y`, kept for one sysctl | `vm.memfd_noexec` (below) is built only with PID namespaces. Creating one needs `CAP_SYS_ADMIN`, which no process holds after the drop, and with no user namespaces there is no way to get it. Mount and cgroup namespaces cannot be compiled out and need the same capability. |
 | `CONFIG_USERFAULTFD=n` | userfaultfd lets a process stall the kernel at a chosen page fault, which turns narrow race conditions into reliable exploits. Nothing in the image uses it. Stronger than `vm.unprivileged_userfaultfd=0`. |
 | `CONFIG_KEYS=n` | No `add_key`, `keyctl` or `request_key`. Nothing uses the kernel keyring until M3 may need it for S16's sealed key (see [Open questions](#open-questions)). |
-| `CONFIG_SYSVIPC=n`, `CONFIG_POSIX_MQUEUE=n`, `CONFIG_CHECKPOINT_RESTORE=n`, `CONFIG_KCMP=n`, `CONFIG_FHANDLE=n`, `CONFIG_SYSFS_SYSCALL=n`, `CONFIG_USELIB=n`, `CONFIG_UID16=n`, `CONFIG_AIO=n`, every `CRYPTO_USER_API_*` option (no `AF_ALG`) | Unused system calls and socket families with a history of bugs. The qemu test that runs every real service under its real profile for five minutes ([init design](init.md#test-plan)) catches anything we were wrong about. |
+| `CONFIG_SYSVIPC=n`, `CONFIG_POSIX_MQUEUE=n`, `CONFIG_CHECKPOINT_RESTORE=n`, `CONFIG_KCMP=n`, `CONFIG_FHANDLE=n`, `CONFIG_SYSFS_SYSCALL=n`, `CONFIG_UID16=n`, `CONFIG_AIO=n`, every `CRYPTO_USER_API_*` option (no `AF_ALG`) | Unused system calls and socket families with a history of bugs. The qemu test that runs every real service under its real profile for five minutes ([init design](init.md#test-plan)) catches anything we were wrong about. |
 | `vm.memfd_noexec=2` | A memfd can never be made executable, so a service cannot run code from memory and bypass the `noexec` data partition. Landlock does not cover this: its rules are about paths, and a memfd lives on an internal mount it does not check. |
 
 On x86_64 also: `CONFIG_IA32_EMULATION=n` and `CONFIG_X86_X32_ABI=n` (one
@@ -350,7 +354,7 @@ holds) is the likely addition in M3 and is an open question.
 | `CONFIG_SECURITY_DMESG_RESTRICT=y` | Reading the kernel log needs `CAP_SYSLOG`, which no process holds after the drop. The serial console still carries it (S11). |
 | `CONFIG_DEBUG_FS=n`, `CONFIG_FTRACE=n`, `CONFIG_KPROBES=n`, `CONFIG_UPROBES=n`, `CONFIG_PROFILING=n`, `CONFIG_PROC_KCORE=n`, `CONFIG_MAGIC_SYSRQ=n`, `CONFIG_KGDB=n` | Debug and tracing interfaces leak layout and often allow writes. SysRq would let anyone at the console dump memory or crash the machine. |
 | `CONFIG_DEVMEM=n`, `CONFIG_DEVPORT=n` | No `/dev/mem` or `/dev/port`. `/dev/kmem` was removed upstream in 5.13; nothing to set. |
-| `CONFIG_ACPI_CUSTOM_METHOD=n`, `CONFIG_ACPI_TABLE_UPGRADE=n`, `CONFIG_ACPI_DEBUGGER=n`, `CONFIG_EFIVAR_FS=n` | Ways to run or install firmware-level code, or to write firmware variables, from user space. |
+| `CONFIG_ACPI_TABLE_UPGRADE=n`, `CONFIG_ACPI_DEBUGGER=n`, `CONFIG_EFIVAR_FS=n` | Ways to run or install firmware-level code, or to write firmware variables, from user space. |
 | `perf_event_open` | x86_64 selects `CONFIG_PERF_EVENTS` unconditionally, so there it stays, with `kernel.perf_event_paranoid=2` (the strictest level upstream defines; `3` is a distribution patch), lockdown blocking kernel reads, and every service's seccomp filter denying the call. On aarch64 `CONFIG_PERF_EVENTS=n`. |
 | `CONFIG_SWAP=n` | No swap, so memory holding credentials is never written to disk. |
 
@@ -367,9 +371,10 @@ remove it.
 | Heap use-after-free and info leaks | `INIT_ON_ALLOC_DEFAULT_ON`, `INIT_ON_FREE_DEFAULT_ON`, `SLAB_FREELIST_RANDOM`, `SLAB_FREELIST_HARDENED`, `SLAB_BUCKETS`, `RANDOM_KMALLOC_CACHES`, `SLAB_MERGE_DEFAULT=n`, `SHUFFLE_PAGE_ALLOCATOR` with `page_alloc.shuffle=1`, `KFENCE` |
 | Corrupted kernel data structures | `LIST_HARDENED`, `BUG_ON_DATA_CORRUPTION`, `PAGE_TABLE_CHECK_ENFORCED`, `DEBUG_WX`, `STRICT_KERNEL_RWX` |
 | Address layout | `RANDOMIZE_BASE`, `RANDOMIZE_MEMORY` (x86_64), `vm.mmap_rnd_bits` at the architecture's maximum, `DEFAULT_MMAP_MIN_ADDR=65536` |
-| Forward-edge control flow | `CFI` (kCFI, Clang), `CFI_PERMISSIVE=n`; on x86_64 `X86_KERNEL_IBT` so FineIBT replaces kCFI on CPUs with IBT; on aarch64 `ARM64_BTI_KERNEL` |
+| Forward-edge control flow | `CFI` (kCFI, Clang), `CFI_PERMISSIVE=n`; on x86_64 `X86_KERNEL_IBT` with `CFI_AUTO_DEFAULT` (`cfi=auto`), so FineIBT replaces kCFI on CPUs with IBT; on aarch64 `ARM64_BTI_KERNEL` |
 | Return addresses | aarch64: `SHADOW_CALL_STACK` and `ARM64_PTR_AUTH_KERNEL`. x86_64 has no kernel shadow stack upstream: return addresses there are protected only by the stack protector and the return thunks of the CPU mitigations. |
-| aarch64 extras | `ARM64_MTE` (used where the CPU has it), `ARM64_E0PD`, `UNMAP_KERNEL_AT_EL0` |
+| User space return addresses | aarch64: `ARM64_GCS`, the guarded control stack for user space, used where the CPU has it and the program asks for it. x86_64: `X86_USER_SHADOW_STACK`, from upstream's `hardening.config`. The kernel's own return addresses are the row above. |
+| aarch64 extras | `ARM64_MTE` (used where the CPU has it), `ARM64_E0PD`, `UNMAP_KERNEL_AT_EL0`. Hardware tag KASAN (`KASAN_HW_TAGS`, in upstream's arm64 `hardening.config`) is off: it costs memory and CPU on every allocation and reports a bad access rather than panicking. |
 | Hostile DMA (T54) | `IOMMU_SUPPORT`, `IOMMU_DEFAULT_DMA_STRICT`, `INTEL_IOMMU_DEFAULT_ON`, `AMD_IOMMU`, `EFI_DISABLE_PCI_DMA`. In qemu with no virtual IOMMU this is inert; it matters on bare metal (M5). |
 
 KASLR is a speed bump, not a wall: side channels against it are public on
@@ -405,7 +410,8 @@ nftables is the only packet filter and `nft_compat` cannot be built;
 `NF_TABLES_ARP`, `NF_TABLES_BRIDGE`, `NF_TABLES_NETDEV`; NAT; every
 conntrack helper (in-kernel parsers for FTP, SIP and others); `NF_CT_NETLINK`,
 `NETFILTER_NETLINK_QUEUE`, `NETFILTER_NETLINK_LOG`, `NETFILTER_NETLINK_ACCT`,
-`NETFILTER_NETLINK_OSF`.
+`NETFILTER_NETLINK_OSF`; IPVS (`IP_VS`), which also takes rules through
+`setsockopt` (S2).
 
 **Who can reach `NETLINK_NETFILTER`.** nfnetlink accepts a message only from
 a sender with `CAP_NET_ADMIN` in the network namespace's user namespace.
@@ -513,8 +519,12 @@ the current choice.
 The image design owns the exact line, including `init=`, the console, the
 root and the dm-verity table ([image design](image.md#boot-without-an-initrd)).
 This page owns the words the kernel policy requires, kept in `policy.toml`
-per architecture. CI check 5 fails if the image's line is missing any of
-them.
+per architecture, and the only other parameters the line may carry: `root`,
+`rootfstype`, `rootflags`, `rootwait`, `init`, `console`, `earlycon`,
+`loglevel`, `quiet` and anything under `dm-mod.`. CI check 5 fails if the
+image's line is missing a required word or carries any other word. The
+image design adding a parameter means adding it to `image_keys` in the same
+pull request.
 
 Both architectures:
 
@@ -522,6 +532,7 @@ Both architectures:
 ro panic=10 oops=panic page_alloc.shuffle=1
 sysctl.kernel.kptr_restrict=2
 sysctl.kernel.yama.ptrace_scope=3
+sysctl.net.core.bpf_jit_enable=1
 sysctl.net.core.bpf_jit_harden=2
 sysctl.vm.memfd_noexec=2
 sysctl.fs.suid_dumpable=0
@@ -672,7 +683,7 @@ Each is checked by a test in the [Test plan](#test-plan).
   (`IKCONFIG_PROC`, kept for this test; the config is public anyway) equals
   `kernel/resolved/<target>-<arch>.config`.
 - **K5.** `/proc/cmdline` contains every word `policy.toml` requires for
-  the architecture and no forbidden word. That it equals the image's line
+  the architecture and no word outside `policy.toml`'s allowlist. That it equals the image's line
   byte for byte is the image design's check.
 - **K6.** Every sysctl in `policy.toml` reads back its value, and after boot
   every write to any file under `/proc/sys` fails with `EROFS`, from every
@@ -689,8 +700,8 @@ Each is checked by a test in the [Test plan](#test-plan).
 - **K10.** No process can create a qdisc, filter or action:
   `RTM_NEWQDISC`, `RTM_NEWTFILTER` and `RTM_NEWACTION` from a process
   holding `CAP_NET_ADMIN` are refused.
-- **K11.** Nothing turns a CPU mitigation off: no forbidden word in the
-  command line, every `MITIGATION_*` in `policy.toml` set, and on cloud
+- **K11.** Nothing turns a CPU mitigation off: no word outside the
+  allowlist in the command line, every `MITIGATION_*` in `policy.toml` set, and on cloud
   targets no file in `/sys/devices/system/cpu/vulnerabilities` starts with
   `Vulnerable` (S17).
 - **K12.** KASLR is active: two boots of the same image print different
@@ -807,7 +818,7 @@ qemu test captures the serial console.
 | Every fragment line is in the resolved config as written; every line has a reason; seeded with a misspelt option to see it fail | CI | fragment lines landed |
 | `policy.toml` must-set and must-unset lists, seeded with `CONFIG_IO_URING=y` to see it fail | CI | the removed surface stays removed |
 | kernel-hardening-checker on config, command line and sysctls | CI | K14 |
-| The UKI's command line contains every required word for its architecture and no forbidden word; seeded with one missing and one forbidden word to see it fail | CI | K5 (build side), K11 (command line) |
+| The UKI's command line contains every required word for its architecture and nothing outside the allowlist; seeded with one missing word and one unlisted word to see it fail | CI | K5 (build side), K11 (command line) |
 | Read `/sys/kernel/security/lockdown`; try `/proc/kcore`, `/dev/mem`, `/dev/port`, `/sys/kernel/debug` | qemu | K1 |
 | `init_module`, `finit_module`, `kexec_load`, `kexec_file_load`; `/proc/modules` | qemu | K2 |
 | Each call in K3 from the permissive test service; list `/proc/self/ns` and `/dev` | qemu | K3 |

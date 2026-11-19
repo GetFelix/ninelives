@@ -68,6 +68,77 @@ class Pins(unittest.TestCase):
             fk.dearmor("\n".join(text))
 
 
+    def test_other_series_fails(self):
+        errors = self.pin(
+            'version = "6.12.58"\n'
+            'url = "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.58.tar.xz"\n'
+            'signature = "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.58.tar.sign"\n'
+            f'sha256 = "{"0" * 64}"\n')
+        self.assertEqual(errors, ["VERSION: 6.12.58 is not in the pinned 6.18.y series"])
+
+
+def pin_text(version: str) -> str:
+    base = f"https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-{version}"
+    return f'version = "{version}"\nurl = "{base}.tar.xz"\nsignature = "{base}.tar.sign"\nsha256 = "{"0" * 64}"\n'
+
+
+class AgainstBase(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = pathlib.Path(self.tmp.name)
+        self.base, self.head = root / "base", root / "head"
+        for d in (self.base, self.head):
+            (d / "keys").mkdir(parents=True)
+            (d / "VERSION").write_text(pin_text("6.18.64"))
+            (d / "keys" / "fingerprints").write_text("A" * 40 + "\n")
+
+    def test_unchanged_passes(self):
+        self.assertEqual(fk.check_against_base(self.head, self.base), [])
+
+    def test_bump_alone_passes(self):
+        (self.head / "VERSION").write_text(pin_text("6.18.65"))
+        self.assertEqual(fk.check_against_base(self.head, self.base), [])
+
+    def test_key_change_alone_passes(self):
+        (self.head / "keys" / "new.asc").write_text("key")
+        self.assertEqual(fk.check_against_base(self.head, self.base), [])
+
+    def test_downgrade_fails(self):
+        (self.head / "VERSION").write_text(pin_text("6.18.63"))
+        self.assertEqual(fk.check_against_base(self.head, self.base),
+                         ["VERSION: 6.18.63 is older than 6.18.64 on the target branch"])
+
+    def test_bump_with_a_key_change_fails(self):
+        for change in ("add", "edit", "remove"):
+            with self.subTest(change=change):
+                self.setUp()
+                (self.head / "VERSION").write_text(pin_text("6.18.65"))
+                fprs = self.head / "keys" / "fingerprints"
+                if change == "add":
+                    (self.head / "keys" / "new.asc").write_text("key")
+                elif change == "edit":
+                    fprs.write_text("B" * 40 + "\n")
+                else:
+                    fprs.unlink()
+                self.assertEqual(fk.check_against_base(self.head, self.base),
+                                 ["kernel/keys/ and kernel/VERSION both change; "
+                                  "change the keys in their own pull request"])
+
+    def test_bump_refuses_a_downgrade_or_another_series(self):
+        # Refused before anything is downloaded.
+        for version, message in (("6.18.63", "is not newer than"), ("6.19.1", "is not in the pinned 6.18.y")):
+            with self.subTest(version=version):
+                r = subprocess.run([sys.executable, "-I", str(SCRIPTS / "fetch_kernel.py"),
+                                    "--out", self.tmp.name, "--bump", version], capture_output=True, text=True)
+                self.assertEqual(r.returncode, 2)
+                self.assertIn(message, r.stderr)
+
+    def test_base_without_a_pin_passes(self):
+        (self.base / "VERSION").unlink()
+        self.assertEqual(fk.check_against_base(self.head, self.base), [])
+
+
 class Status(unittest.TestCase):
     def test_validsig_primary_is_the_last_field(self):
         status = (

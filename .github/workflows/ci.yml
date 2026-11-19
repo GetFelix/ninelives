@@ -46,7 +46,19 @@ jobs:
         run: python3 -m unittest discover -s scripts/tests -v
       - name: Kernel pin and fragments
         run: |
-          python3 -I scripts/fetch_kernel.py --check
+          # Against the target branch: no downgrade, and kernel/keys/ never
+          # changes in the same pull request as kernel/VERSION.
+          args=()
+          if [[ -n "${GITHUB_BASE_REF:-}" ]]; then
+            git fetch -q --depth=1 origin "$GITHUB_BASE_REF"
+            base=$RUNNER_TEMP/base
+            mkdir -p "$base"
+            if git cat-file -e FETCH_HEAD:kernel/VERSION 2>/dev/null; then
+              git archive FETCH_HEAD kernel | tar -x -C "$base"
+              args=(--base "$base/kernel")
+            fi
+          fi
+          python3 -I scripts/fetch_kernel.py --check "${args[@]}"
           python3 -I scripts/check_kernel_config.py lint
       - name: Component manifest
         run: |
@@ -180,10 +192,11 @@ jobs:
           mkdir -p "$WORK/artifact"
           cp "$WORK/out/${{ matrix.image }}" "$WORK/out/System.map" "$WORK/out/.config" "$WORK/artifact/"
           cd "$WORK/artifact"
-          sha256sum -- * .config > SHA256SUMS
-          cat SHA256SUMS
+          sha256sum -- * .config
       # The kernel the image build (#2) boots. System.map stays with it so a
-      # panic's raw addresses can be symbolised offline.
+      # panic's raw addresses can be symbolised offline. Nothing inside an
+      # artifact vouches for it, so #2 takes only this run's artifact or one
+      # from a push to main, never the latest artifact with this name.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kernel-qemu-${{ matrix.arch }}

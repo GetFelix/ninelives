@@ -25,7 +25,16 @@ esac
 export ARCH=$karch LLVM=1
 # S5: nothing about the build machine or time ends up in the image.
 export KBUILD_BUILD_USER=ninelives KBUILD_BUILD_HOST=ninelives LOCALVERSION=
-export KBUILD_BUILD_TIMESTAMP=${KBUILD_BUILD_TIMESTAMP:-$(git -C "$repo" log -1 --format=@%ct)}
+# Assigned on its own line so a git failure stops the script: an empty
+# timestamp would make the build use the wall clock.
+if [[ -z ${KBUILD_BUILD_TIMESTAMP:-} ]]; then
+  KBUILD_BUILD_TIMESTAMP=$(git -C "$repo" log -1 --format=@%ct)
+fi
+if [[ -z $KBUILD_BUILD_TIMESTAMP ]]; then
+  echo "no build timestamp: git log printed nothing" >&2
+  exit 1
+fi
+export KBUILD_BUILD_TIMESTAMP
 
 version=$(python3 -I -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["version"])' "$repo/kernel/VERSION")
 src=$work/src/linux-$version

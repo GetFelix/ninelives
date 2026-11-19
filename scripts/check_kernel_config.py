@@ -104,22 +104,32 @@ class Policy:
         cc, oc = common.get("cmdline", {}), own.get("cmdline", {})
         self.required = cc.get("required", []) + oc.get("required", [])
         self.required += [f"sysctl.{k}={v}" for k, v in self.sysctl.items()]
-        self.forbidden = set(cc.get("forbidden", []) + oc.get("forbidden", []))
-        self.forbidden_prefixes = cc.get("forbidden_prefixes", []) + oc.get("forbidden_prefixes", [])
-        self.forbid_off = cc.get("forbid_off_values", False) or oc.get("forbid_off_values", False)
+        self.image_keys = {param_key(k) for k in cc.get("image_keys", []) + oc.get("image_keys", [])}
+        self.image_prefixes = [param_key(p) for p in cc.get("image_prefixes", []) + oc.get("image_prefixes", [])]
         for sym in sorted(self.set.keys() & self.not_applicable.keys()):
             self.errors.append(f"policy: {sym} is both set and not applicable")
         for sym in [*self.set, *self.unset, *self.not_applied, *self.not_applicable]:
             if not re.fullmatch(r"CONFIG_[A-Z0-9_]+", sym):
                 self.errors.append(f"policy: {sym!r} is not a CONFIG_ option name")
+        for p in self.image_prefixes:
+            if not p.endswith("."):
+                self.errors.append(f"policy: image prefix {p!r} must end with '.'")
         for word in self.required:
-            if self.is_forbidden(word):
-                self.errors.append(f"policy: required word {word!r} is also forbidden")
+            if self.image_owned(param_key(word)):
+                self.errors.append(f"policy: required word {word!r} is also an image parameter")
 
-    def is_forbidden(self, word: str) -> bool:
-        if word in self.forbidden or any(word.startswith(p) for p in self.forbidden_prefixes):
-            return True
-        return self.forbid_off and "=" in word and word.split("=", 1)[1] == "off"
+    def image_owned(self, key: str) -> bool:
+        return key in self.image_keys or any(key.startswith(p) for p in self.image_prefixes)
+
+
+def param_key(word: str) -> str:
+    """A parameter's name as the kernel compares it: dashes and underscores alike."""
+    return word.split("=", 1)[0].replace("-", "_")
+
+
+def normalize_word(word: str) -> str:
+    key, sep, value = word.partition("=")
+    return key.replace("-", "_") + sep + value
 
 
 def load_policy(path: pathlib.Path, arch: str) -> Policy:
@@ -221,19 +231,21 @@ def check_cmdline(text: str, policy: Policy) -> list[str]:
     # The kernel hands everything after "--" to init without reading it.
     if "--" in words:
         words = words[: words.index("--")]
-    required_values = {w.split("=", 1)[0]: w for w in policy.required if "=" in w}
+    # An allowlist: every word is either one the kernel policy requires or a
+    # parameter the image design owns. A denylist misses spellings the kernel
+    # also accepts (init-on-free=0, init_on_free=n, mitigations=auto,...).
+    normalized = {normalize_word(w) for w in words}
+    required = {param_key(w): w for w in policy.required}
     for word in policy.required:
-        if word not in words:
+        if normalize_word(word) not in normalized:
             errors.append(f"cmdline: missing required word {word!r}")
     for word in words:
-        key = word.split("=", 1)[0]
-        if policy.is_forbidden(word):
-            errors.append(f"cmdline: forbidden word {word!r}")
-        elif key in required_values:
-            if word != required_values[key]:
-                errors.append(f"cmdline: {word!r} conflicts with required {required_values[key]!r}")
-        elif key.startswith("sysctl."):
-            errors.append(f"cmdline: {word!r} sets a sysctl policy.toml does not list")
+        key = param_key(word)
+        if key in required:
+            if normalize_word(word) != normalize_word(required[key]):
+                errors.append(f"cmdline: {word!r} conflicts with required {required[key]!r}")
+        elif not policy.image_owned(key):
+            errors.append(f"cmdline: {word!r} is neither required nor an image parameter policy.toml allows")
     return errors
 
 

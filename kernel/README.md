@@ -10,8 +10,11 @@ including every option and the checks CI runs, is in
 Kernels are built in CI on Linux, never locally. The `kernel` job in
 [ci.yml](../.github/workflows/ci.yml) builds both architectures for the
 qemu target and uploads `kernel-qemu-<arch>` (the kernel image, its
-`.config`, `System.map` and `SHA256SUMS`) for the image build
-([#2](https://github.com/GetFelix/ninelives/issues/2)).
+`.config` and `System.map`) for the image build
+([#2](https://github.com/GetFelix/ninelives/issues/2)). Nothing inside the
+artifact proves where it came from, so the image build must take only the
+artifact of its own workflow run, or one from a push to `main`, and never
+the latest artifact with that name: any pull request's run can upload one.
 
 ## Files
 
@@ -28,8 +31,8 @@ qemu target and uploads `kernel-qemu-<arch>` (the kernel image, its
   regenerates it and fails on any byte of difference.
 - `policy.toml`: options that must be set or unset, upstream
   `hardening.config` lines that cannot apply and why, the expected
-  sysctls, and the command line words the kernel policy requires or
-  forbids.
+  sysctls, the command line words the kernel policy requires, and the
+  image parameters the command line may carry besides them.
 - `hardening-exceptions.toml`: each kernel-hardening-checker finding that
   is not fixed, with the reason (S2).
 
@@ -56,8 +59,11 @@ snapshot.debian.org timestamp:
    `hardening-exceptions.toml`.
 5. The kernel is built and uploaded.
 
-The unit tests (`python3 -m unittest discover -s scripts/tests`) and a
-lint of the fragments and `policy.toml` run on every pull request.
+The unit tests (`python3 -I -m unittest discover -s scripts/tests`) and a
+lint of the fragments and `policy.toml` run on every pull request, as does
+`fetch_kernel.py --check --base`, which compares the pin with the target
+branch's: the version may not go down or leave the 6.18.y series, and
+`keys/` may not change in a pull request that changes `VERSION`.
 
 ## Bumping the version
 
@@ -71,7 +77,7 @@ releases").
    into `VERSION`:
 
    ```sh
-   python3 scripts/fetch_kernel.py --out /path/to/scratch --bump 6.18.65
+   python3 -I scripts/fetch_kernel.py --out /path/to/scratch --bump 6.18.65
    ```
 
    Check the hash it wrote against the `linux-6.18.65.tar.xz` line of
@@ -89,14 +95,18 @@ releases").
    to `[x86_64.not_applicable]` with the reason it cannot apply.
 
 If a release is signed by a key not in `keys/fingerprints`, the bump
-fails. Adding a key is its own pull request: the fingerprint has to match
+fails. Adding a key is its own pull request (CI refuses one that also
+changes `VERSION`): the fingerprint has to match
 the one kernel.org publishes at <https://www.kernel.org/signature.html>,
 and the key comes from kernel.org's
 [pgpkeys](https://git.kernel.org/pub/scm/docs/kernel/pgpkeys.git) or its
 WKD, compared with each other.
 
 Moving to the next long-term line follows kernel.md's rule and is one pull
-request with nothing else in it.
+request with nothing else in it, including the change to `SERIES` in
+`scripts/fetch_kernel.py`. `.github/CODEOWNERS` names an owner for
+`VERSION` and `keys/`; with one maintainer that is an audit marker, not a
+second reviewer.
 
 ## The GPL and published images
 
@@ -111,9 +121,13 @@ licence (GPL-2.0 section 3). For this kernel that source is:
 - what controls the build: `scripts/kernel_build.sh`, the fragments and the
   environment it sets (`LLVM=1`, the fixed build user, host and timestamp).
 
+The image must also carry the licence text (GPL-2.0 sections 1 and 3):
+the tarball's `COPYING` and `LICENSES/preferred/GPL-2.0`, installed in the
+image.
+
 The image design plans to meet this from the first published image (S12)
 by publishing the tarball, the config and these scripts next to each
-image, from the same place. A link to kernel.org alone is not enough,
+image, from the same place, and by shipping the licence text in the image. A link to kernel.org alone is not enough,
 because kernel.org may drop the release. Firmware built into the kernel
 with `CONFIG_EXTRA_FIRMWARE` (the x86_64 microcode, once the image build
 adds it) is not GPL code: it is redistributed under its own licence, which

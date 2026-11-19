@@ -1,0 +1,4 @@
+# The kernel pin and the keys that may sign it. With one maintainer this is an
+# audit marker rather than a second reviewer.
+/kernel/VERSION @el-bri-ga
+/kernel/keys/ @el-bri-ga

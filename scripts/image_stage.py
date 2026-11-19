@@ -24,6 +24,7 @@ import os
 import pathlib
 import shutil
 import stat
+import subprocess
 import sys
 import tarfile
 
@@ -35,8 +36,24 @@ import image_lock  # noqa: E402
 # directories, 0555 in the image.
 MOUNT_POINTS = ["/proc", "/sys", "/dev", "/run", "/tmp", "/data"]
 # Left by mkosi and dpkg; the root has no use for any of it.
-RESIDUE = ["/var/lib/dpkg", "/var/lib/apt", "/var/cache", "/var/log", "/etc/apt", "/etc/dpkg",
-           "/var/lib/systemd", "/etc/machine-id", "/etc/hostname", "/etc/resolv.conf"]
+# Each is left by a maintainer script or by mkosi, and nothing in the root uses it.
+RESIDUE = [
+    # mkosi and dpkg themselves
+    "/var/lib/dpkg", "/var/lib/apt", "/var/cache", "/var/log", "/etc/apt", "/etc/dpkg",
+    "/var/lib/systemd", "/etc/machine-id", "/etc/hostname", "/etc/resolv.conf", "/boot/loader",
+    "/lib32", "/libx32",
+    # update-alternatives, pam, shells, login: for packages that are gone
+    "/etc/alternatives", "/etc/pam.d", "/etc/security", "/var/lib/pam", "/etc/shells", "/var/lib/shells.state",
+    "/etc/subuid", "/etc/subgid", "/etc/.pwd.lock", "/usr/bin/awk", "/usr/bin/nawk", "/usr/bin/pager",
+    "/usr/bin/which", "/usr/sbin/rmt",
+    # base-files' shell and login skeleton
+    "/etc/profile", "/etc/environment", "/etc/motd", "/etc/update-motd.d", "/root/.bashrc", "/root/.profile",
+    # timers and docs from removed packages, and links into /run that nothing writes
+    "/etc/systemd", "/usr/share/info", "/usr/local/man", "/usr/lib/clock-epoch", "/var/lock", "/var/run", "/var/spool/mail",
+]
+# Files a maintainer script copies from the package's own data, so the copy can be held to the member.
+COPIES = {"/etc/nsswitch.conf": "/usr/share/base-files/nsswitch.conf"}
+LD_SO_CONF = "include /etc/ld.so.conf.d/*.conf\n"
 TOP_LEVEL_LINKS = {"/bin": "usr/bin", "/sbin": "usr/sbin", "/lib": "usr/lib", "/lib64": "usr/lib64"}
 INSTALL_MODE = 0o555
 
@@ -189,12 +206,23 @@ def main() -> int:
         inventory.append({k: p[k] for k in ("name", "version", "sha256", "source")})
 
     removed = remove_packages(root, keep)
+    for dest, src in COPIES.items():
+        member = origins.get(src)
+        target = root / dest.lstrip("/")
+        if member is None or not target.is_file() or ic.sha256_file(target) != member["sha256"]:
+            raise SystemExit(f"{dest} is not a copy of {src}")
+        origins[dest] = {**member, "origin": "deb"}
+    write_file(root, "/etc/ld.so.conf", LD_SO_CONF)
+    subprocess.run(["ldconfig", "-r", str(root)], check=True)
     for r in RESIDUE:
         t = root / r.lstrip("/")
         if t.is_symlink() or t.is_file():
             t.unlink()
         elif t.is_dir():
             shutil.rmtree(t)
+    for doc in (root / "usr/share/doc").rglob("*") if (root / "usr/share/doc").is_dir() else []:
+        if doc.is_symlink() and not doc.exists():
+            doc.unlink()
 
     components = ic.load_toml(ic.IMAGES / "components.toml")["component"]
     install = ic.load_toml(ic.ROOT / "rootfs" / "components.toml")
@@ -221,6 +249,10 @@ def main() -> int:
         write_file(root, path, text)
         origins[path] = {"type": "file", "mode": 0o444, "sha256": hashlib.sha256(text.encode()).hexdigest(),
                          "origin": "generated", "package": "ninelives-image"}
+    for path in ("/etc/ld.so.conf", "/etc/ld.so.cache"):
+        data = (root / path.lstrip("/")).read_bytes()
+        origins[path] = {"type": "file", "mode": 0o444, "sha256": hashlib.sha256(data).hexdigest(), "origin": "generated",
+                         "package": "ninelives-image"}
     osr = root / "etc/os-release"
     if not osr.is_symlink():
         osr.unlink(missing_ok=True)

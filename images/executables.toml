@@ -3,3 +3,141 @@
 # use * for one directory's worth of one kind of file. No shell or
 # interpreter may appear here. `needed` pins the shared libraries a
 # network-facing binary links against.
+
+# NineLives' own program: PID 1.
+[[executable]]
+path = "/usr/lib/ninelives/init"
+origin = "ninelives-init (this commit)"
+requirement = "S1"
+
+# Components. Their shared libraries are pinned, so a new one fails the build.
+[[executable]]
+path = "/usr/lib/felix/felix-broker"
+origin = "felix (components.toml)"
+requirement = "S1, S4"
+needed = ["libgcc_s.so.1", "libm.so.6", "libc.so.6"]
+
+[[executable]]
+path = "/usr/lib/felix/felix-controlplane"
+origin = "felix (components.toml)"
+requirement = "S1, S4"
+needed = ["libgcc_s.so.1", "libm.so.6", "libc.so.6"]
+
+[[executable]]
+path = "/usr/lib/felixd/felixd"
+origin = "felixd (components.toml)"
+requirement = "S1, S4"
+needed = ["libgcc_s.so.1", "libm.so.6", "libc.so.6", "ld-linux-x86-64.so.2"]
+
+# The C library and its loader. The loader is listed because it has to run; the kernel
+# refuses executable mappings of files on the noexec data partition.
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/libBrokenLocale.so.1"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/libanl.so.1"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/libc.so.6"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so.0"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/libdl.so.2"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/libm.so.6"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/libmemusage.so"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/libmvec.so.1"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/libnsl.so.1"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/libnss_compat.so.2"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/libnss_dns.so.2"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/libnss_files.so.2"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/libnss_hesiod.so.2"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/libpcprofile.so"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/libpthread.so.0"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/libresolv.so.2"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/librt.so.1"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/libthread_db.so.1"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/libutil.so.1"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/gconv/*.so"
+origin = "libc6"
+requirement = "S1"
+
+[[executable]]
+path = "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1"
+origin = "libgcc-s1"
+requirement = "S1"
+

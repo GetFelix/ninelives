@@ -125,7 +125,7 @@ a disk that lost its state must not answer for state it no longer has.
 ### The config
 
 One file, `/usr/lib/ninelives/init.toml`, on the read-only root. The image
-build writes it, and in M3 it is covered by the root's dm-verity hash like
+build writes it, and it is covered by the root's dm-verity hash like
 every other file (S13). TOML because the repo already uses it for
 `components.toml` and its parser is a small, widely used pure-Rust crate.
 Unknown keys are errors, so a typo cannot silently drop a limit.
@@ -254,7 +254,7 @@ and reads only the kernel, the read-only root and directory entries on
    |---|---|---|---|
    | `/proc` | proc | `nosuid,nodev,noexec,hidepid=invisible,gid=nl-inspect` | Services cannot see each other's processes. The `nl-inspect` group has no members in production; the test image adds an inspector to it. |
    | `/sys` | sysfs | `nosuid,nodev,noexec` | |
-   | `/dev` | devtmpfs | `nosuid,noexec` | The kernel may have mounted it already (`CONFIG_DEVTMPFS_MOUNT`); `EBUSY` with devtmpfs there is success. |
+   | `/dev` | devtmpfs | `nosuid,noexec` | `CONFIG_DEVTMPFS_MOUNT` is off, so PID 1 mounts it. |
    | `/sys/fs/cgroup` | cgroup2 | `nosuid,nodev,noexec,nsdelegate,memory_recursiveprot` | |
    | `/run` | tmpfs | `nosuid,nodev,noexec,mode=0755,size=16m` | The root is read-only (S3). |
 
@@ -264,7 +264,7 @@ and reads only the kernel, the read-only root and directory entries on
 3. The config's `[[mount]]` entries.
 4. The data partition: poll `/sys/class/block/*/uevent` for a partition
    whose `PARTNAME` matches `data_partition` **on the same disk as the root
-   partition** (from M3, the disk under the dm-verity device), up to
+   partition** (the disk under the dm-verity device), up to
    `data_wait_s`, and mount it at `data_mount` with
    `nosuid,nodev,noexec,prjquota`. Any other disk, including one attached
    later, is never considered, and there is no retry after the drop because
@@ -303,13 +303,14 @@ and reads only the kernel, the read-only root and directory entries on
    only the I/O weights are lost.
 7. Kernel settings that must not change later: host name from `hostname`,
    loopback up, `reboot(LINUX_REBOOT_CMD_CAD_OFF)` so Ctrl-Alt-Del arrives
-   as `SIGINT`, `fs.suid_dumpable = 0`,
-   `kernel.yama.ptrace_scope = 3` (no process may ptrace another, and the
-   value cannot be lowered until reboot), and the hard
-   `RLIMIT_CORE` to 0 and `RLIMIT_NOFILE` to the largest any service needs.
-   Then `/proc/sys` is bind-remounted read-only, so no later process can
-   change a sysctl, whatever capabilities it holds. There is no
-   `core_pattern` to set: the kernel is built without core dumps
+   as `SIGINT`, and the hard `RLIMIT_CORE` to 0 and `RLIMIT_NOFILE` to the
+   largest any service needs. PID 1 writes no sysctls: `fs.suid_dumpable = 0`
+   and `kernel.yama.ptrace_scope = 3` (no process may ptrace another, and the
+   value cannot be lowered until reboot) come from `sysctl.*` parameters on
+   the kernel command line. PID 1 only bind-remounts `/proc/sys` read-only,
+   so no later process can change a sysctl, whatever capabilities it holds.
+   The remount needs `CAP_SYS_ADMIN`, which PID 1 still holds because the
+   drop is step 11. There is no `core_pattern` to set: the kernel is built without core dumps
    ([kernel.md](https://github.com/GetFelix/ninelives/blob/docs/kernel-config/docs/components/kernel.md#core-dumps)).
 8. Open, close-on-exec: the console, `/dev/kmsg` write-only (the fallback
    when the console fails; only root can open it for writing, so it cannot
@@ -450,9 +451,14 @@ service next needs a start depends on the service:
 - **The reboot is rate limited across boots.** At most 2
   `launcher-loss-reboot`s in any 24 hours. Each boot's first record carries
   a boot counter, one more than the previous boot's, and every record
-  carries `CLOCK_MONOTONIC` uptime. PID 1 measures the last 24 hours by
+  carries `CLOCK_MONOTONIC` uptime, and PID 1 also writes an uptime record
+  every hour. PID 1 measures the last 24 hours by
   summing uptime back through the boots in its records, taking each earlier
-  boot's uptime from its last record, which never overstates it. Wall time
+  boot's uptime from its last record, which never overstates it. After a panic or power cut the last record is at
+  most an hour old, so the sum is at most an hour short. It errs toward
+  undercounting, which can only make PID 1 refuse a reboot it could have
+  made; refusing leaves the node up and `degraded`, while overcounting
+  could allow a reboot loop. Wall time
   plays no part, because the clock can be set. If 2 such reboots fall in
   that window, a further loss does not reboot: the service is `failed`, the
   machine stays up and `degraded`, and the reason says so. If the records
@@ -548,7 +554,7 @@ its single-threaded event loop. Nothing runs in a signal handler.
 | `SIGINT` | Ctrl-Alt-Del, from the kernel | ordered shutdown, then reboot |
 | `SIGTERM` | reboot request | ordered shutdown, then reboot |
 | `SIGUSR2` | power-off request | ordered shutdown, then power off |
-| `KEY_POWER` press on an input device | the platform's power button: ACPI on x86_64 and on clouds, `gpio-keys` on aarch64 qemu | ordered shutdown, then power off |
+| `KEY_POWER` press on an input device | the platform's power button: an ACPI button (GED) on both x86_64 and aarch64 | ordered shutdown, then power off |
 | a byte on `/run/ninelives/init/request` | `r` reboot, `p` power off; anything else ignored | as above |
 | any other signal | | queued in the `signalfd`, recorded and ignored |
 
@@ -1024,7 +1030,7 @@ compromised service must stay one compromised service.
 [sandboxing guide](https://www.chromium.org/chromium-os/developer-library/guides/development/sandboxing/):
 a uid per service, the fewest capabilities, `no_new_privs`, seccomp, and a
 test that enforces them. No OS we surveyed runs its host PID 1 without
-root, which is why this design gets reviewed so hard.
+root, so this design has no direct precedent to lean on.
 
 ### What the init runs as and can reach
 
@@ -1038,7 +1044,7 @@ makes no network connection.
 
 | Input | Who can write it | Validation |
 |---|---|---|
-| `/usr/lib/ninelives/init.toml` | The image build only. The root is read-only (S3), and from M3 dm-verity checked against a signed kernel image (S13). | Parsed before the drop, when no service has run; unknown keys rejected, size capped, checked at image build. Missing or malformed: fail closed. |
+| `/usr/lib/ninelives/init.toml` | The image build only. The root is read-only (S3), and dm-verity checked by the kernel (S13), against a signed kernel image from M3. | Parsed before the drop, when no service has run; unknown keys rejected, size capped, checked at image build. Missing or malformed: fail closed. |
 | Kernel command line, `argv`, environment | The bootloader; signed from M3 | Ignored as PID 1. `panic=` and `oops=` are the kernel's. |
 | Signals | The kernel; nobody else after the drop | Four signals, three meanings, all of them stop or reap. |
 | Child exit status | The kernel, from `waitpid` | A pid that is not a service's main process or a launcher is an orphan, reaped and counted. |
@@ -1159,10 +1165,12 @@ directory (`ca.pem`), not in a shared directory, because only the join
 could write a shared one and the join never runs again, so a CA rotation
 would need a wipe. The join writes the first bundle; after that the renewal
 helper writes it from the issuer's renewal response. The helper accepts a
-bundle only if it is signed by, or chains to, the pinned issuer root. A
-bundle that only adds roots is accepted. One that removes a root must carry
-a generation number higher than the current bundle's, so a replayed old
-bundle cannot take a root away. Felix reads bundles at startup
+bundle only if it is signed by, or chains to, the pinned issuer root, and
+every bundle carries a generation number. The helper refuses a bundle whose
+generation is lower than the current one. A bundle with the same generation
+must be byte-identical to the current one. Any change, adding or removing
+roots, needs a strictly higher generation. Otherwise a replayed old signed
+bundle could bring back a root a later generation removed. Felix reads bundles at startup
 ([felix#2816](https://github.com/GetFelix/felix/issues/2816)), so a new one
 takes effect when the service next restarts.
 
@@ -1233,7 +1241,7 @@ not contain. Fault tests run on the schedule in
 | A first boot in qemu: `renew-felixd` is running after the join, and on the second boot it starts without the join | qemu | I24 |
 | After the join: `$DATA/join/env` has group init, and each credential file has its service's group and mode 0640; a second boot does not start the join | qemu | setgid directories, first boot only |
 | felixd connects with its client certificate. Gated on [felixd#275](https://github.com/GetFelix/felixd/issues/275); until then the test checks the files are in place | qemu | mTLS handoff |
-| A test program under the felixd renewal helper's profile replaces a file in felixd's credential directory; under felixd's profile the same write is refused, and neither can write `$DATA/trust`. The bundle acceptance rules (signed by the pinned issuer root, add-only or a higher generation) are tested with `nl-renew` | qemu (test image) | renewal, Landlock |
+| A test program under the felixd renewal helper's profile replaces a file in felixd's credential directory; under felixd's profile the same write is refused, and neither can write `$DATA/trust`. The bundle acceptance rules (signed by the pinned issuer root; a lower generation is refused, the same generation only if byte-identical, any change needs a higher one; an older signed bundle replayed after a root was removed is refused) are tested with `nl-renew` | qemu (test image) | renewal, Landlock |
 | Unit traces: a launcher lost while its service runs gives `degraded` and no other action; the next start gives a record, its `fsync`, ordered shutdown and `reboot`; with record histories holding 2 such reboots in the last 24 h of summed uptime, spread over several boots, `failed` and no reboot; with 2 reboots just over 24 h of summed uptime back, a reboot; a wall clock set forward or back changes nothing; a torn record, a gap in the boot counter, or records reaching neither 24 h back nor the first boot give no reboot; a failed record write gives no reboot; launchers exiting after a stop request give `stopped` | unit | I23 |
 | A fault hook makes the broker's launcher exit: the broker keeps running and the machine reports `degraded`; then the broker exits: ordered shutdown and reboot. The same again reboots once more; a third time within the day: no reboot, `failed`, the reason reported. For the time service: `failed`, `degraded`, no reboot | qemu (test image) | I23, launcher rows |
 | A normal power-off: no `launcher lost` record | qemu | I23 |

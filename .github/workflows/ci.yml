@@ -30,6 +30,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Scripts compile
         run: python3 -m compileall -q scripts site/scripts
+      - name: Component manifest
+        run: python3 scripts/check_components.py
 
   # The one check main requires, so a job added later is covered without changing the ruleset.
   ci-ok:

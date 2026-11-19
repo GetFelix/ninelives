@@ -14,17 +14,19 @@ how workloads run, hold leases, write exactly-once output and replay. This
 document covers the operating system around it: what runs on each machine, how
 a machine joins, what we can promise when a machine is lost, and the plan for
 the first three milestones against felixd as released
-([v0.1.0-preview.1](https://github.com/GetFelix/felixd/releases/tag/v0.1.0-preview.1),
-tested against Felix 0.6.2).
+([v0.1.0](https://github.com/GetFelix/felixd/releases/tag/v0.1.0), on
+Felix 0.7.2).
 
-Very little of the operating system is decided. The kernel, the init system,
-how images are built and how a machine proves who it is are all
-[open questions](#open-questions). Where this document names a tool, it is a
-proposal, written down so it can be argued with.
+The choices that shape the system are [decision records](decisions/), each
+with what it costs and when it gets reviewed again. Through M2: stock Linux,
+our own init as PID 1, images built with mkosi, and Felix and felixd shipped
+from pinned, signed releases. What is still undecided is under
+[Open questions](#open-questions). What NineLives relies on from felixd is in
+[felixd-contract.md](felixd-contract.md).
 
 ## What runs on a machine
 
-Every machine runs the NineLives image: a kernel, an init system, felixd and
+Every machine runs the NineLives image: a kernel, our init, felixd and
 the Felix binaries. Its role, from the join config, decides which of them start
 ([topology.md](topology.md)):
 
@@ -84,14 +86,14 @@ sequenceDiagram
    what the credential is are [open](#node-identity-and-credentials).
 3. It exchanges the join credential for its node credentials and keeps them on
    the data partition, so a reboot does not join again.
-4. The init system starts the services for its role. A core machine's control
+4. The init starts the services for its role. A core machine's control
    plane joins the Raft group from the seed list. A broker registers with the
    control plane and serves only the streams it has assignments for.
-5. felixd starts with its connection settings: `FELIX_BROKERS` (IP addresses;
-   felixd 0.1 does not resolve host names), `FELIX_AUTH_TENANT`,
-   `FELIX_AUTH_TOKEN_FILE` and `FELIX_CA_FILE`. NineLives sets
-   `FELIXD_NODE_ID` to the machine's identity. felixd's default, host name plus
-   process id, changes on every restart.
+5. felixd starts with its connection settings: the brokers and control plane
+   from the join config, the tenant, and the token and CA files from the data
+   partition. NineLives sets `FELIXD_NODE_ID` to the machine's identity,
+   because felixd's default (host name plus process id) changes on every
+   restart. The full list is in [felixd-contract.md](felixd-contract.md).
 
 In felixd terms a machine has joined when its agent writes itself to the
 `nodes` cache. The entry has the lease TTL, so it goes away about when a dead
@@ -195,8 +197,8 @@ These are the ones for the operating system around it:
 - **Fault tolerance as a first principle.** Plan 9's recovery tools were added
   later. Here, losing a machine is the normal case the design starts from.
 
-Every kernel, init and image choice below stays open; these are constraints on
-whichever is picked.
+These are constraints on every kernel, init and image choice, the ones made
+for M0 to M2 included.
 
 Sources: Pike, TUHS mailing list, 2023-01-31; Raymond, *The Art of Unix
 Programming*, ch. 20; Trickey, "APE: The ANSI/POSIX Environment"; the Plan 9
@@ -250,6 +252,24 @@ Barrel", SIGOPS blog (2021); Bhardwaj et al., "NrOS", OSDI 2021; Boyd-Wickizer
 et al., "An Analysis of Linux Scalability to Many Cores", OSDI 2010 (abstract
 only); Gerber, PhD thesis (ETH, 2018).
 
+## Decisions
+
+Each of these has a record with the options we turned down, what the choice
+costs and when it is reviewed again.
+
+| Decision | Holds through | Record |
+|---|---|---|
+| The kernel is stock Linux, pinned, no patches or out-of-tree modules | M2, then reviewed | [0001](decisions/0001-linux-kernel.md) |
+| PID 1 is our own init, in Rust, with a deliberately small scope | M2, reviewed again at M4 | [0002](decisions/0002-our-own-init.md) |
+| Images are built with mkosi, in CI, reproducibly | M2 | [0003](decisions/0003-mkosi-image-build.md) |
+| Felix and felixd ship from pinned, signed releases | Open-ended | [0004](decisions/0004-components-from-signed-releases.md) |
+| System code is Rust, with `unsafe` confined to one module per crate | Open-ended | [0005](decisions/0005-rust-and-unsafe.md) |
+
+Everything NineLives writes uses standard system calls only, so that after
+M2 the same root can boot on another kernel as an experiment. The first one
+planned is [Asterinas](https://github.com/asterinas/asterinas), in CI,
+without blocking anything.
+
 ## Open questions
 
 Nothing in this section is decided. Each question lists the options, what
@@ -258,75 +278,9 @@ what we would try first, written down so it can be argued with.
 
 | Question | Needed by | Proposal |
 |---|---|---|
-| [The kernel](#the-kernel) | M0, for the first image's kernel | Stock Linux through M2, then look again |
-| [PID 1](#pid-1) | M1, when services start | systemd through M2, then look again at M4 |
-| [The image build](#the-image-build) | M0 | mkosi, built in CI |
+| The base distribution the root is built from | M0 ([#1](https://github.com/GetFelix/ninelives/issues/1)) | Decided in #1, with a record |
+| The kernel version, and whether it is built from source or taken from the distribution | M0 ([#3](https://github.com/GetFelix/ninelives/issues/3)) | Decided in #3, with a record |
 | [Node identity and credentials](#node-identity-and-credentials) | M1 | A one-time join token; TPM and cloud identity later |
-
-### The kernel
-
-Tracked in [Discussion #22](https://github.com/GetFelix/ninelives/discussions/22)
-and [#3](https://github.com/GetFelix/ninelives/issues/3).
-
-| Option | For | Against |
-|---|---|---|
-| Stock Linux | Drivers, every cloud, and the storage semantics Felix's recovery depends on (`fsync`, `pread`, preallocation, io_uring). Felix and felixd already run on it. | A large trusted base. Nothing about it is shaped around the log. A Linux image carries GPL source obligations ([Licensing](#licensing)). |
-| A Linux-compatible Rust kernel (Asterinas) | Smaller and in Rust, and felixd could in principle run unchanged | Has to earn Felix's trust in `fsync` and preallocation. How much of what real programs use it covers is unknown, which is where Plan 9's APE fell short. |
-| A unikernel (Hermit) | A machine that only runs Felix and felixd could be one image | No general-purpose userland, so no native tier. tokio and quinn need porting. |
-| A kernel of our own | Deterministic scheduling and I/O, syscalls designed around the log | Drivers, a network stack, storage semantics, security fixes and SMP are all ours. Booting is weeks; what comes after is years. |
-
-**Needed by:** M0 needs a kernel to pin (#3). M1 and M2 need one that runs
-the Felix broker, which today ships only as a Linux x86_64 binary. Nothing in
-M0 to M2 needs a kernel feature of its own.
-
-**Proposal:** stock Linux through M2, which is where the reading in Discussion
-#22 points, and keep felixd's and Felix's dependence on the kernel narrow
-(standard syscalls, no kernel modules) so a move stays possible. Booting the
-same root on Asterinas could run as a CI experiment once M2 passes, without
-blocking anything. The question stays open after M2.
-
-### PID 1
-
-Tracked in [#15](https://github.com/GetFelix/ninelives/issues/15).
-
-| Option | For | Against |
-|---|---|---|
-| systemd | cgroup isolation per service, which keeps a busy workload from slowing the log on a shared machine. Mounts, networking, the journal. systemd-sysext for upgrading Felix apart from the image, systemd-repart for partitions, systemd-boot's boot counting for falling back after a failed upgrade. Works with mkosi. | Large. Much of its job (supervision, ordering, restart policy) is what NineLives eventually wants on the log. Needs Linux. |
-| A small init of our own, beside felixd | Small and in Rust. Could start the Felix services and felixd and report their state as records. Could work on a kernel other than Linux. | Mounts, network, cgroups, watchdogs and service isolation all have to be written and hardened. |
-| Another init (s6, runit, dinit) | Small and proven | Less of what M3 wants (sysext, boot counting). Still needs Linux. |
-| felixd as PID 1 | One less process | felixd depends on Felix, and Felix has to start before it. That inverts the bootstrap boundary, so we do not consider it a real option. |
-
-**Needed by:** M0 boots with whichever init the image build produces. M1 is
-where it matters: the join, the role's services and their isolation hang off
-it. M3 (rollback) and M4 (system programs on the log) are where we learn how
-much of its job moves to the log.
-
-**Proposal:** systemd through M2, as #15 suggests, with each Felix service and
-felixd as a unit under its own user and cgroup ([topology.md](topology.md)).
-After M4, decide whether systemd still earns its place.
-
-### The image build
-
-Tracked in [#1](https://github.com/GetFelix/ninelives/issues/1) and
-[#2](https://github.com/GetFelix/ninelives/issues/2).
-
-| Option | For | Against |
-|---|---|---|
-| mkosi | Builds a bootable disk image, unified kernel images and A/B partition layouts from a config and distribution packages. Aims at reproducible builds. Pairs with systemd. | Linux only, and wants root or user namespaces. Tied to systemd tooling, so it fits less well if PID 1 changes. |
-| bootc (OCI images as the OS) | Images move through a registry, and upgrades and rollback come with it | Puts a registry on the upgrade path. Built around Fedora, CentOS and systemd. |
-| Buildroot or Yocto | Very small images, any init, good for a Raspberry Pi | A build system to learn and maintain. Long builds. |
-| Our own script (debootstrap or similar, plus systemd-repart) | No new tool | We maintain the image logic ourselves. |
-
-All of these build on Linux. Development machines are often Macs, so images
-are built in CI on Linux runners, and a local run boots the image CI built in
-qemu. CI boots each image on every pull request (#2): x86_64 with KVM, aarch64
-on an Arm runner or under emulation.
-
-**Needed by:** M0, since the first image has to come from something.
-
-**Proposal:** mkosi for M0 to M2, built in CI only. Look again if PID 1 moves
-away from systemd, or at M5 if a Raspberry Pi image is easier with something
-else.
 
 ### Node identity and credentials
 
@@ -346,10 +300,11 @@ then turned off.
 | TPM attestation | Ties identity to hardware; no shared secret | Needs a TPM (qemu has swtpm), an attestation service and enrolment. Much more to build. |
 | Cloud instance identity | Clouds already sign a document naming the instance, and some issue OIDC tokens that Felix's exchange could trust directly | Different on every cloud. Nothing on bare metal or in qemu. |
 
-felixd adds two constraints. It reads its token file once at start and does not
-refresh it, so a node token has to outlive the agent process, or felixd has to
-learn to refresh. And in felixd 0.1 any node may write any workload's output:
-the fence keeps output correct, but a compromised node could write garbage.
+felixd re-reads its token file each time it uses the token, so replacing the
+file on the data partition rotates a machine's token without restarting
+anything. The remaining constraint is that in felixd 0.1 any node may write any
+workload's output: the fence keeps output correct, but a compromised node
+could write garbage.
 felixd's answer is per-lease tokens and identities issued by the cluster
 ([felixd#74](https://github.com/GetFelix/felixd/issues/74)).
 
@@ -382,79 +337,83 @@ TPM and cloud identity come with M3 and M5. Secrets never go on the log.
 | M4 | The scheduler, name service and `fx` shell run as programs on the log |
 | M5 | Cloud images and Raspberry Pi |
 
-M0 to M2 are planned below against felixd v0.1.0-preview.1 and Felix 0.6.2.
-Features on felixd's main branch that are not in that release count as gaps
-until a release has them.
+M0 to M2 are planned below against felixd 0.1.0 and Felix 0.7.2, the versions
+pinned in [`images/components.toml`](../images/components.toml). Features on
+felixd's main branch that are not in that release count as gaps until a
+release has them.
 
 ### M0: boots in a VM
 
 Issues: [#1](https://github.com/GetFelix/ninelives/issues/1) image build,
-[#2](https://github.com/GetFelix/ninelives/issues/2) CI boot,
-[#3](https://github.com/GetFelix/ninelives/issues/3) kernel.
+[#3](https://github.com/GetFelix/ninelives/issues/3) kernel,
+[#46](https://github.com/GetFelix/ninelives/issues/46) init design,
+[#47](https://github.com/GetFelix/ninelives/issues/47) the init's first slice,
+[#2](https://github.com/GetFelix/ninelives/issues/2) CI boot.
 
-The image boots to a login prompt in qemu on both architectures, built in CI
-the same way every time. It contains the felixd binary but starts nothing that
-needs a cluster.
+The image boots our init in qemu on both architectures, and the init reports
+ready on the serial console. CI builds the image twice from the same commit,
+checks the two are identical, and boots it on every pull request. The image
+contains felixd and Felix, checked against the manifest, but starts nothing
+that needs a cluster.
 
 **From felixd 0.1:** release builds for Linux x86_64 and aarch64, with a
 `SHA256SUMS` file signed through Sigstore. The builds are reproducible, so the
 image build can check what it ships.
 
-**Gaps:** none in felixd. Felix publishes its broker and control plane only for
-Linux x86_64, so an aarch64 image cannot take a core or storage role yet.
+**Gaps:** none in felixd. Felix publishes its broker and control plane only
+for Linux x86_64 ([felix#2797](https://github.com/GetFelix/felix/issues/2797)),
+so an aarch64 image cannot take a core or storage role yet, and its checksums
+are not signed ([felix#2796](https://github.com/GetFelix/felix/issues/2796)).
 
-**Decisions needed:** the kernel, the image build, and which init the first
-image boots with.
+**Decisions needed:** the base distribution (#1) and the kernel version (#3).
 
 ### M1: joins a cluster
 
 Issues: [#4](https://github.com/GetFelix/ninelives/issues/4) data partition,
 [#5](https://github.com/GetFelix/ninelives/issues/5) first-boot join,
 [#6](https://github.com/GetFelix/ninelives/issues/6) Felix and felixd in the
-image, [#15](https://github.com/GetFelix/ninelives/issues/15) PID 1,
-[#16](https://github.com/GetFelix/ninelives/issues/16) identity.
+image, [#48](https://github.com/GetFelix/ninelives/issues/48) the init's
+services and shutdown, [#16](https://github.com/GetFelix/ninelives/issues/16)
+identity, [#49](https://github.com/GetFelix/ninelives/issues/49) the system
+call check, [#50](https://github.com/GetFelix/ninelives/issues/50) fault
+injection, [#51](https://github.com/GetFelix/ninelives/issues/51) and
+[#52](https://github.com/GetFelix/ninelives/issues/52) keeping up with felixd.
 
 A machine boots, joins with its role, and its felixd appears in `nodes`.
-Nobody logs in to set it up.
+Nobody logs in to set it up. A clean shutdown leaves Felix with nothing to
+repair on the next boot.
 
-**From felixd 0.1:**
+**From felixd 0.1:** everything M1 uses is listed in
+[felixd-contract.md](felixd-contract.md). The parts that matter most:
 
-- `felixd agent`, configured entirely from environment variables and flags,
-  which suits a service unit.
+- `felixd agent`, configured entirely from environment variables and flags.
 - `FELIXD_NODE_ID`, so the node id can be the machine's identity.
-- The `nodes` cache with a TTL, which is how we tell a machine has joined.
+- A token file that is re-read on every use, so the join can rotate it.
+- Broker addresses by host name or IP.
+- The `nodes` cache with a TTL, which is how we tell a machine has joined,
+  and `felixd ps` to show it.
 - Leases that a clean shutdown deletes, so a planned reboot hands work over at
   once instead of after a TTL.
+- Intake and admission, so submitting work does not need admin rights, and
+  `felixd init`, which the image runs once when a cluster first forms.
 
 **Gaps:**
 
-- **Node credentials.** The token is a file read once at start, with no
-  refresh ([felixd#159](https://github.com/GetFelix/felixd/issues/159)), and
-  any node may write any output
-  ([felixd#74](https://github.com/GetFelix/felixd/issues/74)). For M1 we
-  issue a long-lived development token per machine.
-- **Submitting work needs admin rights.** `felixd run` creates streams with the
-  control plane token, so whoever submits holds admin. Intake, admission, the
-  thin `felixd run`, `felixd init` and their grants fix that
-  ([felixd#114](https://github.com/GetFelix/felixd/issues/114),
-  [#115](https://github.com/GetFelix/felixd/issues/115),
-  [#116](https://github.com/GetFelix/felixd/issues/116),
-  [#117](https://github.com/GetFelix/felixd/issues/117)). For M1 an operator
-  submits from a core machine.
-- **Broker addresses are IP addresses.** felixd 0.1 does not resolve host
-  names, so the join config carries IPs
-  ([felixd#160](https://github.com/GetFelix/felixd/issues/160)).
-- **No status command in the release.** `felixd ps` and `felixd drain` are on
-  felixd's main branch but not in 0.1. Until a release has them, the M1 check
-  reads the `nodes` cache directly.
+- **Any node may write any output.** The fence keeps output correct, but a
+  compromised node could write garbage. Per-lease tokens fix that
+  ([felixd#74](https://github.com/GetFelix/felixd/issues/74)). For M1 each
+  machine gets a node token from the join.
 - **Felix:** a broker cannot rejoin while the control plane is down
   ([felix#1196](https://github.com/GetFelix/felix/issues/1196)).
 
-**Decisions needed:** PID 1 and node identity.
+**Decisions needed:** node identity (#16).
 
 ### M2: survives losing a machine
 
-Issue: [#7](https://github.com/GetFelix/ninelives/issues/7) three-VM demo.
+Issues: [#7](https://github.com/GetFelix/ninelives/issues/7) three-VM demo,
+[#54](https://github.com/GetFelix/ninelives/issues/54) the Asterinas
+experiment, [#53](https://github.com/GetFelix/ninelives/issues/53) reviewing
+the M0 to M2 decisions.
 
 `task cluster` boots three core VMs, submits a workload with a producer
 feeding its input, kills the VM holding it, and checks that the workload
@@ -465,11 +424,12 @@ continues on another VM with no output lost or repeated. CI runs the same test.
 - Leases with a TTL, failover within about one TTL, and first claim wins.
 - The epoch fence and claim record, so a VM that was frozen rather than killed
   writes nothing when it wakes.
-- Snapshots (`--snapshot-every`, `--snapshot-every-ms`) and resume from the
-  snapshot's input offset.
+- Snapshots and resume from the snapshot's input offset.
 - Three `Quorum` replicas by default, matching three core machines.
 - `felixd check --complete`, which replays each workload and reports gaps,
   duplicates and divergence. This is the demo's pass condition.
+- Workloads a node keeps failing on are released and marked `degraded`, so
+  another node gets a turn and `felixd ps` shows why.
 - felixd's own three-node failover test, which keeps killing lease holders in
   CI. The demo repeats it with whole machines.
 
@@ -482,50 +442,32 @@ continues on another VM with no output lost or repeated. CI runs the same test.
   ([felix#1009](https://github.com/GetFelix/felix/issues/1009),
   [felix#1197](https://github.com/GetFelix/felix/issues/1197)). The demo should
   kill that VM in some runs and report how long recovery took.
-- **Placement.** First claim wins is enough for the demo, but a VM that comes
-  back gets no work back until something else frees up. Assignments from a
-  scheduler ([felixd#60](https://github.com/GetFelix/felixd/issues/60)) and
-  drain with return ([felixd#82](https://github.com/GetFelix/felixd/issues/82))
-  fix that.
-- **Streams grow without bound.** Trim points are recorded on felixd's main
-  branch but nothing is deleted until Felix can trim at an offset
-  ([felixd#19](https://github.com/GetFelix/felixd/issues/19),
-  [felix#1662](https://github.com/GetFelix/felix/issues/1662)). Fine for a
-  test, not for a machine left running.
-- **No local degraded state.** A machine cut off from Felix stops its
-  workloads but does not yet report it in a form the OS can show.
+- **A returning VM gets no work back** until something else frees up. Drain
+  with return and one failure domain per machine fix that
+  ([felixd#82](https://github.com/GetFelix/felixd/issues/82)).
 
 ## What NineLives needs from felixd next
 
 In order:
 
-1. **A release with `ps`, `drain` and metrics.** They are on felixd's main
-   branch. M1 needs a status view, and M2's demo is easier to follow with one.
-2. **Node credentials that outlive a process**
-   ([felixd#159](https://github.com/GetFelix/felixd/issues/159), then
-   [felixd#74](https://github.com/GetFelix/felixd/issues/74)): re-read the
-   token file on refresh, so a machine keeps running on the
-   credentials it got at join. Per-lease tokens follow.
-3. **Submission without admin rights** through intake and admission
-   ([felixd#114](https://github.com/GetFelix/felixd/issues/114),
-   [#115](https://github.com/GetFelix/felixd/issues/115),
-   [#116](https://github.com/GetFelix/felixd/issues/116),
-   [#117](https://github.com/GetFelix/felixd/issues/117)), with `felixd init`
-   as the step the image runs once when a cluster first forms.
-4. **Broker addresses by host name**
-   ([felixd#160](https://github.com/GetFelix/felixd/issues/160)), so a join config can name the core
-   machines rather than their IPs.
-5. **One session lease per machine and drain with return**
-   ([felixd#82](https://github.com/GetFelix/felixd/issues/82)), which M3's
-   upgrades rely on.
-6. **The scheduler workload**
-   ([felixd#60](https://github.com/GetFelix/felixd/issues/60)), for M4.
-7. **The native tier**
+1. **One failure domain per machine, and drain with return**
+   ([felixd#82](https://github.com/GetFelix/felixd/issues/82)). M2 is easier
+   to read with it, and M3's upgrades rely on it.
+2. **Per-lease tokens and identities issued by the cluster**
+   ([felixd#74](https://github.com/GetFelix/felixd/issues/74)), so a
+   compromised machine cannot write other workloads' output.
+3. **Effects** ([felixd#71](https://github.com/GetFelix/felixd/issues/71)),
+   so a workload can reach the network, files and clocks through recorded
+   requests.
+4. **The native tier**
    ([felixd#75](https://github.com/GetFelix/felixd/issues/75)), so existing
    programs run unmodified.
 
 ## Licensing
 
-This repository is MIT. If the kernel is Linux, a built image will contain it
-and other GPL-licensed software. Publishing images means publishing the matching source,
-or a written offer for it, for those components.
+This repository is MIT. A built image also contains software under other
+licenses, which keep them: the Linux kernel and other GPL software, and Felix,
+which is AGPL-3.0. Publishing images means publishing the matching source, or
+a written offer for it, for those components. The image's inventory
+([0004](decisions/0004-components-from-signed-releases.md)) lists each one
+with its license.

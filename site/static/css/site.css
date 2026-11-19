@@ -426,6 +426,7 @@ main { display: block; }
 }
 .questions a:hover { transform: translateY(-3px); border-style: solid; border-color: color-mix(in srgb, var(--amber) 55%, transparent); background: var(--surface); }
 .q-mark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--amber-soft); color: var(--amber-text); font: 600 18px/1 var(--serif); }
+.q-mark.q-done { background: var(--surface); color: var(--muted); border: 1px solid var(--line); }
 .questions b { font: 600 1.18rem/1.25 var(--serif); letter-spacing: -0.01em; text-wrap: balance; }
 .q-prop { color: var(--muted); font-size: 0.96rem; flex: 1; }
 .q-prop em { font-style: normal; font-weight: 600; color: var(--text); }

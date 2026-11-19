@@ -1,0 +1,46 @@
+# Every program the image ships that NineLives does not build itself.
+# See docs/decisions/0004-components-from-signed-releases.md.
+#
+# Change this file only in a reviewed pull request. The image build downloads
+# each artifact, checks its sha256, verifies the upstream signature where one
+# exists, and fails the build on any mismatch. scripts/check_components.py
+# checks the file's shape in CI.
+
+[[component]]
+name = "felixd"
+version = "0.1.0"
+license = "MIT"
+source = "https://github.com/GetFelix/felixd"
+contract = "docs/felixd-contract.md"
+
+[component.signature]
+kind = "sigstore"
+checksums = "https://github.com/GetFelix/felixd/releases/download/v0.1.0/SHA256SUMS"
+bundle = "https://github.com/GetFelix/felixd/releases/download/v0.1.0/SHA256SUMS.sigstore.json"
+identity = "https://github.com/GetFelix/felixd/.github/workflows/release.yml@refs/tags/v0.1.0"
+issuer = "https://token.actions.githubusercontent.com"
+
+[component.artifacts.x86_64]
+url = "https://github.com/GetFelix/felixd/releases/download/v0.1.0/felixd-v0.1.0-x86_64-unknown-linux-gnu.tar.gz"
+sha256 = "1204fd542c54525e5b5ef4a553ed49dc769e3063b38f00874a7a5ce2aab246b8"
+
+[component.artifacts.aarch64]
+url = "https://github.com/GetFelix/felixd/releases/download/v0.1.0/felixd-v0.1.0-aarch64-unknown-linux-gnu.tar.gz"
+sha256 = "e45a8e5eeadfd37153ca41af4811341ecc0846b3aa0b917c5eabd027e5d690f4"
+
+[[component]]
+name = "felix"
+version = "0.7.2"
+license = "AGPL-3.0-only"
+source = "https://github.com/GetFelix/felix"
+
+# Felix does not sign its SHA256SUMS yet (felix#2796), so only the pinned
+# sha256 is checked. Its server is published for Linux x86_64 only
+# (felix#2797), so an aarch64 machine cannot take a core or storage role.
+[component.signature]
+kind = "none"
+tracking = "https://github.com/GetFelix/felix/issues/2796"
+
+[component.artifacts.x86_64]
+url = "https://github.com/GetFelix/felix/releases/download/v0.7.2/felix-v0.7.2-linux-x86_64.tar.gz"
+sha256 = "ed024422603c82c0f18a8ebe2c5071aba90e2b1d63ea34792cc9375c7e01643e"

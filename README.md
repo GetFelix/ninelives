@@ -21,9 +21,10 @@
 
 A distributed operating system built on the [Felix](https://github.com/GetFelix/felix) log.
 
-> **Status:** design stage. Nothing boots yet, and most choices, including the
-> kernel, are still open. The plan, the open questions and what each milestone
-> needs from felixd are in [docs/design.md](docs/design.md), and the work is tracked in
+> **Status:** design stage. Nothing boots yet. The choices for the first three
+> milestones are made and recorded in [docs/decisions](docs/decisions/). The
+> plan, the questions still open and what each milestone needs from felixd are
+> in [docs/design.md](docs/design.md), and the work is tracked in
 > [milestones](https://github.com/GetFelix/ninelives/milestones).
 
 ## What it is
@@ -36,12 +37,12 @@ somewhere else. That is where the name comes from.
 
 The pieces:
 
-- **A bootable image** for each machine: a pinned kernel, a read-only root
-  and atomic upgrades that can roll back. A/B partitions are the current
-  proposal; the kernel is an
-  [open question](https://github.com/GetFelix/ninelives/discussions/22).
+- **A bootable image** for each machine: a pinned stock Linux kernel, our own
+  init as PID 1, a read-only root and atomic upgrades that can roll back
+  (A/B partitions are the current proposal).
 - **[felixd](https://github.com/GetFelix/felixd)**, the node agent that runs
-  workloads from the log. It has its own repo; this one ships it.
+  workloads from the log. It has its own repo; the image ships its signed
+  releases.
 - **Felix brokers** on some of the machines.
 - **System programs on the log:** the scheduler, the name service and the
   `fx` shell.
@@ -62,17 +63,16 @@ look at one machine as a failure domain in
 
 | Directory | What it holds |
 |---|---|
-| `boot/` | Bootloader configuration (systemd-boot is proposed), UEFI and secure-boot signing |
-| `kernel/` | Kernel config fragments and a pinned version, if stock Linux is chosen. |
-| `felixd/` | The node agent, as a git submodule pinned to a felixd commit |
-| `init/` | Early boot: mounts, network, first-boot cluster join, starting felixd |
-| `rootfs/` | The image definition: read-only root, A/B partitions (proposed) |
+| `boot/` | Bootloader configuration, UEFI and secure-boot signing |
+| `kernel/` | The pinned Linux version and the config fragments we change |
+| `init/` | Our init (PID 1), in Rust: mounts, reaping, starting the role's services, shutdown |
+| `rootfs/` | The image definition: read-only root, data partition, A/B partitions (proposed) |
 | `system/` | Programs that run on the log: scheduler, name service, `fx` shell |
 | `tools/` | The `fx` CLI, image build wrappers, flashing, the qemu runner |
-| `images/` | Build targets: qemu x86_64 and aarch64, cloud images, Raspberry Pi |
-| `docs/` | Design, boot sequence, threat model |
+| `images/` | Build targets (qemu x86_64 and aarch64, later clouds and Raspberry Pi) and `components.toml`, the pinned Felix and felixd releases |
+| `docs/` | The design, [decision records](docs/decisions/), [component designs](docs/components/) and the [felixd contract](docs/felixd-contract.md) |
 
-The proposal is to build images with [mkosi](https://github.com/systemd/mkosi).
+Images are built with [mkosi](https://github.com/systemd/mkosi), in CI.
 
 ## Website
 
@@ -80,11 +80,12 @@ The proposal is to build images with [mkosi](https://github.com/systemd/mkosi).
 
 ## Building
 
-Clone with `git clone --recurse-submodules`, or run
-`git submodule update --init` in an existing clone.
+Nothing builds yet. The first milestone produces an image that boots in qemu,
+and the third boots three of them into a cluster that survives losing one.
+Images build on Linux only, in CI.
 
-Nothing builds yet. The first milestone produces an image that boots in qemu, and the
-third boots three of them into a cluster that survives losing one.
+How work moves from decision to design to code, and the standards code is
+held to, are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## The logo
 
@@ -95,6 +96,6 @@ like the eyes. The files and how to regenerate them are in
 
 ## License
 
-MIT for everything in this repository. If the kernel is Linux, built images
-will also contain it and other GPL software, which keep their own licenses; see
+MIT for everything in this repository. Built images also contain Linux and
+other GPL software, and Felix (AGPL-3.0), which keep their own licenses; see
 [docs/design.md](docs/design.md#licensing).

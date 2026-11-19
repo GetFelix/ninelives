@@ -3,9 +3,9 @@
   {%- for item in q.questions %}
   <li class="reveal" style="--d:{{ loop.index0 }}">
     <a href="{{ item.link }}">
-      <span class="q-mark" aria-hidden="true">?</span>
+      <span class="q-mark{% if item.decided %} q-done{% endif %}" aria-hidden="true">{% if item.decided %}&check;{% else %}?{% endif %}</span>
       <b>{{ item.title }}</b>
-      <span class="q-prop"><em>Proposal.</em> {{ item.proposal }}</span>
+      <span class="q-prop"><em>{% if item.decided %}Decided.{% else %}Proposal.{% endif %}</em> {{ item.answer }}</span>
       <span class="q-link">{{ item.label }}</span>
     </a>
   </li>

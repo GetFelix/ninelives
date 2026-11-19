@@ -3,11 +3,15 @@
 **Status:** Accepted, 2026-11-18. Answers
 [#16](https://github.com/GetFelix/ninelives/issues/16) for M1.
 
-**Amended:** the join design refines step 4 of Joining in two places,
-re-delivery after a lost answer and rate limits without a per-token limit or
-lockout. Both are accepted; see
-[Refinements of 0008](../components/join.md#refinements-of-0008). The text
-below is unchanged.
+**Amended:** the join design refines step 4 of Joining: re-delivery after a
+lost answer, rate limits without a per-token limit or lockout, and, in
+production, operator approval of a core join's key fingerprint as a gate
+before the issuer signs. All are accepted; see
+[Refinements of 0008](../components/join.md#refinements-of-0008). Root
+updates on a running machine, which Consequences leaves open, are decided as
+a signed single-purpose updater built in M3
+([#107](https://github.com/GetFelix/ninelives/issues/107)). The text below is
+unchanged.
 
 ## Context
 

@@ -31,6 +31,9 @@ images refuse it.
 - **The control plane stays at 3 or 5.** It is a Raft group and every
   metadata write waits for a majority. Three tolerates one failure and five
   tolerates two; more members only make writes slower.
+- **A cluster of only core machines serves no clients.** Core brokers are
+  internal-only, so clients and felixd need storage brokers; the
+  fault-tolerant production size is open (below).
 - **Brokers don't need to be everywhere.** Each broker is somewhere the
   control plane can place shards. The replication factor decides how many
   copies of a shard exist, not the number of brokers.

@@ -49,11 +49,53 @@ jobs:
           fi
           python3 scripts/check_components.py "${args[@]}"
 
+  init:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: init
+    env:
+      CARGO_TERM_COLOR: always
+      # The PID 1 tests run the init in its own namespaces through sudo; set
+      # here so they fail instead of skipping.
+      NL_INIT_ROOT_TESTS: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: unsafe only in mod sys (0005)
+        working-directory: .
+        run: |
+          python3 scripts/check_unsafe.py --self-test
+          python3 scripts/check_unsafe.py init
+      - name: Toolchain
+        # Installs the version rust-toolchain.toml pins.
+        run: rustup toolchain install
+      - name: rustfmt
+        run: cargo fmt --check
+      - name: clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: test
+        run: cargo test --locked
+      - name: Install cargo-deny
+        # Pinned by hash so a changed release asset fails the job instead of running (S21).
+        env:
+          CARGO_DENY_VERSION: 0.20.2
+          CARGO_DENY_SHA256: 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
+        run: |
+          name="cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl"
+          curl -fsSLo "$RUNNER_TEMP/$name.tar.gz" "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/$name.tar.gz"
+          echo "$CARGO_DENY_SHA256  $RUNNER_TEMP/$name.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$name.tar.gz" -C "$RUNNER_TEMP" "$name/cargo-deny"
+          echo "$RUNNER_TEMP/$name" >> "$GITHUB_PATH"
+      - name: cargo deny
+        run: cargo deny --locked check
+
   # The one check main requires, so a job added later is covered without changing the ruleset.
   ci-ok:
     name: CI ok
     if: always()
-    needs: [lint, python]
+    needs: [lint, python, init]
     runs-on: ubuntu-latest
     steps:
       - run: |

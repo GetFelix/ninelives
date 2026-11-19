@@ -6,4 +6,4 @@ code. The required sections are in
 
 | Component | Design | Status |
 |---|---|---|
-| init (PID 1) | [init.md](init.md) ([#46](https://github.com/GetFelix/ninelives/issues/46)) | In review ([0002](../decisions/0002-our-own-init.md)) |
+| init (PID 1) | [init.md](init.md) ([#46](https://github.com/GetFelix/ninelives/issues/46)) | First slice in [`init/`](../../init/) ([#47](https://github.com/GetFelix/ninelives/issues/47)); services and shutdown next ([#48](https://github.com/GetFelix/ninelives/issues/48)) |

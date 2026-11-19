@@ -21,7 +21,8 @@
 
 A distributed operating system built on the [Felix](https://github.com/GetFelix/felix) log.
 
-> **Status:** design stage. Nothing boots yet. The choices for the first three
+> **Status:** design stage. The first image builds and boots in qemu in CI
+> (x86_64); nothing else runs yet. The choices for the first three
 > milestones are made and recorded in [docs/decisions](docs/decisions/). The
 > plan, the questions still open and what each milestone needs from felixd are
 > in [docs/design.md](docs/design.md), and the work is tracked in
@@ -81,9 +82,10 @@ Images are built with [mkosi](https://github.com/systemd/mkosi), in CI.
 
 ## Building
 
-Nothing builds yet. The first milestone produces an image that boots in qemu,
-and the third boots three of them into a cluster that survives losing one.
-Images build on Linux only, in CI.
+The first milestone's image builds and boots in qemu x86_64 in CI
+(`tools/image.sh` and `tools/boot.sh` run the same on a Linux host with docker
+or podman). The third milestone boots three of them into a cluster that
+survives losing one. Images build on Linux only.
 
 How work moves from decision to design to code, and the standards code is
 held to, are in [CONTRIBUTING.md](CONTRIBUTING.md).

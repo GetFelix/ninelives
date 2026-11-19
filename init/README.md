@@ -53,7 +53,7 @@ PID 1, which refuses to run rather than mount over a host's `/dev`.
 
 Records go to the console, one JSON object per line behind the prefix
 `ninelives-init `. The qemu boot check
-([#2](https://github.com/GetFelix/ninelives/issues/2)) waits for the first
+(the `boot` job in CI) waits for the first
 line that starts with `ninelives-init {` and contains `"machine":"up"`:
 
 ```
@@ -118,4 +118,4 @@ mount that leaves the machine `emergency` with `/proc/sys` still locked.
 Not yet tested end to end: the panic hook firing and the signalfd and worker
 failures, which need the test image's fault hooks. Without
 passwordless sudo those tests skip; CI sets `NL_INIT_ROOT_TESTS=1` so they
-fail instead. Booting the image in qemu is [#2](https://github.com/GetFelix/ninelives/issues/2).
+fail instead. CI boots the image in qemu (the `boot` job) and waits for the ready line.

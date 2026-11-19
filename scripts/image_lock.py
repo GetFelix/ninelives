@@ -6,9 +6,10 @@
   image_lock.py check      check the lock's shape and its consistency with
                            images/tools.toml and images/packages.toml, offline
   image_lock.py tools      print the tools set as name=version, one per line
+  image_lock.py boot       the same for the set the boot test runs on
   image_lock.py keyring F  write the pinned archive keys to F as a binary keyring
 
-The lock holds, for the root and for the build tools separately, every
+The lock holds, for the root, the build tools and the boot test's tools separately, every
 package by name, version, SHA-256 and pool path, plus the SHA-256 of each
 suite's InRelease. Resolution follows apt's rules closely enough for a
 reviewed set; the fetch phase then fails if apt wants anything the lock does
@@ -29,6 +30,7 @@ SNAPSHOT = re.compile(r"\d{8}T\d{6}Z")
 NAME = re.compile(r"[a-z0-9][a-z0-9+.-]*")
 PRIORITY = {"required": 0, "important": 1, "standard": 2, "optional": 3, "extra": 4}
 ARCHIVE_URL = "http://snapshot.debian.org/archive"
+SETS = ("root", "tools", "boot")
 
 
 def suites_for(release: str) -> list[tuple[str, str]]:
@@ -134,7 +136,7 @@ def q(s: str) -> str:
 def render(snapshot: str, arch: str, sets: dict) -> str:
     lines = [
         "# Every Debian package the image build uses, by name, version and SHA-256,",
-        "# for the root and for the build tools separately. Written by",
+        "# for the root, the build tools and the boot test's tools separately. Written by",
         "# scripts/image_lock.py; CI regenerates it and fails on a difference, so",
         "# a hand edit cannot add a package resolution would not. Change it only in",
         "# a reviewed pull request that touches pin files and nothing else",
@@ -143,7 +145,7 @@ def render(snapshot: str, arch: str, sets: dict) -> str:
         f"snapshot = {q(snapshot)}",
         f"architecture = {q(arch)}",
     ]
-    for which in ("root", "tools"):
+    for which in SETS:
         s = sets[which]
         lines += ["", f"[{which}]", f"release = {q(s['release'])}"]
         for (archive, suite), digest in sorted(s["inrelease"].items()):
@@ -161,7 +163,7 @@ def generate(output: pathlib.Path = LOCK) -> None:
     sets = {}
     with tempfile.TemporaryDirectory() as d:
         work = pathlib.Path(d)
-        for which, roots, essential in (("root", keep, True), ("tools", tools["tools"]["packages"], False)):
+        for which, roots, essential in (("root", keep, True), ("tools", tools["tools"]["packages"], False), ("boot", tools["boot"]["packages"], False)):
             release = tools[which]["release"]
             universe, inrelease = load_universe(snapshot, arch, release, work / which)
             names = closure(universe, ["base-files", *roots] if essential else roots, essential)
@@ -181,7 +183,7 @@ def check() -> list[str]:
         errors.append(f"debian.lock: snapshot is not tools.toml's {snapshot}")
     if lock.get("architecture") != tools["debian"]["architecture"]:
         errors.append("debian.lock: architecture differs from tools.toml")
-    for which in ("root", "tools"):
+    for which in SETS:
         part = lock.get(which, {})
         if part.get("release") != tools[which]["release"]:
             errors.append(f"debian.lock: {which} release is not tools.toml's {tools[which]['release']}")
@@ -214,10 +216,11 @@ def check() -> list[str]:
     for p in keep:
         if p["name"] not in root:
             errors.append(f"packages.toml: {p['name']} is not in the lock's root set")
-    tool_names = {p["name"] for p in lock.get("tools", {}).get("package", [])}
-    for n in tools["tools"]["packages"]:
-        if n not in tool_names:
-            errors.append(f"tools.toml: tool {n} is not in the lock's tools set")
+    for which in ("tools", "boot"):
+        in_lock = {p["name"] for p in lock.get(which, {}).get("package", [])}
+        for n in tools[which]["packages"]:
+            if n not in in_lock:
+                errors.append(f"tools.toml: {which} package {n} is not in the lock's {which} set")
     # The workflow's container is the pinned bootstrap image, by the same digest.
     ci = (ic.ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     digest = tools["bootstrap"]["image"].split("@", 1)[1]
@@ -228,15 +231,15 @@ def check() -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=["generate", "check", "tools", "keyring"])
+    parser.add_argument("command", choices=["generate", "check", "tools", "boot", "keyring"])
     parser.add_argument("target", nargs="?", type=pathlib.Path, help="generate: the file to write; keyring: the keyring file")
     args = parser.parse_args()
     if args.command == "generate":
         generate(args.target or LOCK)
         return 0
-    if args.command == "tools":
+    if args.command in ("tools", "boot"):
         lock = ic.load_toml(LOCK)
-        print("\n".join(f"{p['name']}={p['version']}" for p in lock["tools"]["package"]))
+        print("\n".join(f"{p['name']}={p['version']}" for p in lock[args.command]["package"]))
         return 0
     if args.command == "keyring":
         keys = ic.IMAGES / "keys" / "debian"

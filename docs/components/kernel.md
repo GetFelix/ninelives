@@ -804,8 +804,8 @@ the hardening stays unless that record accepts a measured cost and says why.
 ## Test plan
 
 CI checks run on every pull request that touches `kernel/` or the image
-build. qemu tests boot the CI image on both architectures
-([#2](https://github.com/GetFelix/ninelives/issues/2)). Tests that read
+build. qemu tests boot the CI image: x86_64 is the `boot` job, aarch64 waits
+for its image ([#99](https://github.com/GetFelix/ninelives/issues/99)). Tests that read
 kernel state use the test image's `nl-inspect` service ([init
 design](init.md#test-plan)); tests that try forbidden calls use a test
 service whose seccomp filter allows them, so the refusal is the kernel's.

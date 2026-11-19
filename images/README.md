@@ -14,7 +14,9 @@ build on a Linux host with docker or podman:
 tools/image.sh --kernel <kernel-qemu-x86_64 artifact dir> --init <init binary> --out <dir>
 ```
 
-Nothing built this way is signed or published.
+Nothing built this way is signed or published. The `boot` job boots the image
+in qemu; `tools/boot.sh --image <the .raw> --out <dir>` does the same on a
+Linux host. Its qemu and UEFI firmware are the `boot` set in `debian.lock`.
 
 ## Pins
 

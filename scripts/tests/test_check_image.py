@@ -211,6 +211,16 @@ class Checks(unittest.TestCase):
         self.assertTrue(ci.check_esp(["EFI", "EFI/BOOT", "EFI/BOOT/BOOTX64.EFI", "loader/loader.conf"], b"u", b"u"))
         self.assertTrue(ci.check_esp(["EFI", "EFI/BOOT", "EFI/BOOT/BOOTX64.EFI"], b"x", b"u"))
 
+    def test_esp_sector_size_must_be_512(self):
+        def sector(n):
+            b = bytearray(512)
+            struct.pack_into("<H", b, 11, n)
+            b[510:512] = b"\x55\xaa"
+            return bytes(b)
+        self.assertEqual(ci.check_esp_sector(sector(512)), [])
+        self.assertTrue(any("4096" in e for e in ci.check_esp_sector(sector(4096))))
+        self.assertTrue(ci.check_esp_sector(b"\0" * 512))
+
     def test_oversized_root(self):
         self.assertEqual(ci.check_budget({"root_erofs": 10}, {"root_erofs": 20}), [])
         self.assertTrue(ci.check_budget({"root_erofs": 30}, {"root_erofs": 20}))

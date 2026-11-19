@@ -311,6 +311,14 @@ def check_esp(files: list[str], uki: bytes, expected_uki: bytes):
     return out
 
 
+def check_esp_sector(boot_sector: bytes):
+    """The FAT's sector size must be the disk's 512, or the firmware cannot read the ESP and boots nothing."""
+    if len(boot_sector) < 512 or boot_sector[510:512] != b"\x55\xaa":
+        return ["ESP: no FAT boot sector"]
+    size = struct.unpack_from("<H", boot_sector, 11)[0]
+    return [] if size == 512 else [f"ESP: the FAT has {size}-byte sectors, the disk 512 (firmware would not mount it)"]
+
+
 def check_budget(sizes: dict[str, int], budget: dict):
     out = []
     for k, limit in budget.items():
@@ -522,6 +530,7 @@ def main() -> int:
         subprocess.run(["mcopy", "-s", "-n", "-i", str(esp), "::", str(espdir)], check=False)
         esp_files = sorted(os.path.relpath(os.path.join(dp, n), espdir) for dp, dn, fn in os.walk(espdir) for n in dn + fn)
         esp_uki = next((espdir / f for f in esp_files if f.upper() == "EFI/BOOT/BOOTX64.EFI"), None)
+        errors += check_esp_sector(esp.read_bytes()[:512])
         errors += check_esp(esp_files, esp_uki.read_bytes() if esp_uki else b"", uki_path.read_bytes())
 
         policy = kc.load_policy(kc.KERNEL / "policy.toml", arch)

@@ -842,7 +842,7 @@ Records are JSON lines, one per state change, each with a format version,
 
 | Where | When | Why |
 |---|---|---|
-| `/dev/console`, prefixed `ninelives-init ` | from the first instruction | The only channel before `/run` and `$DATA` exist, and what CI reads on the serial port. The `up` record is the ready line #2 waits for. |
+| `/dev/console`, prefixed `ninelives-init ` | from the first instruction | The only channel before `/run` and `$DATA` exist, and what CI reads on the serial port. The `up` record is the ready line the CI `boot` job waits for. |
 | `/run/ninelives/init/state.json` | after `/run` is mounted | A snapshot of current state, replaced with write-and-rename, readable by the diagnostics service (S11). Includes the longest main loop iteration so far. |
 | `$DATA/init/records.jsonl` | after `$DATA` is mounted | The history that survives a reboot (S11). Two files of 4 MiB, rotated. Records from before the mount wait in a 1024-record ring. |
 
@@ -1242,7 +1242,7 @@ drop), N3 and N4 (cgroup reservation, numbers from measurement).
 
 Unit tests run the state machine with a fake clock and fake events, and
 cover most invariants without a kernel. qemu tests boot the CI image
-([#2](https://github.com/GetFelix/ninelives/issues/2)); tests that inspect
+(the `boot` job runs the first, the ready line); tests that inspect
 processes add an `nl-inspect` service with no capabilities, which the
 production image lacks. Tests marked "test image" also add a service with
 `CAP_KILL`, or build the init with a fault hook that production builds do

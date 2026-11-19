@@ -31,10 +31,18 @@ does not matter.
 ## Decision
 
 The root is built from Debian 13, installing only the packages the image
-needs, each named in the image configuration. Packages are fetched from
-[snapshot.debian.org](https://snapshot.debian.org/) at a pinned timestamp,
-so a build of a given commit always gets the same versions. Moving the
-timestamp is a reviewed pull request, like bumping a component.
+needs, each named in the image configuration with the requirement or
+component it serves. Packages Debian marks essential that cannot be
+removed are listed with the reason (requirement S1). Packages are fetched
+from [snapshot.debian.org](https://snapshot.debian.org/) at a pinned
+timestamp, so a build of a given commit always gets the same versions. A
+snapshot's Release files expire, so the build turns off apt's Valid-Until
+check and relies on the pinned timestamp and the archive signature instead.
+Moving the timestamp is a reviewed pull request, like bumping a component.
+
+CI keeps the exact packages each image was built from as a build artifact,
+so a rebuild does not depend on the snapshot service being up. A published
+image ships with the source packages for everything in it (S12).
 
 A Debian security advisory for any package in the image triggers a pull
 request that moves the timestamp, and the image is rebuilt within the
@@ -58,14 +66,16 @@ package, next to the components from `components.toml`.
 
 ## Consequences
 
-- The image carries about a dozen Debian packages, not a Debian system:
-  no package manager, shell or SSH server in production images
-  ([requirements.md](../requirements.md#security)).
+- The image carries a short, named list of Debian packages, not a Debian
+  system: no package manager, interactive shell or SSH server in production
+  images ([requirements.md](../requirements.md#security)). The DHCP and
+  time-sync clients are chosen with that in mind (some DHCP clients run
+  shell hook scripts).
 - Debian's default compiler hardening is a step behind Fedora's. The
   packages we take are few and small, and the code that does the work
   (the init, Felix, felixd) is Rust that we or our upstreams build.
-- Security support for Debian 13 runs to mid-2028, and Debian LTS extends
-  it to mid-2030. Moving to Debian 14 is a planned, reviewed change.
+- Security support for Debian 13 runs to August 2028, and Debian LTS
+  extends it to June 2030. Moving to Debian 14 is a planned, reviewed change.
 - Debian's reproducible-builds work and snapshot archive make the
   reproducibility check in [0003](0003-mkosi-image-build.md) achievable.
 

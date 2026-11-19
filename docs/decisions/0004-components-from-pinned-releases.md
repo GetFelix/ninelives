@@ -31,18 +31,17 @@ architecture. The image build:
    never signed cannot ship,
 4. writes an inventory of what it installed into the image.
 
-The pull request that changes a hash runs the same signature check before
-anyone reviews it, so for a signed component the reviewer is checking a
-hash the upstream vouched for, not one copied from a web page. For a
-component with no signature (Felix today) the hash is trusted because a
-reviewer checked it at the time it was pinned, and nothing more. The
-manifest says so for that component, with the issue that fixes it.
+The job that opens a bump pull request
+([#52](https://github.com/GetFelix/ninelives/issues/52)) runs the same
+signature check before anyone reviews it, so for a signed component the
+reviewer is checking a hash the upstream vouched for, not one copied from a
+web page. For a component with no signature (Felix today) the hash is
+trusted because a reviewer checked it when it was pinned, and nothing more.
+The manifest says so for that component, with the issue that fixes it, and
+CI refuses a change that drops a component's signature.
 
-The manifest changes only through a reviewed pull request
-([#52](https://github.com/GetFelix/ninelives/issues/52) opens one on each
-upstream release), and the CI boot
-and integration tests must pass on it. A component with no upstream
-signature says so in the manifest, with the issue that tracks adding one.
+The manifest changes only through a reviewed pull request, and the CI boot
+and integration tests must pass on it.
 
 A workflow input and a nightly job build felixd from its main branch and run
 NineLives' tests against it, so a break shows up before felixd releases
@@ -67,8 +66,7 @@ visible in review.
   every artifact is checked by hash, and against a signature where one
   exists.
 - This record covers what NineLives takes from its own upstreams. The rest
-  of the root (glibc, the kernel if it comes from the distribution, the
-  tools the init uses) comes from the base distribution's signed package
+  of the root (glibc, firmware, the tools the init uses) comes from the base distribution's signed package
   repositories, pinned to a snapshot ([0006](0006-debian-base.md)). The
   kernel is built from verified upstream source
   ([0007](0007-kernel-from-upstream-source.md)). The image's inventory

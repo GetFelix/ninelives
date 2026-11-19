@@ -20,21 +20,27 @@ a small attack surface, and a network stack tuned for Felix's traffic
 ## Decision
 
 The kernel is built in CI from an upstream long-term-support release from
-kernel.org, with the tarball's signature verified before the build. No
-patches. The config is a small upstream base plus fragments in `kernel/`,
+kernel.org. The build checks the release's PGP signature against the
+stable maintainers' key fingerprints pinned in `kernel/keys/`, and fails if it
+does not verify. No patches. The config is a small upstream base plus fragments in `kernel/`,
 each commented with the requirement it serves:
 
-- **Hardening:** the Kernel Self Protection Project's recommended options
-  where they do not break a requirement, lockdown in integrity mode,
-  unprivileged BPF and unprivileged userfaultfd off, BPF JIT hardening on.
+- **Hardening:** what [kernel-hardening-checker](https://github.com/a13xp0p0v/kernel-hardening-checker)
+  recommends, with each exception listed and explained in `kernel/`
+  (requirement S2), lockdown in integrity mode, unprivileged BPF and
+  unprivileged userfaultfd off, BPF JIT hardening on.
 - **No loadable modules.** Everything the image needs is built in, so
   nothing can be loaded at run time. Each target's drivers (virtio for
   qemu, then each cloud and board in M5) are listed in that target's
-  fragment.
-- **Networking:** UDP segmentation and receive offload (GSO and GRO, which
-  QUIC batching uses), BBR with the fq qdisc, io_uring, and eBPF and XDP
-  for later use. Subsystems a NineLives machine does not use are compiled
-  out.
+  fragment. Firmware those drivers need comes from Debian's firmware
+  packages, pinned like every other package ([0006](0006-debian-base.md)).
+- **Networking:** what Felix's QUIC stack uses, UDP segmentation and
+  receive offload (GSO and GRO) on each target's network driver
+  (requirement N2). QUIC's congestion control runs in Felix's process, so
+  TCP congestion control and qdisc choices go in only with a measurement
+  (N3). io_uring, eBPF and XDP are compiled out until a measured need and a
+  decision record bring one in, because io_uring bypasses seccomp (S6).
+  Every other subsystem a NineLives machine does not use is compiled out.
 - **Sandboxing for the init's services:** seccomp, Landlock, cgroup v2,
   and namespaces.
 
@@ -64,4 +70,5 @@ kernel change runs the image's boot, durability and network tests
 - Following LTS security releases ourselves turns out to be slower than
   the deadline in the requirements.
 - A target (a cloud, a board) needs drivers that cannot reasonably be
-  built in.
+  built in, or support that is not in mainline yet. The Raspberry Pi (M5)
+  is the likely first case.

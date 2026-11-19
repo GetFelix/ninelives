@@ -22,7 +22,7 @@ broker (it is built and tested against Felix 0.7.2).
 | Checksums | `SHA256SUMS` over the tarballs |
 | Signature | `SHA256SUMS.sigstore.json`, a keyless Sigstore bundle. Identity `https://github.com/GetFelix/felixd/.github/workflows/release.yml@refs/tags/v<version>`, issuer `https://token.actions.githubusercontent.com` |
 | Reproducible | Built twice in felixd's release workflow, the second time on a clean runner, and compared |
-| Linking | Dynamically linked against glibc. The 0.1.0 binaries need glibc 2.38 or newer (they reference `GLIBC_2.38` symbols; felixd builds on an Ubuntu 24.04 runner), so the base distribution has to provide at least that. Felix 0.7.2's server has the same floor. |
+| Linking | Dynamically linked against glibc. The 0.1.0 binaries need glibc 2.38 or newer (they reference `GLIBC_2.38` symbols; felixd builds on an Ubuntu 24.04 runner), which Debian 13 (glibc 2.41, [0006](decisions/0006-debian-base.md)) provides. Felix 0.7.2's server has the same floor. |
 
 ## Running it
 

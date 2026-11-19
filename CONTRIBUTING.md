@@ -50,8 +50,8 @@ A design in `docs/components/<name>.md` has these sections, in this order:
 - System code is Rust, stable, edition 2024
   ([0005](docs/decisions/0005-rust-and-unsafe.md)). Every crate sets
   `#![deny(unsafe_code)]`. The only exception is one `#[allow(unsafe_code)]
-  mod sys` per crate, and every `unsafe` block there has a `// SAFETY:`
-  comment.
+  mod sys` per crate, every `unsafe` block there has a `// SAFETY:`
+  comment, and CI enforces both.
 - `cargo fmt`, `cargo clippy -- -D warnings` and `cargo deny` pass.
 - Errors are returned and handled. A program that runs as PID 1 or as a
   system service does not panic on input it can survive.

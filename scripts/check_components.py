@@ -3,7 +3,11 @@
 
 This does not download anything. The image build verifies hashes and
 signatures; this catches a malformed or inconsistent manifest in review.
+
+With --base, also compares against the manifest on the target branch and
+refuses a change that drops a component's signature.
 """
+import argparse
 import pathlib
 import re
 import sys
@@ -14,6 +18,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 ARCHES = {"x86_64": ("x86_64",), "aarch64": ("aarch64", "arm64")}
 SHA256 = re.compile(r"[0-9a-f]{64}")
 VERSION = re.compile(r"\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?")
+# Upstreams NineLives takes components from. Adding one is a reviewed change.
+OWNERS = {"GetFelix"}
 ISSUE = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/issues/\d+")
 
 
@@ -42,8 +48,9 @@ def check(path: pathlib.Path) -> list[str]:
         if not VERSION.fullmatch(version):
             err(f"version {version!r} is not an exact release version")
         source = c.get("source", "").rstrip("/")
-        if not re.fullmatch(r"https://github\.com/[\w.-]+/[\w.-]+", source):
-            err("source must be a GitHub repository URL")
+        m = re.fullmatch(r"https://github\.com/([\w.-]+)/[\w.-]+", source)
+        if not m or m.group(1) not in OWNERS:
+            err(f"source must be a GitHub repository owned by one of {sorted(OWNERS)}")
         # Every download has to come from this component's own release.
         release = f"{source}/releases/download/v{version}/"
 
@@ -71,7 +78,7 @@ def check(path: pathlib.Path) -> list[str]:
         artifacts = c.get("artifacts", {})
         if not artifacts:
             err("no artifacts")
-        urls = set()
+        urls, hashes = set(), set()
         for arch, a in artifacts.items():
             if arch not in ARCHES:
                 err(f"unknown architecture {arch!r}")
@@ -80,8 +87,10 @@ def check(path: pathlib.Path) -> list[str]:
             filename = url.rsplit("/", 1)[-1]
             if not url.startswith(release) or "/" in url[len(release):]:
                 err(f"{arch} url is not a file in {release}")
-            if f"v{version}" not in filename or "linux" not in filename:
-                err(f"{arch} url does not name a v{version} Linux build")
+            if not filename.startswith(f"{name}-v{version}-") or not filename.endswith(".tar.gz"):
+                err(f"{arch} url is not a {name}-v{version}-*.tar.gz archive")
+            if "linux" not in filename:
+                err(f"{arch} url does not name a Linux build")
             if not any(n in filename for n in ARCHES[arch]):
                 err(f"{arch} url does not name an {arch} build")
             for other, names_ in ARCHES.items():
@@ -90,14 +99,36 @@ def check(path: pathlib.Path) -> list[str]:
             if url in urls:
                 err(f"{arch} url is used for two architectures")
             urls.add(url)
-            if not SHA256.fullmatch(a.get("sha256", "")):
+            digest = a.get("sha256", "")
+            if not SHA256.fullmatch(digest):
                 err(f"{arch} sha256 is not 64 lowercase hex digits")
+            if digest in hashes:
+                err(f"{arch} sha256 is used for two architectures")
+            hashes.add(digest)
     return errors
 
 
+def check_against_base(path: pathlib.Path, base: pathlib.Path) -> list[str]:
+    def kinds(p):
+        data = tomllib.loads(p.read_text(encoding="utf-8"))
+        return {c.get("name"): c.get("signature", {}).get("kind") for c in data.get("component", [])}
+
+    old, new = kinds(base), kinds(path)
+    return [
+        f"component {n!r}: signature dropped from sigstore to {new[n]!r}"
+        for n in old
+        if old[n] == "sigstore" and n in new and new[n] != "sigstore"
+    ]
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--base", type=pathlib.Path, help="the manifest on the target branch")
+    args = parser.parse_args()
     path = ROOT / "images" / "components.toml"
     errors = check(path)
+    if args.base:
+        errors += check_against_base(path, args.base)
     for e in errors:
         print(f"{path.relative_to(ROOT)}: {e}", file=sys.stderr)
     return 1 if errors else 0

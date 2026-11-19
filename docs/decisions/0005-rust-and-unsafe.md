@@ -49,8 +49,11 @@ only where the invariant is local and stated in the message.
 ## Consequences
 
 - The `unsafe` surface is small and easy to find:
-  `grep -rn 'allow(unsafe_code)'` lists every place it is allowed, and a
-  second one in a crate fails review.
+  the workspace sets `unsafe_code = "deny"` in `[workspace.lints]`, every
+  crate inherits it, and a CI check fails if any `allow`, `expect` or
+  `cfg_attr` of `unsafe_code`, or a crate-level lint override, appears
+  outside a module named `sys`. The check lands with the first crate
+  ([#47](https://github.com/GetFelix/ninelives/issues/47)).
 - Some system calls need a hand-written wrapper in `sys` until rustix covers
   them.
 - The same toolchain and lint setup as felixd and Felix, so a contributor

@@ -95,6 +95,10 @@ records, one of them lost after a machine died, and the newest glowing amber
 like the eyes. The files and how to regenerate them are in
 [docs/brand](docs/brand/).
 
+## Security
+
+Report vulnerabilities privately, as described in [SECURITY.md](SECURITY.md).
+
 ## License
 
 MIT for everything in this repository. Built images also contain Linux and

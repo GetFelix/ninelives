@@ -95,13 +95,6 @@ issues = [
 # Open ones first. When one is decided, set decided = true, put the decision in
 # "answer" and link its record in docs/decisions/.
 [[questions]]
-title = "Which distribution is the root built from?"
-decided = true
-answer = "A minimal Debian 13, about a dozen packages pinned to a snapshot, under a kernel we build from upstream source."
-link = "https://github.com/GetFelix/ninelives/blob/main/docs/decisions/0006-debian-base.md"
-label = "Decision 0006"
-
-[[questions]]
 title = "How does a machine upgrade?"
 answer = "A/B root partitions that switch on reboot and fall back on a failed boot."
 link = "https://github.com/GetFelix/ninelives/issues/8"
@@ -116,7 +109,7 @@ label = "Issue #16"
 [[questions]]
 title = "Linux or our own kernel?"
 decided = true
-answer = "Stock Linux through the three-VM milestone, on standard system calls only, then reviewed with an Asterinas experiment in hand."
+answer = "Upstream Linux built from source with our own hardened, network-tuned config, through the three-VM milestone, then reviewed with an Asterinas experiment in hand."
 link = "https://github.com/GetFelix/ninelives/blob/main/docs/decisions/0001-linux-kernel.md"
 label = "Decision 0001"
 
@@ -133,3 +126,10 @@ decided = true
 answer = "mkosi, in CI, built twice and compared. Felix and felixd come from pinned releases, checked by hash and signature."
 link = "https://github.com/GetFelix/ninelives/blob/main/docs/decisions/0003-mkosi-image-build.md"
 label = "Decision 0003"
+
+[[questions]]
+title = "Which distribution is the root built from?"
+decided = true
+answer = "A minimal Debian 13, about a dozen packages pinned to a snapshot, under a kernel we build from upstream source."
+link = "https://github.com/GetFelix/ninelives/blob/main/docs/decisions/0006-debian-base.md"
+label = "Decision 0006"

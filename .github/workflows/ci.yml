@@ -31,7 +31,15 @@ jobs:
       - name: Scripts compile
         run: python3 -m compileall -q scripts site/scripts
       - name: Component manifest
-        run: python3 scripts/check_components.py
+        run: |
+          args=()
+          if [[ -n "${GITHUB_BASE_REF:-}" ]]; then
+            git fetch -q --depth=1 origin "$GITHUB_BASE_REF"
+            if git show FETCH_HEAD:images/components.toml > "$RUNNER_TEMP/base.toml" 2>/dev/null; then
+              args=(--base "$RUNNER_TEMP/base.toml")
+            fi
+          fi
+          python3 scripts/check_components.py "${args[@]}"
 
   # The one check main requires, so a job added later is covered without changing the ruleset.
   ci-ok:

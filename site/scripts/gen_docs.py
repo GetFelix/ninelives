@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render the repository's docs/ as site pages, so the design has one source.
 
-Writes site/content/design/{os,topology,inference-as-effect,felixd-contract}.md
+Writes one page per entry in `docs` below into site/content/design/
 (git-ignored). Run by build.sh. Links to other files in the repository, such as
 the decision records, point at GitHub.
 """

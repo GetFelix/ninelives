@@ -33,7 +33,12 @@ mkdir -p "$out" "$work"
 out=$(cd "$out" && pwd)
 work=$(cd "$work" && pwd)
 store=$work/store
+bootstrap_base=/var/lib/ninelives-bootstrap-base
 meta=$work/meta
+
+installed_list() { # name=version of every installed package, sorted the same way everywhere
+  dpkg-query -W -f '${db:Status-Abbrev}${Package}=${Version}\n' | sed -n 's/^ii //p' | LC_ALL=C sort
+}
 
 toml() { # toml FILE KEY...: one value from a TOML file
   python3 -I -c 'import sys,tomllib; d=tomllib.load(open(sys.argv[1],"rb"))
@@ -69,6 +74,9 @@ SRC
 
 if [[ ${NL_IMAGE_PHASE:-fetch} == fetch ]]; then
   if ! command -v python3 >/dev/null; then
+    # What the container holds before the bootstrap touches it, so the build
+    # phase can tell what the bootstrap added or changed.
+    installed_list > "$bootstrap_base"
     # Before python3 there is no way to read tools.toml, so sed does it.
     snap=$(sed -n 's/^snapshot = "\(.*\)"/\1/p' "$repo/images/tools.toml")
     snapshot_sources "$snap"
@@ -129,20 +137,46 @@ Signed-By: $keyring
 SRC
 }
 
+# Packages the bootstrap step added or upgraded were fetched without the pinned
+# keys. Fail on an upgrade, purge what it added, then install the locked tools.
+[[ -s $bootstrap_base ]] || { echo "the bootstrap step did not record the container's packages" >&2; exit 1; }
+mapfile -t tool_pkgs < <(python3 -I "$repo/scripts/image_lock.py" tools)
+tool_names=()
+for p in "${tool_pkgs[@]}"; do tool_names+=("${p%%=*}"); done
+export LC_ALL=C
+installed_list > "$work/installed-after-bootstrap"
+upgraded=$(join -t= "$bootstrap_base" "$work/installed-after-bootstrap" | awk -F= '$2 != $3 {print $1}')
+if [[ -n $upgraded ]]; then
+  echo "the bootstrap step upgraded packages that were in the container: $upgraded" >&2
+  exit 1
+fi
+added=$(comm -13 <(cut -d= -f1 "$bootstrap_base" | sort) <(cut -d= -f1 "$work/installed-after-bootstrap" | sort) \
+  | comm -23 - <(printf '%s\n' "${tool_names[@]}" | sort))
+if [[ -n $added ]]; then
+  echo "purging what the bootstrap step added and the tools lock does not name: $added"
+  # shellcheck disable=SC2086  # one word per package
+  apt-get purge -y $added
+fi
+
 # The build tools, from the verified store, at exactly the locked versions.
 rm -f /etc/apt/sources.list.d/*.sources /etc/apt/sources.list
 write_apt_config /etc/apt
 sources "$(toml "$repo/images/tools.toml" tools release)" > /etc/apt/sources.list.d/ninelives.sources
 apt-get update
-mapfile -t tool_pkgs < <(python3 -I "$repo/scripts/image_lock.py" tools)
 # --reinstall, because the bootstrap already put some of these on the machine
 # and a plain install of the same version would leave them as they are.
 apt-get install -y --no-install-recommends --allow-downgrades --reinstall "${tool_pkgs[@]}"
-tool_names=()
-for p in "${tool_pkgs[@]}"; do tool_names+=("${p%%=*}"); done
 diff <(printf '%s\n' "${tool_pkgs[@]}" | sort) \
-  <(dpkg-query -W -f '${Package}=${Version}\n' "${tool_names[@]}" | sort) \
+  <(installed_list | awk -F= 'NR==FNR {t[$1]=1; next} $1 in t' <(printf '%s\n' "${tool_names[@]}") -) \
   || { echo "an installed tool is not the locked version" >&2; exit 1; }
+# Nothing else is on the machine: the container's own packages, unchanged, and the locked tools.
+expected=$( { awk -F= 'NR==FNR {t[$1]=1; next} !($1 in t)' <(printf '%s\n' "${tool_names[@]}") "$bootstrap_base"; printf '%s\n' "${tool_pkgs[@]}"; } | sort)
+installed=$(installed_list)
+if [[ $expected != "$installed" ]]; then
+  echo "the installed packages are not the container's plus the locked tools:" >&2
+  diff <(echo "$expected") <(echo "$installed") >&2 || true
+  exit 1
+fi
 
 # mkosi, from the verified archive.
 mkosi_ver=$(toml "$repo/images/tools.toml" mkosi version)

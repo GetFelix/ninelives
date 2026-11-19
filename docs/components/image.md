@@ -8,8 +8,11 @@ The tool and the base are fixed by [0003](../decisions/0003-mkosi-image-build.md
 verified upstream source). This page says how the build meets them. The first
 slice of the image, [#1](https://github.com/GetFelix/ninelives/issues/1), is
 built: the x86_64 qemu `production` image, fetched, built offline and checked
-in CI. Where this page describes something the slice does not do yet, a
-note says so and names the issue; everything unmarked is built. The CI boot [#2](https://github.com/GetFelix/ninelives/issues/2), signing and
+in CI (see [What the first slice builds](#what-the-first-slice-builds)). This
+page is the design, and much of it is later: parts for M3 and later (signing,
+rollback, updates), cloud images (M5) and the first published image say so
+where they appear, and a part of M0's scope that the slice does not do yet
+carries a *Not built yet* note with its issue. The CI boot [#2](https://github.com/GetFelix/ninelives/issues/2), signing and
 secure boot [#9](https://github.com/GetFelix/ninelives/issues/9), cloud
 images [#13](https://github.com/GetFelix/ninelives/issues/13), component
 bumps [#52](https://github.com/GetFelix/ninelives/issues/52) and pinning the
@@ -32,11 +35,26 @@ tree, puts the kernel, its command line and the root hash into one unified
 kernel image (UKI), and lays these out on a GPT disk. It checks the result
 against the rules below and fails on any violation. CI runs the whole build
 twice, the second time on a clean runner with no cache, and fails unless the
-outputs are identical. That proves the build is deterministic. From the first
+outputs are identical (*not built yet:* the first slice builds once,
+[#94](https://github.com/GetFelix/ninelives/issues/94)). That proves the build is deterministic. From the first
 published image, an independent rebuild on other hardware must also match
 before the maintainer signs the release's update metadata offline. One
 pinned signing workflow, and only it, gets the UKI signed (from M3), and the
 release publishes the image with its SBOM, provenance and source.
+
+## What the first slice builds
+
+The `image` job in `.github/workflows/ci.yml`, x86_64 qemu, `production` only:
+the fetch phase and the offline build described below, the root as erofs with
+dm-verity, the UKI with its command line, the GPT disk, and every check in
+[Checks](#checks) except the three it names there. The outputs are the `.raw`,
+`.root.erofs`, `.root.verity`, `.roothash`, `.efi`, `.inventory.json`,
+`.files.json` and `SHA256SUMS`, plus `.origins.json`. It does not build
+aarch64 ([#99](https://github.com/GetFelix/ninelives/issues/99)), a second
+build to compare ([#94](https://github.com/GetFelix/ninelives/issues/94)), the
+SBOM, source or provenance outputs
+([#100](https://github.com/GetFelix/ninelives/issues/100)), or a boot of the
+image ([#2](https://github.com/GetFelix/ninelives/issues/2)).
 
 ## What it does not do
 
@@ -238,15 +256,15 @@ repository; changing one is a reviewed pull request
 | Input | Pin | Verified by | On failure |
 |---|---|---|---|
 | **Debian packages**, for the root and for the build's tools | `images/debian.lock`: the snapshot timestamp, the architecture, and every package's name, version and SHA-256, for the root and the tools tree separately | The snapshot's `InRelease` is checked with `gpgv` against the Debian archive keys in `images/keys/debian/`, by fingerprint, never against the runner's keyring. The `Packages` index is checked against the hashes in `InRelease`, and each `.deb` against both the index and the lock. Valid-Until is off (0006); the timestamp is what makes the set fixed. | Build fails |
-| **Debian source packages** (S12) | The same lock, by source package | `.dsc` hashes from the signed `Sources` index | Release fails |
-| **Kernel source** | `kernel/version.toml`: the version, the `.tar.xz` URL on cdn.kernel.org and its SHA-256 | The SHA-256 first, then the `.tar.sign` signature over the decompressed tarball with `gpgv` against `kernel/keys/`. The signing key's fingerprint must be in the pinned list (0007). Both checks, because a hash alone trusts the reviewer and a signature alone accepts any release the maintainers signed. The bump job also compares the tarball with `git archive` of the signed stable tag ([Tarballs against tags](#tarballs-against-tags)). | Build fails |
-| **Microcode** (x86_64) | Debian's `intel-microcode` and `amd64-microcode`, in the lock | As Debian packages. Built into the kernel with `CONFIG_EXTRA_FIRMWARE`, never installed in the root ([kernel design](kernel.md)). | Build fails |
-| **Felix and felixd** | `images/components.toml` | As 0004: SHA-256, and for felixd the Sigstore bundle on `SHA256SUMS` against the identity and issuer in the manifest, verified offline against a Sigstore trusted root pinned in `images/keys/sigstore/`. Felix has no signature ([felix#2796](https://github.com/GetFelix/felix/issues/2796)) and is checked by hash only. | Build fails |
-| **NineLives' own programs** (init, join, the firewall loader) | This commit, `Cargo.lock`, and the Rust toolchain by exact version in `rust-toolchain.toml` | Cargo checks each crate's checksum against `Cargo.lock`. The toolchain archives are checked against SHA-256s committed in `images/tools.toml`, because rustup does not enforce its signatures. | Build fails |
+| **Debian source packages** (S12) | The same lock, by source package | `.dsc` hashes from the signed `Sources` index *Not built yet:* source packages are not fetched ([#100](https://github.com/GetFelix/ninelives/issues/100)). | Release fails |
+| **Kernel source** | `kernel/VERSION`: the version, the `.tar.xz` URL on cdn.kernel.org and its SHA-256 | The SHA-256 first, then the `.tar.sign` signature over the decompressed tarball with `gpgv` against `kernel/keys/`. The signing key's fingerprint must be in the pinned list (0007). Both checks, because a hash alone trusts the reviewer and a signature alone accepts any release the maintainers signed. The bump job also compares the tarball with `git archive` of the signed stable tag ([Tarballs against tags](#tarballs-against-tags)). The kernel job does this; the image job takes its artifact. | Build fails |
+| **Microcode** (x86_64) | Debian's `intel-microcode` and `amd64-microcode`, in the lock | As Debian packages. Built into the kernel with `CONFIG_EXTRA_FIRMWARE`, never installed in the root ([kernel design](kernel.md)). *Not built yet:* the qemu kernel is built without microcode; it arrives with the real-hardware targets. | Build fails |
+| **Felix and felixd** | `images/components.toml` | As 0004: SHA-256, and for felixd the Sigstore bundle on `SHA256SUMS` against the identity and issuer in the manifest, verified offline against a Sigstore trusted root pinned in `images/keys/sigstore/`. Felix has no signature ([felix#2796](https://github.com/GetFelix/felix/issues/2796)) and is checked by hash only. *Not built yet:* the first slice checks the SHA-256 only, not felixd's Sigstore bundle ([#93](https://github.com/GetFelix/ninelives/issues/93)). | Build fails |
+| **NineLives' own programs** (init, join, the firewall loader) | This commit, `Cargo.lock`, and the Rust toolchain by exact version in `rust-toolchain.toml` | Cargo checks each crate's checksum against `Cargo.lock`. The toolchain archives are checked against SHA-256s committed in `images/tools.toml`, because rustup does not enforce its signatures. *Not built yet:* the toolchain archives are not checked against SHA-256s; CI runs `rustup toolchain install` ([#95](https://github.com/GetFelix/ninelives/issues/95)). | Build fails |
 | **mkosi** | `images/tools.toml`: an exact release, its source archive URL and SHA-256 | SHA-256. mkosi needs only Python's standard library, so it runs from the archive with nothing resolved from PyPI. The version is chosen in #1. | Build fails |
-| **Bootstrap container** | `images/tools.toml`: a Debian 13 container image by digest, built from the same snapshot | The container runtime checks the digest. It holds the python3, `gpgv` and apt that the fetch phase and mkosi run on ([Bootstrap](#bootstrap)). | Build fails |
-| **Build tools** (`mkfs.erofs`, `veritysetup`, `ukify`, `sbsign`, Clang (the kernel's compiler, [kernel design](kernel.md)), the Sigstore verifier, diffoscope) | mkosi's tools tree, built from the same Debian snapshot and listed in the lock; the Sigstore verifier, if not in Debian 13, by SHA-256 in `images/tools.toml` | As Debian packages | Build fails |
-| **CI runner** | The `ubuntu-24.04` label, never `ubuntu-latest`. The image version GitHub reports is recorded in the provenance. | Nothing can verify a hosted runner. The bootstrap container and tools tree keep it to its kernel, its container runtime and the network. | See [Open questions](#open-questions) |
+| **Bootstrap container** | `images/tools.toml`: a Debian 13 container image by digest, built from the same snapshot | The container runtime checks the digest. It holds the python3, `gpgv` and apt that the fetch phase and mkosi run on ([Bootstrap](#bootstrap)). *Not built yet:* the slice uses Debian's stock slim image by digest, then installs git, python3, gpgv and xz-utils from the snapshot checked only by that image's keyring; the build phase purges what that step added and reinstalls the locked tools ([#92](https://github.com/GetFelix/ninelives/issues/92)). | Build fails |
+| **Build tools** (`mkfs.erofs`, `veritysetup`, `ukify`, `sbsign`, Clang (the kernel's compiler, [kernel design](kernel.md)), the Sigstore verifier, diffoscope) | mkosi's tools tree, built from the same Debian snapshot and listed in the lock; the Sigstore verifier, if not in Debian 13, by SHA-256 in `images/tools.toml` | As Debian packages *Built so far:* `mkfs.erofs`, `veritysetup`, `ukify`, `systemd-repart` and their dependencies from Debian, in the lock. *Not built yet:* `sbsign`, Clang in the image job, the Sigstore verifier and diffoscope; the tools are installed straight from the verified store, not through mkosi's tools tree. | Build fails |
+| **CI runner** | The `ubuntu-24.04` label, never `ubuntu-latest`. The image version GitHub reports is recorded in the provenance. | Nothing can verify a hosted runner. The bootstrap container and tools tree keep it to its kernel, its container runtime and the network. *Not built yet:* the runner image version is not recorded in provenance (no provenance yet, [#100](https://github.com/GetFelix/ninelives/issues/100)). | See [Open questions](#open-questions) |
 | **GitHub Actions** | Each by full commit SHA, with the tag in a comment | The workflow checks in [Actions hygiene](#actions-hygiene) (S21, #65) | PR fails |
 
 #### Two phases: fetch, then build offline
@@ -360,6 +378,8 @@ yet:* the slice builds `production` only
 
 ### Reproducibility
 
+*Built so far:* `SOURCE_DATE_EPOCH` from the commit, fixed UUID and verity seeds, a salt derived from the commit, and a check that every file's time is `SOURCE_DATE_EPOCH`. *Not built yet:* any comparison of two builds ([#94](https://github.com/GetFelix/ninelives/issues/94)), so nothing proves the outputs are deterministic yet; the init is built with `--locked` and a path remap but not `--offline`, and its toolchain is not pinned by hash ([#95](https://github.com/GetFelix/ninelives/issues/95)).
+
 S5 asks for the same bytes from the same commit, on a clean runner, with a
 different build path and time.
 
@@ -381,7 +401,7 @@ listed with the other hardening exceptions in `kernel/` (S2). Rust builds use
 any other value a tool would pick at random come from fixed seeds in the
 config or from the commit.
 
-**How two builds are compared.** On a pull request, CI runs build A on one
+**How two builds are compared.** *Not built yet ([#94](https://github.com/GetFelix/ninelives/issues/94)); this section is the design.* On a pull request, CI runs build A on one
 runner, using caches (the kernel build is cached by version, config and
 toolchain lock). The release workflow uses no cache in either build: a
 poisoned Actions cache can backdoor a build that still carries valid
@@ -478,6 +498,8 @@ Each check has a test that seeds one violation into a small fixture image and
 watches the check fail ([Test plan](#test-plan)).
 
 ### Service profiles
+
+*Not built yet:* there are no service profiles until the init has a config ([#48](https://github.com/GetFelix/ninelives/issues/48)).
 
 How profiles are written, reviewed and tested is the
 [init design](init.md)'s. The build's part: each service's reviewed policy
@@ -616,7 +638,7 @@ Per architecture and variant, named
 | `.root.erofs`, `.root.verity`, `.roothash` | The root, its hash tree and root hash, for the M3 updater to write into a slot | M0 (used from M3) |
 | `.efi` | The unsigned UKI per architecture; after a release, also `.signed.efi` and the signed expected PCR 11 values | M0; signed from M3 |
 | Cloud formats | Converted from `.raw` with pinned tools: qemu needs none, then per cloud as M5 adds them (#13) | M5 |
-| `.inventory.json` | Every package (name, version, architecture, source package, `.deb` SHA-256, license), every component from `components.toml`, the kernel (version, tarball SHA-256, config SHA-256), mkosi and the toolchain | M0 |
+| `.inventory.json` | Every package (name, version, architecture, source package, `.deb` SHA-256, license), every component from `components.toml`, the kernel (version, tarball SHA-256, config SHA-256), mkosi and the toolchain | M0 (*the slice has no license field yet,* [#100](https://github.com/GetFelix/ninelives/issues/100)) |
 | `.files.json` | Every path in the root with type, mode, owner, size and SHA-256, sorted. Pull requests diff it. | M0 |
 | `.spdx.json` | SPDX SBOM built from the inventory, deterministic (its namespace is derived from the image's digest) | First published image (S12) |
 | Provenance | A SLSA build provenance attestation over every output's digest, a GitHub artifact attestation from the signing workflow | First published image (S12) |
@@ -626,6 +648,8 @@ Per architecture and variant, named
 The release workflow fails if any of the S12 outputs is missing.
 
 ### How a bump flows through review
+
+*Not built yet:* the bump jobs and CI's diff comments ([#52](https://github.com/GetFelix/ninelives/issues/52), [#57](https://github.com/GetFelix/ninelives/issues/57)). Today a bump is a hand-edited pin file, `scripts/image_lock.py generate` for the lock, and the pin-only check is [#101](https://github.com/GetFelix/ninelives/issues/101).
 
 Every pin moves the same way: a pull request that changes only pin files
 (`images/components.toml`, `images/debian.lock`, `images/tools.toml`,
@@ -761,22 +785,22 @@ first published image.
 
 | Test | Where | Proves |
 |---|---|---|
-| Build twice, the second clean with varied path, user, umask, time zone, locale and CPU count; compare `SHA256SUMS` | CI, every pull request | I1 |
+| Build twice, the second clean with varied path, user, umask, time zone, locale and CPU count; compare `SHA256SUMS` | *Not built yet,* [#94](https://github.com/GetFelix/ninelives/issues/94). CI, every pull request | I1 |
 | The build phase run with a step that tries to download: it fails | CI fixture. The slice checks that a download fails inside a fresh network namespace, and the build itself fails if the network is reachable in its phase; a fixture that runs a whole build step that downloads is not built | I2 |
-| One fixture image per check, each seeded with one violation (a setuid file, a setgid directory, a `security.capability` attribute, a write bit, a file owned by uid 1, a FIFO, a link into `/var/lib`, an extra passwd entry, a `#!` script, a `dash` binary, an unlisted package, an orphan file, a planted test token, an oversized root, a changed command line): each check fails, and the clean fixture passes | CI, every pull request | I3 to I9 |
+| One fixture image per check, each seeded with one violation (a setuid file, a setgid directory, a `security.capability` attribute, a write bit, a file owned by uid 1, a FIFO, a link into `/var/lib`, an extra passwd entry, a `#!` script, a `dash` binary, an unlisted package, an orphan file, a planted test token, an oversized root, a changed command line): each check fails, and the clean fixture passes | *Built as unit tests on in-memory trees, one per check, not as fixture images; the clean tree passes.* CI, every pull request | I3 to I9 |
 | `veritysetup verify` on the built image | CI | I8 |
-| Boot the image in qemu, x86_64 and aarch64: the init reports ready on the serial console | CI, every pull request (#2) | the image boots |
-| In qemu: a write to the root fails with `EROFS`; a binary copied to the data partition does not run; `ld.so` on it fails | CI (test variant) | S3 |
-| Flip one byte in a copy's root partition, in a block a boot reads, and boot: the kernel panics on that read and the VM reboots; the same for the hash tree | CI | dm-verity |
+| Boot the image in qemu, x86_64 and aarch64: the init reports ready on the serial console | *Not built yet.* CI, every pull request (#2) | the image boots |
+| In qemu: a write to the root fails with `EROFS`; a binary copied to the data partition does not run; `ld.so` on it fails | *Not built yet,* [#98](https://github.com/GetFelix/ninelives/issues/98). CI (test variant) | S3 |
+| Flip one byte in a copy's root partition, in a block a boot reads, and boot: the kernel panics on that read and the VM reboots; the same for the hash tree | *Not built yet,* [#2](https://github.com/GetFelix/ninelives/issues/2). CI | dm-verity |
 | From M3, the same with two slots: the machine falls back to the other slot and does not loop | CI, from M3 (#8) | slot fallback |
-| A workflow policy check on fixtures: an Action pinned by tag, a `pull_request_target` trigger, missing top-level `permissions: {}`, a checkout without `persist-credentials: false`, a signing job reachable from a branch, a release job that restores a cache, an unhashed download: each fails | CI, every pull request (#65) | I10, I14, S21 |
+| A workflow policy check on fixtures: an Action pinned by tag, a `pull_request_target` trigger, missing top-level `permissions: {}`, a checkout without `persist-credentials: false`, a signing job reachable from a branch, a release job that restores a cache, an unhashed download: each fails | *Not built yet,* [#65](https://github.com/GetFelix/ninelives/issues/65). CI, every pull request (#65) | I10, I14, S21 |
 | The signer refuses a token from a different workflow SHA, from a branch, and for a tag whose commit is not on `main` | Signer test, from M3 | I10 |
 | A fixture ESP with an extra file fails the ESP check; in OVMF with Secure Boot on, an unsigned addon in `.extra.d/` is not loaded and PCR 12 stays at its initial value | CI, from M3 (#9) | I8, stub requirement |
-| A pull request that changes a pin file and another file fails the pin check | CI fixture | I12 |
-| Release dry run on a test tag: every S12 output present, the signed UKI's digest equals the unsigned one's | Release workflow | I11, I13 |
+| A pull request that changes a pin file and another file fails the pin check | *Not built yet,* [#101](https://github.com/GetFelix/ninelives/issues/101). CI fixture | I12 |
+| Release dry run on a test tag: every S12 output present, the signed UKI's digest equals the unsigned one's | *Not built yet,* first published image. Release workflow | I11, I13 |
 | With secure boot on and only NineLives keys enrolled (OVMF): a modified UKI, a modified root, a stock signed shim and a UKI whose hash is in `dbx` do not boot | CI, from M3 (#9) | S13 |
 | With swtpm: an older signed image boots after the minimum version rose and cannot unseal the data key or the cluster key; the updater refuses to install it | CI, from M3 (#8, #60) | I15, S13 |
-| A weekly rebuild of the last release from its tag, compared to the published bytes | Scheduled | I1 over time, and that the kept store is enough |
+| A weekly rebuild of the last release from its tag, compared to the published bytes | *Not built yet,* first published image. Scheduled | I1 over time, and that the kept store is enough |
 
 ## Open questions
 

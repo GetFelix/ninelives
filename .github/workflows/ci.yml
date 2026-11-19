@@ -294,8 +294,10 @@ jobs:
         run: |
           # apt checks the snapshot's Release files against the image's own
           # Debian archive keyring. This is the one unpinned step (#92): the
-          # fetch phase runs on what it installs. The build phase reinstalls
-          # the locked tools from the verified store and checks their versions.
+          # fetch phase runs on what it installs. The build phase fails if this
+          # step upgraded a package the container had, purges what it added
+          # beyond the locked tools, and checks the installed set against the lock.
+          dpkg-query -W -f '${db:Status-Abbrev}${Package}=${Version}\n' | sed -n 's/^ii //p' | LC_ALL=C sort > /var/lib/ninelives-bootstrap-base
           keyring=$(sed -n 's/^Signed-By: //p' /etc/apt/sources.list.d/debian.sources | head -n1)
           test -s "$keyring"
           rm /etc/apt/sources.list.d/debian.sources

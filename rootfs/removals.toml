@@ -35,7 +35,6 @@ names = [
   "libdebconfclient0",
   "base-passwd",
   "init-system-helpers",
-  "libc-bin",
 ]
 
 [[remove]]
@@ -51,10 +50,6 @@ names = [
   "libdb5.3t64",
   "liblastlog2-2",
   "libselinux1",
-  "libsmartcols1",
-  "libmount1",
-  "libblkid1",
-  "libuuid1",
 ]
 
 [[remove]]
@@ -77,4 +72,19 @@ names = [
   "libzstd1",
   "zlib1g",
   "openssl-provider-legacy",
+]
+
+[[remove]]
+reason = "ldconfig, getent and iconv. The image runs none of them; image_stage.py builds the loader cache itself, with the container's ldconfig."
+names = [
+  "libc-bin",
+]
+
+[[remove]]
+reason = "util-linux's own libraries. util-linux (mount, login, nologin and the rest) is removed, and nothing kept links against these."
+names = [
+  "libblkid1",
+  "libmount1",
+  "libsmartcols1",
+  "libuuid1",
 ]

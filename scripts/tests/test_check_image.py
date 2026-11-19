@@ -295,6 +295,20 @@ class Formats(unittest.TestCase):
         data[0x200:0x205] = b"hello"
         self.assertEqual(ci.pe_sections(bytes(data)), {".cmdline": b"hello"})
 
+    def test_duplicate_pe_section_is_refused(self):
+        pe = 0x80
+        data = bytearray(0x600)
+        data[:2] = b"MZ"
+        struct.pack_into("<I", data, 0x3C, pe)
+        data[pe:pe + 4] = b"PE\0\0"
+        struct.pack_into("<H", data, pe + 6, 2)
+        for i, off in enumerate((0x200, 0x300)):
+            sec = pe + 24 + i * 40
+            data[sec:sec + 8] = b".cmdline"
+            struct.pack_into("<IIII", data, sec + 8, 5, 0, 256, off)
+        with self.assertRaises(ValueError):
+            ci.pe_sections(bytes(data))
+
     def test_gpt_reader(self):
         import uuid
         img = bytearray(512 * 40)

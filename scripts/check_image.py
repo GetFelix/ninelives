@@ -402,6 +402,9 @@ def pe_sections(data: bytes) -> dict[str, bytes]:
         s = data[table + i * 40:table + (i + 1) * 40]
         name = s[:8].rstrip(b"\0").decode("ascii")
         vsize, _, rawsize, rawptr = struct.unpack_from("<IIII", s, 8)
+        if name in out:
+            # A second .cmdline or .linux would be dropped by a dict, and the stub may read the other.
+            raise ValueError(f"UKI: section {name} appears twice")
         out[name] = data[rawptr:rawptr + min(vsize, rawsize)] if vsize else data[rawptr:rawptr + rawsize]
     return out
 
@@ -495,7 +498,12 @@ def main() -> int:
         erofs, verity, esp = d / "root.erofs", d / "root.verity", d / "esp.img"
         uki_path = pathlib.Path(base + ".efi")
         errors += check_gpt(parts, sizes_cfg, set(config_bytes(args.image, by_name["ninelives-config"])) <= {0})
-        sections = pe_sections(uki_path.read_bytes())
+        try:
+            sections = pe_sections(uki_path.read_bytes())
+        except ValueError as e:
+            print(e, file=sys.stderr)
+            print("1 violations")
+            return 1
         errors += check_uki_sections(sections, ic.sha256_file(args.kernel / "bzImage"))
         line = sections[".cmdline"].rstrip(b"\0").decode("ascii")
         dm = dm_create(line)

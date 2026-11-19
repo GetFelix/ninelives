@@ -8,7 +8,8 @@
 Mutual TLS is the baseline on every Felix listener (S10), and the broker
 binds a client certificate to the subject of the token it carries. Felix has
 no certificate revocation, so certificates live for 24 hours at most and are
-renewed at half life (S19). A compromised machine is wiped and rejoins under
+renewed at half life (S19). It does have principal revocation: a cutoff that
+refuses the principal's older tokens and ends the streams they opened. A compromised machine is wiped and rejoins under
 a new identity (S25). Nothing runs as root after early boot (S24).
 
 M1 needs three things this record decides: which CAs exist and where their
@@ -66,6 +67,16 @@ They are separate roots, not three intermediates under one, because Felix
 trusts whatever chains to the bundle it is given: with a shared root, a
 worker's client certificate would chain on the Raft listener.
 
+Separate roots keep a worker off the Raft and internal listeners, but a
+chain to the right root is still only authentication. Consul's
+CVE-2021-37219, where any agent with a certificate from the cluster CA could
+reach server-only Raft calls, is the lesson. Felix must check the role a
+certificate names on every privileged call, and the Raft listener must check
+that the member id and incarnation a peer claims are the ones in its
+certificate ([felix#2802](https://github.com/GetFelix/felix/issues/2802)).
+With that check in place, the shared Raft peer token adds nothing and can
+go.
+
 The issuer gets its own root for the same reason. Every machine holds a leaf
 under the cluster root, so a joining machine that trusted any certificate
 chaining there would hand its token to a compromised worker posing as the
@@ -82,7 +93,7 @@ boots, belongs to the build pipeline (A6), and is never on a cluster
 machine.
 
 **Lifetimes.** Roots: 10 years. Intermediates and issuer certificates: one
-year, renewed at a yearly ceremony. Machine certificates: 24 hours, renewed
+year, replaced at a yearly ceremony. Machine certificates: 24 hours, renewed
 at 12 hours with up to an hour of jitter. Keys are ECDSA P-256, which every
 TLS stack on the path verifies. A leaf file holds the leaf and its
 intermediate, so trust bundles hold only roots and do not change when an
@@ -96,19 +107,37 @@ the intermediate, so leaves get shorter and renew more often. Once the
 intermediate expires the issuer signs nothing under it, and machines stop as
 their last leaves expire, within 24 hours.
 
+**Replacing an intermediate** follows SPIRE's prepare, activate, taint,
+revoke steps. Prepare: the ceremony installs the new intermediate on the
+issuer, unused. A new authority must be in every trust bundle before it
+signs anything; bundles hold roots, so a new intermediate is trusted
+wherever its root already is, and a new root must reach every bundle before
+anything is signed under it. Activate: the issuer signs new leaves only
+under the new intermediate. Taint: leaves under the old one renew under the
+new one at their next renewal, so within 24 hours none is left. Revoke: the
+issuer deletes the old intermediate's key. Without certificate revocation
+in Felix, revoke ends only the issuer's use of a key, not a stolen copy.
+
+Everything after the ceremony is automated, and the whole sequence is
+rehearsed on a test cluster within the first six months, well before the
+first intermediate nears expiry. Rotation that is not exercised fails all
+at once: Istio clusters made with early releases had one-year self-signed
+roots whose expiry risked a cluster-wide outage, per the
+[Istio blog](https://istio.io/blog/2019/root-transition).
+
 **The issuer** is a small Rust service, `nl-issuer`, running as its own
 user with no capabilities. It listens on one TLS port (added to S7's list)
 and holds the intermediates' keys, a registry of node ids with their role,
-status and current certificate serials, and the hashes of unused join
-tokens, all on its data partition. It signs a certificate only when the
+status, incarnation and current certificate serials, a list of refused
+serials, and the hashes of unused join tokens, all on its data partition. It signs a certificate only when the
 names in the request are exactly the names the node's role gets: it never
 takes a name from the request on trust.
 
 **Joining** (M1 ships the join token; see below for the rest):
 
-1. An operator creates a join token at the issuer. The token names one role
-   and one new node id, carries 256 random bits, expires in 1 hour by
-   default (24 hours at most), and is stored only as a hash.
+1. An operator creates a join token at the issuer. The token is bound to
+   one role and one node id, carries 256 random bits, expires in 15
+   minutes by default (60 minutes at most), and is stored only as a hash.
 2. The join config holds the token, the issuer's address, and the SHA-256
    fingerprints of the four roots. The operator writes it to the machine's
    config partition, or the cloud delivers it as instance metadata. When it
@@ -117,23 +146,44 @@ takes a name from the request on trust.
 3. On first boot the join service connects to the issuer and checks its
    certificate against the issuer root's fingerprint before it sends
    anything (S20, T5). It generates one key per certificate the role needs,
-   and sends the token with a signing request for each.
+   and sends the token with a signing request for each. The issuer answers
+   with a fresh nonce, and each key signs it, as SPIRE's x509pop attestor
+   does, so a captured exchange cannot be replayed.
 4. The issuer marks the token used in the same write that records the node
-   as active and its new serials, then signs. A second use of the token is refused and raises an
-   alert: either the token was stolen or the machine is retrying after a
-   crash, and an operator decides which. Attempts are rate limited per
-   source and per token (T65).
+   as active, its new incarnation id and its new serials, then signs. A
+   second use of the token is refused and raises an alert: either the
+   token was stolen or the machine is retrying after a crash, and an
+   operator decides which. On the machine, a refused redemption is also a
+   loud alert, not a retry loop, because it may mean someone else redeemed
+   the token first. SPIRE's cloud attestors have the same race, where
+   another local process attests with the instance's identity document
+   first, and the agent's failure to start is what shows it. Attempts are
+   rate limited per source and per token (T65).
 5. The join writes each key and certificate into that service's credential
    directory, and the four root bundles into a trust directory that every
    service can read and none can write. It deletes the token from the join
    config, then exits for good (T71).
 
-What stops a replay: the token travels only inside TLS to an issuer the
-machine has authenticated, works once, expires in 1 hour by default and 24
-hours at most, and yields
+The token is never the credential. It only authorizes keys made on the
+node and proven against the issuer's nonce, and nothing accepts it after
+the join. What stops a replay: it travels only inside TLS to an issuer the
+machine has authenticated, works once, expires within minutes, and yields
 only one node id's certificates for one role. A thief who uses it first gets
-that one machine's identity, and the real machine's failure to join shows
-it.
+that one machine's identity, and the real machine's failed redemption
+raises the alarm.
+
+**Incarnations.** Every join gives the node a new random incarnation id,
+recorded by the issuer and carried in each of its certificates; the field
+is fixed in the issuer's design. A machine that rejoins after a wipe is a
+new incarnation even under the same node id, and its old data directory
+never rejoins. This follows Kafka KRaft, where a voter is a replica id plus
+a directory id made once per disk and a changed directory id means a
+replaced disk
+([KIP-853](https://cwiki.apache.org/confluence/display/KAFKA/KIP-853%3A+KRaft+Controller+Membership+Changes)),
+and etcd, where a replaced member is removed and added again and a removed
+member restarted on its old data directory exits
+([etcd runtime reconfiguration](https://etcd.io/docs/v3.5/op-guide/runtime-configuration/)).
+The issuer refuses any request from an earlier incarnation.
 
 **Renewal** is done by `nl-renew`, which the init starts once for each
 service that holds a certificate (broker, control plane, felixd), as that
@@ -142,14 +192,38 @@ directory. It holds nothing the service does not already hold. At half life
 it generates a new key, connects to the issuer with the current
 certificate, and asks for the same names.
 
-The issuer renews only an unexpired certificate of an active node, and only
-if its serial is the one the registry records as current for that node and
-that kind of certificate. A superseded serial is refused and raises an
-alert, so a thief who renews a stolen certificate first makes the real
-machine's next renewal trip it, and the other way round. The new
-certificate comes from the same CA, for the same kind and names, as the one
-presented: felixd's `nl-renew` holds a cluster certificate and cannot come
-away with a Raft one.
+The issuer renews only a certificate of an active node and its current
+incarnation, and only if:
+
+- it has not expired. There is no grace period. step-ca leaves renewal
+  after expiry off by default because it adds risk, and here it would make
+  a stolen expired certificate as good as a live one.
+- its serial is the one the registry records as current for that node and
+  that kind of certificate.
+- its serial is not on the refused list. An operator adds a serial known to
+  be bad, so it is refused even while it is current and unexpired.
+
+A superseded serial is refused and raises a compromise alert, not just an
+error: two holders of one certificate are renewing. The new certificate
+comes from the same CA, for the same kind and names, as the one presented:
+felixd's `nl-renew` holds a cluster certificate and cannot come away with a
+Raft one.
+
+The current-serial gate stops a stolen older key from starting a second
+renewal chain. It does not stop a thief who holds the current key and
+renews first. That is detected, not prevented: the real machine's next
+renewal presents a serial that is no longer current and trips the alert.
+What the thief gained is bounded by one certificate lifetime after the
+operator refuses the node, plus open connections, which the next paragraph
+bounds.
+
+A 24-hour certificate stands in for revocation only if a connection made
+with it does not outlive it. Felix must close, or re-authenticate,
+connections older than the certificate lifetime
+([felix#2817](https://github.com/GetFelix/felix/issues/2817)). Renewal
+refusal plus that bound end a stolen certificate within a lifetime; a
+principal revocation cutoff in Felix ends that principal's open streams at
+once.
 
 `nl-renew` writes the key and certificate to temporary files in the
 service's directory, syncs them and renames them over the old ones. Felix's
@@ -170,8 +244,15 @@ leaves no spare vote, and a restart of the leader costs an election and a
 few seconds without control-plane writes. Data-path traffic on the brokers
 is not affected.
 
-A machine that has been off for more than 24 hours has nothing valid to
-renew with and rejoins with a new token. Node tokens and their refresh are
+**Re-enrollment.** A machine that has been off for more than 24 hours holds
+only expired certificates, which the issuer never renews. It rejoins with a
+fresh single-use join token from an operator, as a new incarnation, and
+its data partition from the old incarnation is discarded. There is no
+automatic re-enrollment: all the machine could present is an expired
+certificate or the key behind it, and a thief who copied the disk holds
+exactly the same, so accepting them would make the 24-hour lifetime
+meaningless. SPIRE reaches the same answer: its agents do not rebootstrap
+on their own by default. Node tokens and their refresh are
 not certificates and stay with
 [#73](https://github.com/GetFelix/ninelives/issues/73) and
 [felixd#276](https://github.com/GetFelix/felixd/issues/276).
@@ -179,9 +260,11 @@ not certificates and stay with
 **Recovery** (S25):
 
 - **A core, storage or worker machine.** The operator marks its node id
-  revoked at the issuer. Its certificates are refused renewal and die within
-  24 hours; its Felix principal is revoked in Felix, which ends its sessions
-  sooner. It is wiped and rejoins with a new token and node id. No CA key
+  revoked at the issuer and adds its current serials to the refused list.
+  Its certificates are refused renewal and die within 24 hours. Its Felix
+  principal gets a revocation cutoff in Felix, which refuses its older
+  tokens and ends the streams they opened at once. It is wiped and rejoins
+  with a new token, node id and incarnation. No CA key
   was on it, so the CAs stay as they are and no other machine's certificates
   change.
 - **A core machine, in addition.** It is removed from Raft membership first.
@@ -253,7 +336,8 @@ What Felix and felixd must add:
 | CA bundles are read once at startup, on every listener | A root rotation needs a restart of every Felix service | [felix#2816](https://github.com/GetFelix/felix/issues/2816) |
 | The control-plane API takes no client CA | S10's mutual TLS cannot hold on that listener; callers are authenticated by tokens only | [felix#2811](https://github.com/GetFelix/felix/issues/2811) |
 | The Raft peer token rotates only by restarting every member together | Rotating it after a core compromise is an outage | [felix#2813](https://github.com/GetFelix/felix/issues/2813) |
-| Raft certificates are not bound to member ids | Any Raft certificate speaks for any member (T4). The issuer already puts the member id in the name, so the fix needs nothing from NineLives. | [felix#2802](https://github.com/GetFelix/felix/issues/2802) |
+| Raft certificates are not bound to member ids | Any Raft certificate speaks for any member (T4). The issuer already puts the member id and incarnation in the certificate. With the check, the shared Raft peer token is no longer needed. | [felix#2802](https://github.com/GetFelix/felix/issues/2802) |
+| Connections outlive the certificate that opened them | A stolen certificate keeps an open connection after it expires, so a 24-hour lifetime is not a bound. Felix must close or re-authenticate connections older than the certificate lifetime. | [felix#2817](https://github.com/GetFelix/felix/issues/2817) |
 | felixd presents no client certificate | felixd's tokens are not bound to its machine (T30) | [felixd#275](https://github.com/GetFelix/felixd/issues/275) |
 
 Felix does not need to become a CA, and needs no endpoint for certificates;
@@ -262,26 +346,27 @@ node tokens.
 
 ## Requires a change to S25
 
-S25 in `docs/requirements.md`, as proposed on the threat model branch, has
-a core-machine replacement rotate the Raft CA. With offline roots and
-bundles read only at startup, that cannot be done in any useful time, and
-under this record it is not needed. Once that branch merges, S25's core
-machine clause changes to:
+Applied to `docs/requirements.md` in the same change as this record.
+
+S25 had a core-machine replacement rotate the Raft CA. With offline roots
+and bundles read only at startup, that cannot be done in any useful time,
+and under this record it is not needed. S25's core machine clause is now:
 
 > For a core machine, in this order: the member is removed from Raft
 > membership, so it receives nothing that follows; the Raft peer token is
 > rotated, which in Felix today means restarting every remaining member
 > together, an outage until
 > [felix#2813](https://github.com/GetFelix/felix/issues/2813) lands; then
-> every tenant signing key is staged, activated and the old one retired.
-> The CAs are not rotated, since no CA key was on the machine: its Raft and
+> every tenant signing key is staged and activated, and the old one is kept
+> for verifying only until the longest token lifetime has passed, then
+> retired. The CAs are not rotated, since no CA key was on the machine: its Raft and
 > broker certificates are refused renewal and expire within one certificate
 > lifetime, 24 hours at most. A CA, intermediate or root, is rotated only
 > when an issuer machine is compromised.
 
 and its verification clause "for a core machine, so are the old Raft peer
 token, certificates from the old Raft CA, and tokens signed by the old
-keys" changes to "for a core machine, so are the old Raft peer token, its
+keys" is now "for a core machine, so are the old Raft peer token, its
 old Raft certificate, and tokens signed by the old keys".
 
 ## Reopen when

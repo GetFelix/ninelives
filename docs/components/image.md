@@ -30,8 +30,11 @@ tree, puts the kernel, its command line and the root hash into one unified
 kernel image (UKI), and lays these out on a GPT disk. It checks the result
 against the rules below and fails on any violation. CI runs the whole build
 twice, the second time on a clean runner with no cache, and fails unless the
-outputs are identical. A release job, and only that job, gets the UKI signed
-(from M3) and publishes the image with its SBOM, provenance and source.
+outputs are identical. That proves the build is deterministic. From the first
+published image, an independent rebuild on other hardware must also match
+before the maintainer signs the release's update metadata offline. One
+pinned signing workflow, and only it, gets the UKI signed (from M3), and the
+release publishes the image with its SBOM, provenance and source.
 
 ## What it does not do
 
@@ -48,16 +51,22 @@ outputs are identical. A release job, and only that job, gets the UKI signed
   is formatted, grown and encrypted is
   [#4](https://github.com/GetFelix/ninelives/issues/4)'s and
   [#60](https://github.com/GetFelix/ninelives/issues/60)'s (S16).
-- **No initrd.** The kernel sets up dm-verity and mounts the root itself (see
-  [Boot](#boot-without-an-initrd)). An initrd is a second root that
-  needs its own checks.
+- **No initrd.** The kernel is built without initrd support
+  (`CONFIG_BLK_DEV_INITRD=n`, [kernel design](kernel.md)), sets up dm-verity
+  and mounts the root itself (see [Boot](#boot-without-an-initrd)). An
+  initrd is a second root that needs its own checks.
 - **No builds outside CI** for anything published (0003). A developer can run
   the same build on Linux to debug it; nothing they build is signed.
 - **No retry until the two builds match.** A mismatch fails the run. Retrying
   would hide a nondeterministic input, and an attacker who can steer one can
   make the build ship whichever result they like.
-- **No signing key in CI.** CI can ask for a signature only from the release
-  job, through a protected environment ([Signing](#signing)).
+- **No signing key in CI.** CI can ask for a UKI signature only from one
+  pinned signing workflow, run for a protected tag ([Signing](#signing)). What
+  machines install is decided by update metadata signed offline.
+- **No rollback protection before M3.** Until then nothing stops an older
+  image from booting. From M3 an older signed image still boots, but cannot
+  unseal the machine's credentials and is never installed by the updater
+  ([Rollback](#rollback)).
 
 ## Interfaces
 
@@ -70,7 +79,7 @@ partitions only by GPT name, on the root's disk (init design, boot step 4).
 
 | # | GPT name | Type | Size | Contents | Written by | Mounted |
 |---|---|---|---|---|---|---|
-| 1 | `esp` | EFI system partition, vfat | 256 MiB, fixed | The UKI at the removable-media path (`\EFI\BOOT\BOOTX64.EFI`, `BOOTAA64.EFI`). Nothing else. | The build; from M3 the updater | Never. Firmware reads it. |
+| 1 | `esp` | EFI system partition, vfat | 256 MiB, fixed | The UKI at the removable-media path (`\EFI\BOOT\BOOTX64.EFI`, `BOOTAA64.EFI`). Nothing else: no `loader/`, no `.extra.d/`, no addon, credential or system extension (see [The ESP is input to the stub](#the-esp-is-input-to-the-stub)). From M3, one UKI per slot, as #8 lays out. | The build; from M3 the updater | Never. Firmware reads it. |
 | 2 | `ninelives-root-a` | root (per architecture), erofs | The root's size, budgeted | Every file the machine runs | The build | `/`, read-only, through dm-verity |
 | 3 | `ninelives-verity-a` | root verity (per architecture) | Set by the root's size | The dm-verity hash tree over partition 2 | The build | Never; the kernel reads it |
 | 4, 5 | `ninelives-root-b`, `ninelives-verity-b` | as 2 and 3 | as 2 and 3 | Empty until M3 | The M3 updater | Proposed: reserved now so the layout does not change at M3. #8 decides. |
@@ -84,12 +93,16 @@ What is mutable where, at run time:
 | ESP, root, verity partitions | No. The root is erofs, which the kernel cannot write at all, and dm-verity refuses any changed block. | The M3 updater replaces an inactive slot |
 | Config partition | No, on the machine | Written once before first boot |
 | Data partition | Yes, the one writable disk | Services, in their own directories (init design) |
-| `/run`, `/tmp` | Yes, tmpfs, `noexec`, lost at reboot | The init and services |
+| `/run`, `/tmp` | Yes, tmpfs, `nosuid,nodev,noexec`, lost at reboot. The init mounts both: `/run` as a fixed early mount, `/tmp` from the `[[mount]]` entry in `init.toml` ([init design](init.md#boot-as-root)). The root only provides the empty mount points. | Services |
 
 **Why erofs.** A read-only filesystem the kernel has no write path for, so a
-remount cannot make it writable even before dm-verity is signed. It compresses,
-`mkfs.erofs` writes the same bytes for the same tree and timestamp, and
-storing extended attributes can be switched off at build. squashfs is the
+remount cannot make it writable even before dm-verity is signed.
+`mkfs.erofs` writes the same bytes for the same tree and timestamp. The root
+is written uncompressed and without extended attributes, because the kernel
+is built without erofs compression or xattr support (`EROFS_FS_ZIP=n`,
+`EROFS_FS_XATTR=n`, [kernel design](kernel.md)): every erofs CVE so far was
+in the compressed paths. The cost is a larger root partition, which the size
+budget carries. squashfs is the
 alternative with the same properties and an older parser; erofs is proposed
 because its kernel code is maintained for exactly this use. Picking the root
 filesystem is a format choice, so it may want a decision record
@@ -106,41 +119,114 @@ provides the partition.
 
 ### Boot without an initrd
 
-The UKI holds the kernel (built with `CONFIG_EFI_STUB` and `CONFIG_DM_INIT`),
-the systemd EFI stub that loads it, `os-release`, and this command line, which
-the build writes and checks byte for byte:
+The UKI holds the kernel (built with `CONFIG_EFI_STUB` and `CONFIG_DM_INIT`,
+microcode built in with `CONFIG_EXTRA_FIRMWARE`), the systemd EFI stub that
+loads it, `os-release`, an `.sbat` section ([Rollback](#rollback)) and the
+command line. The build writes the line and checks it byte for byte. For the
+qemu x86_64 target it is, on one line:
 
 ```text
-init=/usr/lib/ninelives/init ro rootfstype=erofs root=/dev/dm-0
-dm-mod.waitfor=PARTUUID=<root-a>,PARTUUID=<verity-a>
-dm-mod.create="root,,,ro,0 <sectors> verity 1 PARTUUID=<root-a> PARTUUID=<verity-a> 4096 4096 <blocks> 0 sha256 <roothash> <salt> 1 panic_on_corruption"
-panic=10 oops=panic
+init=/usr/lib/ninelives/init console=ttyS0,115200 ro rootfstype=erofs root=/dev/dm-0
+dm-mod.waitfor=/dev/vda2,/dev/vda3
+dm-mod.create="root,,,ro,0 <sectors> verity 1 /dev/vda2 /dev/vda3 4096 4096 <blocks> 0 sha256 <roothash> <salt> 1 panic_on_corruption"
+panic=10 oops=panic page_alloc.shuffle=1
+sysctl.kernel.kptr_restrict=2 sysctl.kernel.yama.ptrace_scope=3
+sysctl.net.core.bpf_jit_harden=2 sysctl.vm.memfd_noexec=2
+sysctl.fs.suid_dumpable=0 sysctl.fs.protected_symlinks=1
+sysctl.fs.protected_hardlinks=1 sysctl.fs.protected_fifos=2
+sysctl.fs.protected_regular=2
+pti=on sysctl.kernel.perf_event_paranoid=2
 ```
+
+The words from `panic=10` on are the kernel policy's, read from the kernel's
+`policy.toml` ([kernel design](kernel.md#the-command-line)); the last line is
+x86_64 only. aarch64 uses `console=ttyAMA0` and drops that line. The build
+fails if the line is missing a policy word or holds a word the kernel design
+forbids (`mitigations=off`, `lockdown=`, `lsm=` and the rest of its list).
+Everything the init design puts on the command line (`init=`, `panic=`,
+`oops=`) is here.
 
 The kernel creates the verity device from `dm-mod.create`, mounts it as the
 root, and starts the init. A block that does not match the hash tree panics
 the kernel, and `panic=10` reboots it, so a changed root is never read.
-Everything the init design puts on the command line (`init=`, `panic=`,
-`oops=`) is here, and so is anything S17 adds; `mitigations=off` and any
-`lockdown=` weaker than the config's are refused by the build check.
+
+**Naming the root device.** `dm-mod.create` and `dm-mod.waitfor` take a
+device as `major:minor` or a `/dev` path, not `PARTUUID=`
+([dm-init](https://docs.kernel.org/admin-guide/device-mapper/dm-init.html)).
+The line therefore names partitions by their fixed number on the boot disk:
+the layout above puts the root at 2 and its hash tree at 3, and each target
+names its boot disk by the path it always has there (`/dev/vda` for qemu's
+virtio disk, `/dev/nvme0n1` on a cloud whose boot volume is the first NVMe
+device). So the command line, and with it the UKI, is per target. A target
+that cannot promise its boot disk's name is not supported until that is
+solved. A wrong name is a liveness failure, not an integrity one: whatever
+the named device holds must still match the root hash, or the kernel panics.
+That `dm-mod.waitfor` and these paths work on the pinned kernel is checked in
+[#3](https://github.com/GetFelix/ninelives/issues/3) before M0 closes.
 
 The root hash on the command line is inside the UKI, so from M3 one signature
 on the UKI covers the kernel, the command line, the root hash and through it
 every byte of the root. The kernel's own verity signature option
-(`root_hash_sig_key_desc`) would add a second key for the same guarantee and
-is not used.
+(`root_hash_sig_key_desc`) would add a second key for the same guarantee, and
+needs a keyring that only an initrd could load, so it is not used.
 
-The systemd EFI stub is boot code from Debian's `systemd-boot-efi` package. It
-runs in firmware, before the kernel, so it is in the trusted base and is
-pinned like every package. It brings no systemd into the root. It is chosen
-over a kernel with a built-in command line (`CONFIG_CMDLINE_FORCE`) because
-that would make the kernel's bytes depend on the root hash, so every root
-change would rebuild the kernel, and because the stub measures what it loads
-into the TPM, which S16's sealed key needs.
+**On corruption.** Before M3 there is one slot. A corrupt block panics the
+kernel, the machine reboots, reads the same block and panics again: a reboot
+loop, with each panic on the serial console. The alert is the cluster's: the
+machine stops reporting to the log, and felixd's missing-node report names
+it. Replacing the machine is the fix. From M3 a corrupt slot must not loop.
+ChromeOS marks the running kernel slot bad on a verity error so firmware
+falls back to the other slot
+([dm-verity-chromeos.c](https://android.googlesource.com/kernel/tegra/+/android-tegra-dragon-3.18-nougat-mr2/drivers/md/dm-verity-chromeos.c));
+that patch is not upstream. The proposal for #8: the table drops
+`panic_on_corruption` for the default, where a bad block reads as `EIO`
+and is never returned; dm-verity sends a uevent naming the block; the updater,
+on that event, marks the running slot bad in the boot state and reboots into
+the other slot. If the corruption kills PID 1 or the updater first, the
+kernel panics, and boot counting abandons a slot that has not reported
+healthy within three tries. A slot that fails only after reporting healthy,
+with the updater unable to act, still loops; #8 has to close that case.
 
-Whether the pinned LTS kernel accepts `PARTUUID=` inside `dm-mod.create` and
-`dm-mod.waitfor` is checked in #3. If it does not, the fallback is device
-numbers, which the qemu targets fix, and per-target command lines.
+#### The ESP is input to the stub
+
+The systemd EFI stub is boot code from Debian's `systemd-boot-efi` package,
+pinned by version like every package. It runs in firmware, before the kernel,
+so it is in the trusted base. It brings no systemd into the root. It is
+chosen over a kernel with a built-in command line (`CONFIG_CMDLINE_FORCE`)
+because that would make the kernel's bytes depend on the root hash, so every
+root change would rebuild the kernel, and because the stub measures what it
+loads into the TPM, which [Rollback](#rollback) and S16 need.
+
+The ESP is not covered by any signature, so on a machine taken from its owner
+(X7) everything on it except the signed UKI is attacker input to the stub.
+The stub looks there for addons (PE files that can add command line words or
+a devicetree), credentials and system extensions. Credentials and system
+extensions are handed to the kernel as initrd archives, which a kernel
+without initrd support never reads. Addons are the risk. With Secure Boot on,
+an addon must pass the firmware's signature check, and the image key never
+signs one; the stub also ignores a command line passed by firmware. Before
+M3 nothing is checked, which is the accepted pre-M3 state (T46).
+
+What this page requires of the pinned stub, checked in
+[#9](https://github.com/GetFelix/ninelives/issues/9) against the pinned
+version: it loads no addon, credential or system extension, either by
+configuration or because nothing on the ESP passes its checks; and with
+Secure Boot on it ignores firmware load options. If the pinned stub cannot be
+made to load nothing, that is an [open question](#open-questions), with a
+minimal stub that only loads the UKI's own sections as the fallback.
+
+Two checks back it:
+
+- **At build**, the ESP holds exactly the expected files (the UKI, and from
+  M3 one per slot) and nothing else.
+- **At boot**, the stub measures any addon, credential or command line
+  override into PCR 12, and system extensions into PCR 13. With none loaded
+  both stay at their initial value. From M3 the policy that unseals the
+  machine's credentials requires that value ([Rollback](#rollback)), so a
+  boot that loaded anything from the ESP gets no credentials. Before M3, PID 1
+  compares `/proc/cmdline` with the words it expects, taking the device and
+  root hash words as given, and refuses to start on any other word. That
+  check is the init's to own ([open question](#open-questions)).
 
 ### Inputs
 
@@ -152,13 +238,15 @@ repository; changing one is a reviewed pull request
 |---|---|---|---|
 | **Debian packages**, for the root and for the build's tools | `images/debian.lock`: the snapshot timestamp, the architecture, and every package's name, version and SHA-256, for the root and the tools tree separately | The snapshot's `InRelease` is checked with `gpgv` against the Debian archive keys in `images/keys/debian/`, by fingerprint, never against the runner's keyring. The `Packages` index is checked against the hashes in `InRelease`, and each `.deb` against both the index and the lock. Valid-Until is off (0006); the timestamp is what makes the set fixed. | Build fails |
 | **Debian source packages** (S12) | The same lock, by source package | `.dsc` hashes from the signed `Sources` index | Release fails |
-| **Kernel source** | `kernel/version.toml`: the version, the `.tar.xz` URL on cdn.kernel.org and its SHA-256 | The SHA-256 first, then the `.tar.sign` signature over the decompressed tarball with `gpgv` against `kernel/keys/`. The signing key's fingerprint must be in the pinned list (0007). Both checks, because a hash alone trusts the reviewer and a signature alone accepts any release the maintainers signed. | Build fails |
+| **Kernel source** | `kernel/version.toml`: the version, the `.tar.xz` URL on cdn.kernel.org and its SHA-256 | The SHA-256 first, then the `.tar.sign` signature over the decompressed tarball with `gpgv` against `kernel/keys/`. The signing key's fingerprint must be in the pinned list (0007). Both checks, because a hash alone trusts the reviewer and a signature alone accepts any release the maintainers signed. The bump job also compares the tarball with `git archive` of the signed stable tag ([Tarballs against tags](#tarballs-against-tags)). | Build fails |
+| **Microcode** (x86_64) | Debian's `intel-microcode` and `amd64-microcode`, in the lock | As Debian packages. Built into the kernel with `CONFIG_EXTRA_FIRMWARE`, never installed in the root ([kernel design](kernel.md)). | Build fails |
 | **Felix and felixd** | `images/components.toml` | As 0004: SHA-256, and for felixd the Sigstore bundle on `SHA256SUMS` against the identity and issuer in the manifest, verified offline against a Sigstore trusted root pinned in `images/keys/sigstore/`. Felix has no signature ([felix#2796](https://github.com/GetFelix/felix/issues/2796)) and is checked by hash only. | Build fails |
 | **NineLives' own programs** (init, join, the firewall loader) | This commit, `Cargo.lock`, and the Rust toolchain by exact version in `rust-toolchain.toml` | Cargo checks each crate's checksum against `Cargo.lock`. The toolchain archives are checked against SHA-256s committed in `images/tools.toml`, because rustup does not enforce its signatures. | Build fails |
 | **mkosi** | `images/tools.toml`: an exact release, its source archive URL and SHA-256 | SHA-256. mkosi needs only Python's standard library, so it runs from the archive with nothing resolved from PyPI. The version is chosen in #1. | Build fails |
+| **Bootstrap container** | `images/tools.toml`: a Debian 13 container image by digest, built from the same snapshot | The container runtime checks the digest. It holds the python3, `gpgv` and apt that the fetch phase and mkosi run on ([Bootstrap](#bootstrap)). | Build fails |
 | **Build tools** (`mkfs.erofs`, `veritysetup`, `ukify`, `sbsign`, gcc, the Sigstore verifier, diffoscope) | mkosi's tools tree, built from the same Debian snapshot and listed in the lock; the Sigstore verifier, if not in Debian 13, by SHA-256 in `images/tools.toml` | As Debian packages | Build fails |
-| **CI runner** | The `ubuntu-24.04` label, never `ubuntu-latest`. The image version GitHub reports is recorded in the provenance. | Nothing can verify a hosted runner. The tools tree keeps it to running mkosi's Python, the kernel's user namespaces and the network. | See [Open questions](#open-questions) |
-| **GitHub Actions** | Each by full commit SHA, with the tag in a comment | A CI check fails on an Action pinned by tag or branch, a `curl \| bash`, or any download without a SHA-256 (S21, #65) | PR fails |
+| **CI runner** | The `ubuntu-24.04` label, never `ubuntu-latest`. The image version GitHub reports is recorded in the provenance. | Nothing can verify a hosted runner. The bootstrap container and tools tree keep it to its kernel, its container runtime and the network. | See [Open questions](#open-questions) |
+| **GitHub Actions** | Each by full commit SHA, with the tag in a comment | The workflow checks in [Actions hygiene](#actions-hygiene) (S21, #65) | PR fails |
 
 #### Two phases: fetch, then build offline
 
@@ -172,7 +260,9 @@ flowchart LR
     checks --> cmp{"two builds identical?"}
     cmp -->|yes| art["CI artifacts"]
     cmp -->|no| fail["fail, diffoscope report"]
-    art -->|"protected tag only"| sign["release job: sign, publish"]
+    art -->|"protected v* tag on main"| sign["pinned signing workflow: rebuild twice, sign UKI"]
+    sign --> indep{"independent rebuild matches?"}
+    indep -->|yes| targets["maintainer signs TUF targets offline"]
 ```
 
 The fetch phase downloads every input and verifies it as above. Debian
@@ -185,6 +275,37 @@ missed pin shows up.
 
 CI keeps the verified store as an artifact (0006), so a later rebuild does not
 depend on snapshot.debian.org, kernel.org or GitHub releases staying up.
+
+#### Bootstrap
+
+Something has to verify the first signature, and that something is not
+covered by it. Here that set is python3 (which runs mkosi and the fetch
+script), `gpgv` (which checks `InRelease` and the kernel signature) and apt
+(which resolves and unpacks the tools tree). Taken from the runner, they
+would be whatever GitHub's image ships that week. So the fetch phase and
+mkosi run inside the bootstrap container, pinned by digest, and the runner
+supplies only its kernel, container runtime and network. The alternative is
+mkosi's `ToolsTree=` with `ToolsTreeSnapshot=` pinned to the lock's
+snapshot, which still bootstraps from the runner's python3 and apt; #1
+picks one, and the container is proposed because it removes the runner's
+userland entirely. The container is built from the same snapshot by this
+pipeline, reproducibly, so its digest is checked like any other output.
+
+#### Tarballs against tags
+
+The xz backdoor (CVE-2024-3094) was only in the release tarballs, not in git,
+and a backdoored tarball builds reproducibly
+([Freund](https://www.openwall.com/lists/oss-security/2024/03/29/4)). Two
+builds and an independent rebuild would all have matched. Where an upstream
+publishes both, the bump job compares the tarball with the signed git tag and
+fails on any difference it cannot explain: the kernel tarball against
+`git archive` of the stable tag, and Felix's and felixd's source archives
+against their tags. Debian's packages are out of reach this way; for them
+NineLives relies on Debian's own reproducible builds and keeps the exposure
+small: every network-facing binary (Felix, felixd, the time and DHCP
+clients) has its `DT_NEEDED` libraries listed in `images/executables.toml`,
+and a new one fails the build. xz reached sshd through a library sshd did not
+need.
 
 ### Building the root
 
@@ -204,11 +325,13 @@ depend on snapshot.debian.org, kernel.org or GitHub releases staying up.
    `rootfs/` are added.
 4. Packages Debian marks essential but the image does not need (the shells,
    `perl-base`, `dpkg`, `apt`, `login`, `passwd` and the like) are removed.
-   The inventory and each file's origin are recorded from dpkg's database
-   first; then the database is deleted.
+   The inventory and each file's origin are recorded first, from the
+   verified `.deb` files themselves: the SHA-256 of every member of each
+   package's data archive. dpkg's database is then deleted. Its recorded
+   checksums are MD5 and are not used.
 5. The tree is normalised: owner 0:0 for everything, no write bits, no
    extended attributes, timestamps clamped to `SOURCE_DATE_EPOCH`.
-6. `mkfs.erofs` writes the root with extended attributes switched off,
+6. `mkfs.erofs` writes the root uncompressed, with extended attributes off,
    `veritysetup format` writes the hash tree with a salt derived from the
    commit, the UKI is assembled, and `systemd-repart` writes the GPT with
    partition UUIDs derived from a fixed seed in the config.
@@ -242,8 +365,11 @@ anyone can read it out of the published kernel. Rust builds use
 any other value a tool would pick at random come from fixed seeds in the
 config or from the commit.
 
-**How two builds are compared.** CI runs build A on one runner, using caches
-(the kernel build is cached by version, config and toolchain lock). Build B
+**How two builds are compared.** On a pull request, CI runs build A on one
+runner, using caches (the kernel build is cached by version, config and
+toolchain lock). The release workflow uses no cache in either build: a
+poisoned Actions cache can backdoor a build that still carries valid
+provenance ([Khan](https://adnanthekhan.com/2024/05/06/the-monsters-in-your-build-cache-github-actions-cache-poisoning/)). Build B
 runs on a fresh runner with no cache of any kind, fetches every input itself
 rather than reusing A's store, and varies what should not matter: a different
 build path, user name, umask, time zone, locale and CPU count. Each build
@@ -265,16 +391,30 @@ creation time or a random identifier (a VHD footer has both) gets them from
 differ are listed here by offset, and the comparison masks only those.
 
 A signed UKI is not detached: Secure Boot needs the Authenticode signature
-embedded in the PE file. What the release job signs is the Authenticode
-digest of the compared, unsigned UKI, so anyone who rebuilds can check that
-the published signed UKI has the same digest as theirs. `sbattach --remove`
-on the signed file gives back the compared bytes.
+embedded in the PE file, which S5 allows. The signer signs the Authenticode
+digest of the compared, unsigned UKI, and that digest excludes the signature.
+Anyone who rebuilds checks that the published signed UKI's Authenticode
+digest equals their unsigned UKI's. Stripping the signature is not relied
+on to give back the exact bytes.
 
-Two builds on GitHub share GitHub, the snapshot and the tools. A compromise
-common to both builds the same bad bytes twice and passes (T39). That is
-accepted until the first published image; then the provenance lets anyone
-rebuild elsewhere, and who does is an [open question](#open-questions) in the
-threat model.
+**What two builds prove.** Two builds on GitHub share GitHub, the runner
+image, the snapshot and the tools. They prove the build is deterministic, not
+that it is honest: a compromise common to both builds the same bad bytes
+twice and passes (T39). What catches a compromised builder is an independent
+rebuild on other hardware, outside GitHub, that fetches every input itself
+from the pins and must produce the same `SHA256SUMS`. From the first
+published image the maintainer signs a release's update metadata only after
+that rebuild matches ([Signing](#signing)), which is what S23 asks of
+components, applied to the image. Who runs it is an
+[open question](#open-questions).
+
+**Provenance.** SLSA Build L3 needs a build platform that keeps runs apart and
+keeps the provenance key away from build steps
+([SLSA levels](https://slsa.dev/spec/v1.1/levels)). GitHub artifact
+attestations from a reusable workflow reach it, and are what the release
+uses. slsa-github-generator is not used: it has been unmaintained since
+February 2025. Provenance says where bytes came from. It is not why a machine
+trusts them.
 
 ### Checks
 
@@ -295,13 +435,16 @@ Each check fails the build on any violation. Each allowlist lives in
 | No shells or interpreters | Every regular file with an execute bit, every ELF file and every shared library is in `images/executables.toml`, with its package or component. A file starting with `#!` is never allowed. The production list holds no shell or interpreter: no `sh`, `bash`, `dash`, `busybox`, `perl`, `python`, `awk`, `lua`, `tclsh` or the like, and a second check refuses those names whatever list they are added to. The development variant's list adds one shell, named, for the serial console. The dynamic loader is listed: it cannot load code from the `noexec` data partition, because the kernel refuses executable mappings of files there. | S1 |
 | ELF hygiene | No ELF has an executable stack or a segment that is both writable and executable. | S2 |
 | Package allowlist | The installed set equals `images/packages.toml` exactly: a package pulled in by a dependency and not listed fails, and so does a listed one that is missing. Each version and hash equals the lock. No package manager, compiler or SSH server is installed, whatever the list says. | S1, S4 |
-| Every file has an origin | Every file in the root is accounted for: by a package's file list (with dpkg's recorded checksum matching), by a component's archive, by `rootfs/` in this commit, or by a short list of files the build generates (`/etc/passwd`, `/etc/group`, `init.toml`, the seccomp filters, `ld.so.cache`, the CA bundle, the inventory). Anything else fails. | S4 |
+| Every file has an origin | Every file in the root is accounted for: by a member of a verified `.deb` with the same SHA-256, by a component's archive, by `rootfs/` in this commit, or by a short list of files the build generates (`/etc/passwd`, `/etc/group`, `init.toml`, the seccomp filters, `ld.so.cache`, the CA bundle, the inventory). Anything else fails. | S4 |
 | Components match the manifest | Each Felix and felixd binary in the root has the hash of the member in the verified archive. | S4 |
 | No secrets | No file holds a private key, a token in a known format, or a test credential the S8 test plants. | S8 |
-| Kernel command line | The UKI's command line equals the expected string, its root hash is the root partition's in this image, and it holds no `mitigations=off`, no other `init=` and nothing outside the expected words. | S13, S17 |
+| Kernel command line | The UKI's command line equals the expected string for its target, its root hash is the root partition's in this image, it holds every word the kernel's `policy.toml` requires, and none it forbids. | S13, S17 |
+| ESP contents | The ESP holds exactly the expected UKI files and nothing else. | S13 |
+| Shared libraries of network daemons | Each network-facing binary's `DT_NEEDED` set equals its entry in `images/executables.toml`. | S4 |
 | Verity | `veritysetup verify` passes for the root against its hash tree and the root hash in the UKI. | S13 |
 | Kernel config | kernel-hardening-checker passes with the listed exceptions, and `CONFIG_MODULES` is off (0007). | S2 |
 | Init config | `init check` passes on the image's `init.toml`. | init design |
+| Actions hygiene | The workflow checks in [Actions hygiene](#actions-hygiene). | S21 |
 | Size budget | Each output is within `images/budget.toml`: the root partition, the UKI, the ESP's contents and the raw image. The budget is set from the first M0 build with a margin, the build warns at 90%, and raising it is a reviewed change that says why. Every pull request reports the size change. | S1 |
 
 Each check has a test that seeds one violation into a small fixture image and
@@ -309,72 +452,120 @@ watches the check fail ([Test plan](#test-plan)).
 
 ### Service profiles
 
-The init design leaves to this page how each service's seccomp filter and
-Landlock lists are produced and reviewed. The reviewed source of each
-filter is a readable policy file per service in `rootfs/` (allowed system
-calls and, where it matters, their arguments). The build compiles it to BPF
-deterministically, and the compiled file is what `init.toml` names; the
-init never compiles a filter. Landlock lists are in `init.toml` itself.
-A first draft can be recorded from qemu runs, but the committed policy is
-what is reviewed and shipped, and every component bump re-runs the init
-design's profile test (each service under its real profile, running for 5
-minutes against a single-node cluster) before it can merge.
+How profiles are written, reviewed and tested is the
+[init design](init.md)'s. The build's part: each service's reviewed policy
+file in `rootfs/` is compiled to BPF deterministically, and the compiled file
+is what `init.toml` names. The init never compiles a filter.
 
 ### Signing
 
 Signing starts in M3 (S13, #9). Before M3 no image is signed and none is
 published (threat model, [Boot integrity](../threat-model.md#boot-integrity)).
 
-**What signs what.**
+**Two trust paths.** Firmware decides what boots; the updater decides what is
+installed. They use different keys, held differently.
 
 - The **image key**, a Secure Boot `db` key, signs the UKI's Authenticode
   digest. That one signature covers the kernel, its command line and the
-  verity root hash, so the whole root.
-- The **release manifest**, `SHA256SUMS` over every published output, is
-  signed for S22's update metadata. Whether that is the same key, and how
-  the metadata expires, is #8's and
+  verity root hash, so the whole root. The firmware's key database holds
+  only NineLives keys (S13), so nothing signed by another vendor boots. The
+  same release also signs the UKI's expected PCR 11 values with the **PCR
+  policy key** ([Rollback](#rollback)).
+- **Update metadata** follows TUF
+  ([specification](https://theupdateframework.github.io/specification/latest/)).
+  Machines trust a NineLives-owned TUF root, not "signed by this GitHub
+  repository". The root keys are hardware keys kept offline. The targets
+  role, which lists each release's digests and the minimum version, is
+  signed offline by the maintainer, and only after the independent rebuild
+  matches ([Reproducibility](#reproducibility)). The snapshot and timestamp
+  roles are online keys with short expiry (proposed: snapshot 7 days,
+  timestamp 1 day), so a frozen mirror is noticed; they cannot add a target.
+  The metadata format and expiries are #8's and
   [#66](https://github.com/GetFelix/ninelives/issues/66)'s.
 - The **provenance attestation** is signed keylessly through Sigstore by the
-  release workflow's own identity. It says which workflow built which digests;
-  it is not the image key and a machine never trusts it at boot.
+  signing workflow's identity. It says which workflow built which digests. A
+  machine never trusts it.
 
-The firmware's key database on a NineLives machine holds only NineLives keys
-(S13), so nothing signed by another vendor boots.
+A UKI signed through a subverted pipeline can therefore boot only where
+someone writes it to disk by hand. No updater installs it, because it is not
+in offline-signed targets.
 
-**Where the key lives.** Outside CI: never a repository secret, never a file
-on a runner. The key is generated in, and cannot be exported from, a
-hardware-backed store. Which store (an offline hardware token with a signing
-ceremony, a cloud KMS key that only the release job's OIDC identity may use,
-or both for different keys) is not decided. It belongs with
-[#16](https://github.com/GetFelix/ninelives/issues/16), which decides where the
-cluster's CA keys and the join's minting live: those keys and the image key
-are the same kind of asset (whoever holds them owns every machine, A3 and
-A6), so they should be held under one custody model, as separate keys. This
-page needs from that decision only what follows.
+**Where the keys live.** Outside CI, generated in and never exported from
+hardware. Custody follows [0008](../decisions/0008-ca-keys-and-machine-certificates.md)'s
+model of offline roots and ceremonies; 0008 leaves the image key itself to
+[#9](https://github.com/GetFelix/ninelives/issues/9) and
+[#16](https://github.com/GetFelix/ninelives/issues/16). Rotation and
+revocation are written down with #9 (S13).
 
-**How CI gets a signature.**
+**How CI gets a UKI signature.**
 
 1. A release is a tag `v*` on `main`, under a tag ruleset that only
    maintainers can create and nobody can move or delete.
-2. The release workflow's build jobs are the same two reproducible builds as
-   on every pull request. They have `contents: read` and no `id-token`
-   permission, so they cannot ask for a signature.
-3. A separate signing job runs in a GitHub environment that accepts only that
-   tag pattern and needs a maintainer's approval. It does not build or check
-   out code beyond its own workflow. It downloads both builds' outputs,
-   checks they are identical, and sends the UKI's Authenticode digest and the
-   manifest's digest to the signer.
-4. The signer accepts a request only with an OIDC token whose claims name
-   this repository, this workflow at a protected tag, and that environment.
-   Every signature is also written to a public transparency log, so a
-   signature made with a stolen key or outside a release shows up.
-5. Pull request workflows get a read-only token and no secrets, and none uses
-   `pull_request_target` (S21, T43).
+2. The signing workflow is a reusable workflow in a separate repository with
+   its own branch protection. The release workflow in this repository calls
+   it by full commit SHA. It checks out the tag, runs both builds itself with
+   no cache, checks they are identical, and only then asks for a signature.
+   It accepts no artifacts from the caller, so a changed caller cannot hand
+   it other bytes.
+3. Before building, it checks that the tag's commit is an ancestor of `main`
+   (`git merge-base --is-ancestor`), so a tag on an unmerged branch signs
+   nothing.
+4. It runs in a GitHub environment that accepts only that tag pattern and
+   needs a maintainer's approval. With one maintainer account that approval
+   is an audit record, not a second party: whoever holds the account also
+   approves.
+5. The signer accepts a request only with an OIDC token whose
+   `job_workflow_ref` names the signing workflow at a SHA on its allowlist,
+   and whose `repository`, `ref` and `environment` claims name this
+   repository, a `v*` tag and that environment. A change to any workflow in
+   this repository changes none of those claims' meaning, and a change to the
+   signing workflow is a new SHA the signer does not accept until its
+   allowlist is updated, which is itself a reviewed change in the signer's
+   configuration.
+6. Every signature is recorded in Rekor, Sigstore's public transparency log,
+   and a monitor ([rekor-monitor](https://github.com/sigstore/rekor-monitor))
+   watches for entries under NineLives' identities and alerts on any that do
+   not match a release. Without a monitor, the log shows misuse to nobody
+   ([Sigstore security model](https://docs.sigstore.dev/about/security/)).
+7. Build jobs and pull request workflows have no `id-token` permission and no
+   secrets.
 
-What this does not stop: a maintainer, or whoever controls a maintainer's
-account, tagging a malicious commit (T42, open in
-[#71](https://github.com/GetFelix/ninelives/issues/71)). Rotation and
-revocation of the image key are written down with #9 (S13).
+What this does not stop: whoever controls the maintainer account merging and
+tagging a malicious commit (T42, open in
+[#71](https://github.com/GetFelix/ninelives/issues/71)). The offline targets
+signature after an independent rebuild narrows it to a malicious commit the
+maintainer then also signs.
+
+### Rollback
+
+Firmware boots any UKI the image key ever signed. Nothing in firmware knows a
+version. So "no rollback" is not met before M3 and, from M3, is met in layers,
+none of which stops an old image from booting by itself:
+
+| Layer | What it does | Lands |
+|---|---|---|
+| **TPM-sealed credentials** | The data partition key (S16) and the machine's cluster key are sealed to the TPM under a policy that authorises PCR 11 values signed by the PCR policy key (the mechanism of systemd-measure and mkosi's `SignExpectedPcr=`), require PCR 12 and 13 at their initial value ([The ESP](#the-esp-is-input-to-the-stub)), and compare a TPM NV index holding the machine's minimum version with the version in the image's signed policy. An older image boots, but once the minimum version rises or the policy key rotates it cannot unseal, so it has no cluster identity and no data. | M3, with S16 ([#60](https://github.com/GetFelix/ninelives/issues/60)) |
+| **Updater floor** | The updater refuses any image below the minimum version. The floor is in the offline-signed targets metadata and in the TPM NV index, which only rises. | M3 (#8, #66) |
+| **SBAT generations** | The UKI's `.sbat` section carries a NineLives generation, bumped when a release fixes a hole that must not be booted again. It is enforced only where a shim or stub checks SBAT; NineLives' chain has no shim, so today it is metadata for that day. | M3, enforcement open |
+| **`dbx`** | A specific vulnerable UKI's Authenticode hash is added to the firmware's forbidden list, so it does not boot at all. `dbx` space is small, so this is for serious holes only. | M3 (#9) |
+
+Until M3 no layer exists, and an older image boots with everything.
+
+### Actions hygiene
+
+The tj-actions compromise (CVE-2025-30066) moved existing version tags to a
+commit that dumped runner secrets into public logs in thousands of
+repositories ([GHSA-mrrh-fwg8-r2c3](https://github.com/advisories/GHSA-mrrh-fwg8-r2c3)).
+So CI checks every workflow, and fails on:
+
+- an Action or reusable workflow not pinned by full commit SHA;
+- any `pull_request_target` trigger;
+- a workflow without top-level `permissions: {}` (jobs ask for what they
+  need);
+- `actions/checkout` without `persist-credentials: false`;
+- a publishing or signing job that can run on anything but a protected `v*`
+  tag;
+- a `curl | bash`, or any download without a SHA-256 (S21, #65).
 
 ### Outputs
 
@@ -385,12 +576,12 @@ Per architecture and variant, named
 |---|---|---|
 | `.raw` | The GPT disk image above, sparse | M0 |
 | `.root.erofs`, `.root.verity`, `.roothash` | The root, its hash tree and root hash, for the M3 updater to write into a slot | M0 (used from M3) |
-| `.efi` | The unsigned UKI; after a release, also `.signed.efi` | M0; signed from M3 |
+| `.efi` | The unsigned UKI per target; after a release, also `.signed.efi` and the signed expected PCR 11 values | M0; signed from M3 |
 | Cloud formats | Converted from `.raw` with pinned tools: qemu needs none, then per cloud as M5 adds them (#13) | M5 |
 | `.inventory.json` | Every package (name, version, architecture, source package, `.deb` SHA-256, license), every component from `components.toml`, the kernel (version, tarball SHA-256, config SHA-256), mkosi and the toolchain | M0 |
 | `.files.json` | Every path in the root with type, mode, owner, size and SHA-256, sorted. Pull requests diff it. | M0 |
 | `.spdx.json` | SPDX SBOM built from the inventory, deterministic (its namespace is derived from the image's digest) | First published image (S12) |
-| Provenance | A SLSA build provenance attestation over every output's digest, from the release workflow | First published image (S12) |
+| Provenance | A SLSA build provenance attestation over every output's digest, a GitHub artifact attestation from the signing workflow | First published image (S12) |
 | Source | The kernel tarball and config, every Debian source package, and the tagged source of Felix and felixd | First published image (S12) |
 | `SHA256SUMS` | Over everything above but the provenance | M0 |
 
@@ -440,8 +631,8 @@ Each is written so a test can check it.
   runner with no cache, produce byte-identical compared outputs.
 - **I2** The build phase has no network. Every byte it reads that did not
   come from this commit came from the verified store and matches its pin.
-- **I3** Every file in the root has an origin: a locked package whose recorded
-  checksum it matches, a component archive member it matches, a file in
+- **I3** Every file in the root has an origin: a member of a verified `.deb`
+  with the same SHA-256, a component archive member it matches, a file in
   `rootfs/` at this commit, or a named generated file.
 - **I4** No inode in the root has a setuid or setgid bit, an extended
   attribute, a write bit, an owner other than 0:0, or a type other than file,
@@ -452,17 +643,24 @@ Each is written so a test can check it.
   `images/executables.toml`, which contains no shell or interpreter.
 - **I7** The installed packages equal `images/packages.toml`, at the
   versions and hashes in the lock.
-- **I8** The UKI's command line equals the expected string, and its root hash
-  is the hash of the root partition in the same image.
+- **I8** The UKI's command line equals the expected string for its target,
+  holds every word the kernel policy requires and none it forbids, and its
+  root hash is the hash of the root partition in the same image. The ESP
+  holds only the expected UKI files.
 - **I9** Every output is within its size budget.
-- **I10** No job that runs on a pull request or builds the image can obtain a
-  signature: only the signing job in the protected environment has an
-  `id-token` permission the signer accepts.
+- **I10** No job can obtain a UKI signature except the pinned signing
+  workflow, at an allowlisted SHA, for a protected `v*` tag whose commit is
+  an ancestor of `main`. No workflow uses `pull_request_target`, an unpinned
+  Action, or a checkout that keeps credentials.
 - **I11** A signed UKI's Authenticode digest equals the digest of the
   unsigned UKI both builds produced.
 - **I12** A pull request that changes a pin file changes nothing else but
   the pages that describe the pin.
 - **I13** A published release has every S12 output.
+- **I14** The release workflow restores no cache.
+- **I15** From M3, a machine whose minimum version is above an image's cannot
+  unseal its credentials under that image, and its updater refuses to
+  install it.
 
 ## Failure modes
 
@@ -476,21 +674,27 @@ Each is written so a test can check it.
 | A dependency pulls in a new package | The package allowlist fails | Every package needs a stated reason (S1) |
 | A build tool bug writes a wrong image twice | The checks read the result, not the tree; the boot test catches what boots wrong | Checks on the output, not on the tool's intent |
 | The root grows past its budget | Fails; raising the budget is a reviewed change | Growth is a review decision, not an accident |
-| A compromised runner or tool builds bad bytes in both builds | Not caught by I1 (T39) | Accepted until the first published image; then provenance lets others rebuild |
+| A compromised runner, cache or tool builds bad bytes in both builds | Not caught by I1 (T39). The independent rebuild differs, so targets are not signed and no machine installs it. | Before the first published image nothing ships; after it, the independent rebuild is the check |
+| A backdoor in an upstream tarball that builds reproducibly | Caught only where the tarball is compared with its git tag | Debian packages are out of reach; keeping network daemons' libraries few limits where one can land |
+| A corrupt block in the root | Before M3: panic and a reboot loop, the panic on the console, and the cluster reports the machine missing. From M3: the slot is marked bad and the machine falls back ([Boot](#boot-without-an-initrd)) | One machine is lost, never a wrong byte read |
 | The signer is down at release time | The release waits | There is no fallback key in CI, on purpose |
-| The image key is stolen | Signed malicious images boot until the key is revoked in `dbx` and machines' minimum version moves; the transparency log shows the signatures | Rotation and revocation are written down with #9 (S13) |
+| The image key is stolen | Signed malicious images boot where someone writes them to disk, until the key is revoked in `dbx`. No updater installs them without offline-signed targets, and unless the PCR policy key was stolen too, they cannot unseal credentials. The Rekor monitor shows the signatures. | Rotation and revocation are written down with #9 (S13) |
+| An older signed image is written to a machine | It boots. From M3 it cannot unseal credentials once the minimum version has risen, and the updater never installs it; before M3 nothing stops it | Firmware has no version; [Rollback](#rollback) is layered for that reason |
+| A file added to the ESP | Before M3, the stub may load it. From M3 an unsigned addon fails the firmware check, and anything measured into PCR 12 or 13 blocks unsealing | Pre-M3 has no boot integrity (T46) |
 | The runner's disk fills or a job times out | The run fails | Nothing partial is kept or published |
 
 ## Security
 
 **What it runs as.** CI jobs on GitHub-hosted runners. mkosi builds
 unprivileged, in user namespaces, and the build phase has no network. Build
-jobs hold a read-only token and no secrets. Only the signing job can reach
-the signer.
+jobs hold a read-only token and no secrets. Only the pinned signing workflow
+can reach the signer.
 
 **What it trusts, and why.** The Debian archive keys, the kernel.org stable
 maintainers' keys and the Sigstore trusted root, each pinned in the
-repository; GitHub as host, runner and OIDC issuer; Debian's packages and the
+repository; the bootstrap container by digest; GitHub as host, runner and
+OIDC issuer, checked from the first published image by an independent
+rebuild; the maintainer's offline TUF and targets keys; Debian's packages and the
 upstream kernel's accepted commits (threat model, [What we
 trust](../threat-model.md#what-we-trust)). Felix's release is trusted on a
 reviewer's word until it is signed and reproducible
@@ -499,15 +703,19 @@ reviewer's word until it is signed and reproducible
 
 **Requirements it meets:** S1 (allowlists, no shells), S3 (read-only erofs
 root, write bits, layout), S4 (every input verified), S5 (two builds),
-S8 (no secrets in the image), S12 (outputs), S13 (verity and the signed UKI,
-from M3), S17 (command line check), S21 (pinned tools and Actions, permissions),
+S8 (no secrets in the image), S12 (outputs), S13 (verity from M0, the signed
+UKI from M3, rollback only in the layers [Rollback](#rollback) lists, from
+M3), S17 (command line check), S21 (pinned tools and Actions, permissions),
 S22 in part (the variant marker), S23 (bump flow), S24 (no setuid, no file
 capabilities, no root-owned writable file).
 
 **Threats it answers:** T34 to T45 in the supply chain table, and T46, T47,
-T48, T49 and T53 in the boot table, as far as the image's part goes. It does
-not answer T42 (a malicious change merged by a maintainer account) or the
-common-mode case of T39.
+T49 and T53 in the boot table, as far as the image's part goes. T48 (an older
+signed image) is answered only in part: from M3 that image boots without
+credentials and is never installed, and only a `dbx` entry stops it booting.
+It does not answer T42 (a malicious change merged by a maintainer account).
+The common-mode case of T39 is answered by the independent rebuild from the
+first published image.
 
 ## Test plan
 
@@ -520,10 +728,14 @@ common-mode case of T39.
 | Boot the image in qemu, x86_64 and aarch64: the init reports ready on the serial console | CI, every pull request (#2) | the image boots |
 | In qemu: a write to the root fails with `EROFS`; a binary copied to the data partition does not run; `ld.so` on it fails | CI (test variant) | S3 |
 | Flip one byte in a copy's root partition, in a block a boot reads, and boot: the kernel panics on that read and the VM reboots; the same for the hash tree | CI | dm-verity |
-| A workflow policy check: every Action pinned by SHA, no unhashed download, pull request workflows hold no secrets or `id-token`, only the signing job uses the signing environment | CI, every pull request (#65) | I10, S21 |
+| From M3, the same with two slots: the machine falls back to the other slot and does not loop | CI, from M3 (#8) | slot fallback |
+| A workflow policy check on fixtures: an Action pinned by tag, a `pull_request_target` trigger, missing top-level `permissions: {}`, a checkout without `persist-credentials: false`, a signing job reachable from a branch, a release job that restores a cache, an unhashed download: each fails | CI, every pull request (#65) | I10, I14, S21 |
+| The signer refuses a token from a different workflow SHA, from a branch, and for a tag whose commit is not on `main` | Signer test, from M3 | I10 |
+| A fixture ESP with an extra file fails the ESP check; in OVMF with Secure Boot on, an unsigned addon in `.extra.d/` is not loaded and PCR 12 stays at its initial value | CI, from M3 (#9) | I8, stub requirement |
 | A pull request that changes a pin file and another file fails the pin check | CI fixture | I12 |
 | Release dry run on a test tag: every S12 output present, the signed UKI's digest equals the unsigned one's | Release workflow | I11, I13 |
-| With secure boot on and only NineLives keys enrolled (OVMF): a modified UKI, a modified root, a stock signed shim and an older image do not boot | CI, from M3 (#9) | S13 |
+| With secure boot on and only NineLives keys enrolled (OVMF): a modified UKI, a modified root, a stock signed shim and a UKI whose hash is in `dbx` do not boot | CI, from M3 (#9) | S13 |
+| With swtpm: an older signed image boots after the minimum version rose and cannot unseal the data key or the cluster key; the updater refuses to install it | CI, from M3 (#8, #60) | I15, S13 |
 | A weekly rebuild of the last release from its tag, compared to the published bytes | Scheduled | I1 over time, and that the kept store is enough |
 
 ## Open questions
@@ -531,14 +743,17 @@ common-mode case of T39.
 | Question | Proposal | Decides | Needed by |
 |---|---|---|---|
 | erofs or squashfs for the root, and whether that choice needs a decision record | erofs; a short record if reviewers see it as an image format choice | Review of this page | M0 (#1) |
-| Does the pinned LTS kernel accept `PARTUUID=` in `dm-mod.create` and `dm-mod.waitfor`? | Check in #3; fall back to device numbers per target. A small initrd only if neither works. | Kernel (#3) | M0 |
+| Do the fixed partition paths and `dm-mod.waitfor` work on the pinned kernel for each target, and does each target always give its boot disk the same name? | Verify in #3 for qemu; a cloud target ships only once its name is shown stable | Kernel (#3), each target | M0 for qemu |
+| Can the pinned systemd stub be made to load no addon, credential or system extension from the ESP, and ignore firmware load options? | Verify in #9; if not, a minimal stub that loads only the UKI's own sections | #9 | M3 |
+| PID 1 checks `/proc/cmdline` against the expected words before M3 | Add it to the init design's boot steps | Init design | M1 |
+| Whether the image key is signed offline at the targets ceremony instead of by a CI signer | Keep a CI signer for the UKI, since the offline targets decide what is installed; revisit if the CI signer is ever misused | #9 | M3 |
+| Which TPM NV index and write policy hold the minimum version, and how a minimum version is raised across a cluster | The updater raises it after the new image reports healthy; #8 decides | #8, #60 | M3 |
 | Whether the B slot is reserved from M0 | Reserve it, so M3 does not change the layout | A/B design (#8) | M3, but cheapest now |
 | The config partition's format, and how the join reads it without root (the init could hand the join that one partition's device node before the drop) | A raw, length-prefixed, size-capped blob | Join (#5) with the init design | M1 |
-| Where the image key lives, and whether it shares a custody model with the CA keys | One custody model, separate keys, hardware-backed, signer gated on the release environment's OIDC claims | #16, with #9 | M3 |
-| Whether the update metadata is signed by the image key or its own | Its own key, so a leaked boot key cannot also freeze updates | #8, #66 | M3 |
+| Where the image key lives | 0008's custody model, as a separate key | #9, #16 | M3 |
 | Development images: unsigned, or signed with a development key production firmware never enrolls | A separate development key | #9 | M3 |
-| GitHub-hosted runners cannot be pinned to an exact image build, which S21 asks for | Record the version in provenance and accept it with the tools tree; or move releases to ephemeral runners from a pinned image | NineLives maintainers | First published image |
-| Who rebuilds published images outside GitHub (T39) | A scheduled rebuild on a second CI provider, comparing to the published `SHA256SUMS` | Threat model | First published image |
+| GitHub-hosted runners cannot be pinned to an exact image build, which S21 asks for | Record the version in provenance and accept it with the bootstrap container; the independent rebuild checks the result | NineLives maintainers | First published image |
+| Who runs the independent rebuild (T39) | The maintainer, on their own hardware, before signing targets, fetching every input from the pins; a second rebuilder later | Threat model | First published image |
 | aarch64: native arm runners or cross-compiled on x86_64, given both builds must match | Native runners for both builds where available; one method per architecture, never mixed | #1 | M0 |
 | Size budgets | Set from the first M0 build plus 20% | #1 | M0 |
 | Felix's AGPL source for S12: `components.toml` pins no source archive | Add a source archive and its SHA-256 per component | NineLives maintainers | First published image |

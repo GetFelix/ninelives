@@ -45,6 +45,16 @@ arch = ["x86_64", "aarch64"]
 reason = "Reported only through the CFI_CLANG name; CFI_PERMISSIVE is unset and policy.toml requires that."
 
 [[exception]]
+option = "CONFIG_CFI_AUTO_DEFAULT"
+arch = ["x86_64"]
+reason = "KSPP prefers kCFI. Decided: FineIBT where the CPU has IBT, as kernel.md describes; it costs less per indirect call. Elsewhere the kernel uses kCFI."
+
+[[exception]]
+option = "CONFIG_KASAN_HW_TAGS"
+arch = ["aarch64"]
+reason = "KASAN is off: it costs memory and CPU on every allocation, and it reports a bad access rather than panicking (kernel.md, Memory corruption hardening)."
+
+[[exception]]
 option = "CONFIG_SECURITY_SELINUX"
 arch = ["x86_64", "aarch64"]
 reason = "S6: the init's policy is uids, Landlock and seccomp. A MAC policy nobody writes is surface without protection (kernel.md, LSMs)."
@@ -98,6 +108,12 @@ option = "nosmt"
 type = "cmdline"
 arch = ["x86_64", "aarch64"]
 reason = "SMT stays on: in a guest nosmt halves the vCPUs and buys little. Reopened for bare metal (M5)."
+
+[[exception]]
+option = "cfi"
+type = "cmdline"
+arch = ["x86_64"]
+reason = "Wants cfi=kcfi. CFI_AUTO_DEFAULT sets cfi=auto, so FineIBT is used where the CPU has IBT (see CONFIG_CFI_AUTO_DEFAULT above), and check 5 rejects any cfi= word."
 
 [[exception]]
 option = "hash_pointers"

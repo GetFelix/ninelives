@@ -943,8 +943,9 @@ up. Publishing records to Felix is M4.
   one.
 - **I10.** `reboot(2)` follows a `syncfs` attempt on the `$DATA` fd opened at
   mount, made after every
-  service cgroup was empty or reported stuck, except where a bound passed,
-  which is recorded on the console first.
+  service cgroup was empty or reported stuck, except where a bound passed or
+  no thread could be started to run it, either of which is recorded on the
+  console first.
 - **I11.** A service's environment contains exactly its `env` and its
   listed `join_env` names, and it inherits no file descriptor besides 0, 1
   and 2.
@@ -1028,6 +1029,7 @@ PID 1 exiting panics the kernel, which reboots after 10 s. The rows marked
 | Data partition full despite quotas | Write errors | Dropped and counted on the console | yes |
 | Console blocked or absent | `EAGAIN`, open failure | Dropped and counted; `/dev/kmsg`, opened in boot step 8, used if the console cannot be opened | yes |
 | Disk hangs during shutdown | `syncfs` bound passes | Recorded on the console, `reboot(2)` anyway; `previous_shutdown` reads `forced` | yes |
+| No thread can be started to run the sync (the worker is gone and one more spawn fails) | The spawn's error | The sync is not run on the loop's thread, where it could block without bound. A `sync` record with `"result":"not run"` and the error goes out, then `reboot(2)`; `previous_shutdown` reads `forced` | yes |
 | Power cut during shutdown | Next boot reads `previous_shutdown: unknown` | Felix recovers as after any crash | yes (the next boot) |
 | Platform cuts power before the budget we assumed | Same as a power cut | Same; the budget table is wrong and is fixed | yes (the next boot) |
 | Clock stepped by time sync | Not needed | Deadlines are monotonic | yes |

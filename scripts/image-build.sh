@@ -13,6 +13,7 @@
 #
 # DIR for --kernel is the kernel-qemu-x86_64 artifact (bzImage, .config).
 # COMMIT and SOURCE_DATE_EPOCH come from the environment (the container has no git).
+# NL_FAKETIME_DAYS=N runs the build phase N days ahead of the real clock.
 set -euo pipefail
 
 # The caller's umask must not reach the build: apt reads the keyring and the store
@@ -176,6 +177,13 @@ pkg_args=()
 for p in "${root_pkgs[@]}"; do pkg_args+=(--package "$p"); done
 
 export SOURCE_DATE_EPOCH
+# The rebuild runs the rest of the build at another time. The fetch phase has
+# already happened: TLS certificates and signatures are checked at real time.
+if [[ -n ${NL_FAKETIME_DAYS:-} ]]; then
+  # shellcheck source=/dev/null
+  . "$repo/scripts/faketime.sh"
+  faketime_on "$(python3 -I "$repo/scripts/faketime_lib.py" --store "$store" --out "$work/faketime")" "$NL_FAKETIME_DAYS"
+fi
 PYTHONPATH=$mkosi_dir python3 -B -m mkosi \
   --directory "$repo/images/qemu-x86_64" --force \
   --release "$release_root" \

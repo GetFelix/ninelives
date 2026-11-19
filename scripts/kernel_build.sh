@@ -55,7 +55,14 @@ case $cmd in
     make -s -C "$src" O="$out" olddefconfig
     ;;
   build)
-    make -C "$src" O="$out" -j"$(nproc)" KCFLAGS="-ffile-prefix-map=$src/=" "$image" 2>&1 | tee "$work/build.log"
+    # The rebuild runs at another time (scripts/faketime.sh) and with another
+    # job count. The tarball was fetched and unpacked at real time.
+    if [[ -n ${NL_FAKETIME_LIB:-} ]]; then
+      # shellcheck source=/dev/null
+      . "$repo/scripts/faketime.sh"
+      faketime_on "$NL_FAKETIME_LIB" "${NL_FAKETIME_DAYS:?}"
+    fi
+    make -C "$src" O="$out" -j"${KERNEL_JOBS:-$(nproc)}" KCFLAGS="-ffile-prefix-map=$src/=" "$image" 2>&1 | tee "$work/build.log"
     # modpost's section mismatches must be exactly the listed ones, offsets
     # dropped, so a new one fails even where the config only warns.
     expected=$repo/kernel/section-mismatches/$arch.txt

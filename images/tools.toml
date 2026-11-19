@@ -73,3 +73,10 @@ packages = ["ovmf", "qemu-system-x86"]
 [compare]
 release = "trixie"
 packages = ["binutils", "diffoscope-minimal", "erofs-utils", "fdisk", "xxd"]
+
+# libfaketime, for the rebuilds that run at another time (docs/components/image.md,
+# "Reproducibility"). Only the library is used: scripts/faketime_lib.py unpacks
+# the verified .deb and the rebuild preloads it. Never installed.
+[faketime]
+release = "trixie"
+packages = ["libfaketime"]

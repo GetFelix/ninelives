@@ -2,13 +2,17 @@
 """Compare two builds of the image (docs/components/image.md, "Reproducibility").
 
   image_compare.py --a DIR --b DIR --report DIR
+      [--kernel-a DIR --kernel-b DIR --init-a DIR --init-b DIR]
 
-DIR is a build's output directory. Each holds SHA256SUMS over every output.
-The two builds match only if both files are identical and every line in each
-is true of the files next to it, so a stale or edited SHA256SUMS cannot pass.
+DIR for --a and --b is a build's output directory. Each holds SHA256SUMS over
+every output, and must name each of the outputs in REQUIRED, so two empty
+files cannot match. The two builds match only if both files are identical and
+every line in each is true of the files next to it, so a stale or edited
+SHA256SUMS cannot pass. The kernel and init directories are the kernel and
+init jobs' artifacts of each build; their files are compared by hash too.
 On a mismatch this writes a summary and the per-partition hashes of any
-differing disk, runs diffoscope on every output that differs, and exits 1.
-The caller never retries.
+differing disk, runs diffoscope on every output that differs, and exits 1. A
+diffoscope that fails to run exits 2. The caller never retries.
 """
 import argparse
 import hashlib
@@ -21,6 +25,10 @@ import sys
 
 SUM_LINE = re.compile(r"([0-9a-f]{64})  (\S[^/]*)")
 DIFFOSCOPE_TIMEOUT = 1500
+# What every build writes (docs/components/image.md, "What the first slice builds").
+REQUIRED = (".raw", ".root.erofs", ".root.verity", ".roothash", ".efi", ".inventory.json", ".files.json", ".origins.json")
+KERNEL_FILES = ("bzImage", "System.map", ".config")
+INIT_FILES = ("init",)
 
 
 def read_sums(d: pathlib.Path) -> dict[str, str]:
@@ -96,11 +104,20 @@ def main() -> int:
     ap.add_argument("--a", type=pathlib.Path, required=True)
     ap.add_argument("--b", type=pathlib.Path, required=True)
     ap.add_argument("--report", type=pathlib.Path, required=True)
+    ap.add_argument("--kernel-a", type=pathlib.Path)
+    ap.add_argument("--kernel-b", type=pathlib.Path)
+    ap.add_argument("--init-a", type=pathlib.Path)
+    ap.add_argument("--init-b", type=pathlib.Path)
     args = ap.parse_args()
+    if bool(args.kernel_a) != bool(args.kernel_b) or bool(args.init_a) != bool(args.init_b):
+        ap.error("--kernel-a and --kernel-b go together, and so do --init-a and --init-b")
     args.report.mkdir(parents=True, exist_ok=True)
     sums = {"a": read_sums(args.a), "b": read_sums(args.b)}
     problems = []
     for which, d in (("a", args.a), ("b", args.b)):
+        for suffix in REQUIRED:
+            if sum(n.endswith(suffix) for n in sums[which]) != 1:
+                problems.append(f"build {which}: SHA256SUMS does not name exactly one output ending {suffix}")
         files = {p.name for p in d.iterdir() if p.is_file() and p.name != "SHA256SUMS"}
         for name in sorted(files - set(sums[which])):
             problems.append(f"build {which}: {name} is not in its SHA256SUMS")
@@ -109,26 +126,42 @@ def main() -> int:
                 problems.append(f"build {which}: {name} is in SHA256SUMS and not on disk")
             elif sha256(d / name) != want:
                 problems.append(f"build {which}: {name} does not match its own SHA256SUMS line")
-    differing = sorted(n for n in sums["a"].keys() & sums["b"].keys() if sums["a"][n] != sums["b"][n])
+    # (label, path in a, path in b) for every pair that must be identical.
+    pairs = [(n, args.a / n, args.b / n) for n in sorted(sums["a"].keys() & sums["b"].keys())]
     for name in sorted(sums["a"].keys() ^ sums["b"].keys()):
         problems.append(f"{name} is an output of only one build")
+    for label, da, db, names in (("kernel", args.kernel_a, args.kernel_b, KERNEL_FILES), ("init", args.init_a, args.init_b, INIT_FILES)):
+        for n in names if da else ():
+            if not (da / n).is_file() or not (db / n).is_file():
+                problems.append(f"{label}: {n} is missing from one of the two builds")
+            else:
+                pairs.append((f"{label}/{n}", da / n, db / n))
+    differing = [(n, pa, pb) for n, pa, pb in pairs if pa.is_file() and pb.is_file() and sha256(pa) != sha256(pb)]
     if not problems and not differing:
-        print(f"the two builds match: {len(sums['a'])} outputs identical")
+        print(f"the two builds match: {len(pairs)} outputs identical")
         return 0
 
     summary = ["The two builds differ.", ""] + problems
-    for name in differing:
-        summary.append(f"differs: {name}\n  a {sums['a'][name]}\n  b {sums['b'][name]}")
-        if name.endswith(".raw") and (args.a / name).is_file() and (args.b / name).is_file():
-            summary += ["  partitions:"] + ["    " + ln for ln in partition_table(args.a / name, args.b / name)]
+    for name, pa, pb in differing:
+        summary.append(f"differs: {name}\n  a {sha256(pa)}\n  b {sha256(pb)}")
+        if name.endswith(".raw"):
+            summary += ["  partitions:"] + ["    " + ln for ln in partition_table(pa, pb)]
+    status = 1
+    # Smaller outputs first: a report on the root filesystem explains the disk.
+    # diffoscope exits 1 when it finds differences; 0 or 2 means it did not do its job.
+    if shutil.which("diffoscope"):
+        for name, pa, pb in sorted(differing, key=lambda t: (t[1].stat().st_size, t[0])):
+            rc = diffoscope(pa, pb, args.report)
+            if rc != 1:
+                summary.append(f"diffoscope exited {rc} on {name}, not 1: the report is missing or cannot be trusted")
+                status = 2
+    elif differing:
+        summary.append("diffoscope is not installed: no report")
+        status = 2
     text = "\n".join(summary) + "\n"
     (args.report / "summary.txt").write_text(text, encoding="utf-8")
     print(text, file=sys.stderr)
-    # Smaller outputs first: a report on the root filesystem explains the disk.
-    for name in sorted(differing, key=lambda n: ((args.a / n).stat().st_size if (args.a / n).is_file() else 0, n)):
-        if (args.a / name).is_file() and (args.b / name).is_file() and shutil.which("diffoscope"):
-            diffoscope(args.a / name, args.b / name, args.report)
-    return 1
+    return status
 
 
 if __name__ == "__main__":

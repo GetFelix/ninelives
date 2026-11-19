@@ -1,5 +1,5 @@
 # Every Debian package the image build uses, by name, version and SHA-256,
-# for the root, the build tools, the boot test's tools, the comparison's tools and the bootstrap
+# for the root, the build tools, the boot test's tools, the comparison's tools, libfaketime and the bootstrap
 # step's packages separately. Written by
 # scripts/image_lock.py; CI regenerates it and fails on a difference, so
 # a hand edit cannot add a package resolution would not. Change it only in
@@ -2861,6 +2861,60 @@ archive = "debian-security"
 filename = "pool/updates/main/z/zlib/zlib1g_1.3.dfsg+really1.3.1-1+deb13u1_amd64.deb"
 architecture = "amd64"
 source = "zlib"
+
+[faketime]
+release = "trixie"
+
+[[faketime.suite]]
+archive = "debian"
+name = "trixie"
+inrelease_sha256 = "0584fba32e13e0ab8285fb16c27adea1ec03a73669c18702821094fd6ca86675"
+
+[[faketime.suite]]
+archive = "debian"
+name = "trixie-updates"
+inrelease_sha256 = "871ca324ca5e0d5e848fafbd9be0b6ff245563ef2362f685d15ccefc55a0a294"
+
+[[faketime.suite]]
+archive = "debian-security"
+name = "trixie-security"
+inrelease_sha256 = "619dd69e766c1f8ea8dd5bb1741154960804a8b9849b021e14c8fd1c6af269ab"
+
+[[faketime.package]]
+name = "gcc-14-base"
+version = "14.2.0-19"
+sha256 = "5b6825de4263824b78c4c51f6476414f3b4e89c2ab63e81dc8b9b5501e867cf6"
+archive = "debian"
+filename = "pool/main/g/gcc-14/gcc-14-base_14.2.0-19_amd64.deb"
+architecture = "amd64"
+source = "gcc-14"
+
+[[faketime.package]]
+name = "libc6"
+version = "2.41-12+deb13u4"
+sha256 = "967aa62605721081c3eb2a17650611a792aa802d76a6511d1840242623d204c9"
+archive = "debian"
+filename = "pool/main/g/glibc/libc6_2.41-12+deb13u4_amd64.deb"
+architecture = "amd64"
+source = "glibc"
+
+[[faketime.package]]
+name = "libfaketime"
+version = "0.9.10+2024-06-05+gba9ed5b2-0.6"
+sha256 = "4ecb98d7f6149e4c297a5946c4fa231a1b794d203053962e295dd3a18a47f269"
+archive = "debian"
+filename = "pool/main/f/faketime/libfaketime_0.9.10+2024-06-05+gba9ed5b2-0.6_amd64.deb"
+architecture = "amd64"
+source = "faketime"
+
+[[faketime.package]]
+name = "libgcc-s1"
+version = "14.2.0-19"
+sha256 = "3c71917b490d1a17aed43196a2787a256ecf060526cdb20216a74bedc061b150"
+archive = "debian"
+filename = "pool/main/g/gcc-14/libgcc-s1_14.2.0-19_amd64.deb"
+architecture = "amd64"
+source = "gcc-14"
 
 [bootstrap]
 release = "trixie"

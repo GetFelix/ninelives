@@ -6,7 +6,8 @@
 # fetched and verified the way the image's tools are, so a report comes from
 # pinned bytes, not from the runner or PyPI.
 #
-#   image-compare.sh --a DIR --b DIR --report DIR --work DIR
+#   image-compare.sh --a DIR --b DIR --kernel-a DIR --kernel-b DIR --init-a DIR --init-b DIR \
+#     --report DIR --work DIR
 #
 # Needs the network for the fetch phase only. Exits non-zero, with the report
 # written, if the builds differ. It does not retry.
@@ -15,17 +16,21 @@ set -euo pipefail
 umask 022  # apt reads the keyring and the store as its own user
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 export PYTHONDONTWRITEBYTECODE=1 LC_ALL=C
-a="" b="" report="" work=""
+a="" b="" report="" work="" kernel_a="" kernel_b="" init_a="" init_b=""
 while [[ $# -gt 0 ]]; do
   case $1 in
     --a) a=$2; shift 2 ;;
     --b) b=$2; shift 2 ;;
+    --kernel-a) kernel_a=$2; shift 2 ;;
+    --kernel-b) kernel_b=$2; shift 2 ;;
+    --init-a) init_a=$2; shift 2 ;;
+    --init-b) init_b=$2; shift 2 ;;
     --report) report=$2; shift 2 ;;
     --work) work=$2; shift 2 ;;
     *) echo "unknown argument $1" >&2; exit 2 ;;
   esac
 done
-[[ -n $a && -n $b && -n $report && -n $work ]] || { echo "usage: image-compare.sh --a DIR --b DIR --report DIR --work DIR" >&2; exit 2; }
+[[ -n $a && -n $b && -n $kernel_a && -n $kernel_b && -n $init_a && -n $init_b && -n $report && -n $work ]] || { echo "usage: image-compare.sh --a DIR --b DIR --kernel-a DIR --kernel-b DIR --init-a DIR --init-b DIR --report DIR --work DIR" >&2; exit 2; }
 mkdir -p "$work" "$report"
 work=$(cd "$work" && pwd)
 store=$work/store
@@ -105,13 +110,19 @@ python3 -I -c '
 import sys
 path = sys.argv[1]
 with open(path, "r+b") as f:
-    f.seek(64 << 20)
+    f.seek(0, 2)
+    mid = f.tell() // 2
+    f.seek(mid)
     b = f.read(1)
-    f.seek(64 << 20)
+    f.seek(mid)
     f.write(bytes([b[0] ^ 1]))' "$erofs"
 (cd "$fixture/changed" && sha256sum -- ninelives-*.* > "$fixture/SHA256SUMS" && rm -f SHA256SUMS && cp "$fixture/SHA256SUMS" SHA256SUMS)
-if python3 -I "$repo/scripts/image_compare.py" --a "$a" --b "$fixture/changed" --report "$fixture/report" 2>"$fixture/log"; then
-  echo "the comparison passed two builds that differ by a byte" >&2
+# Exit 1 is "differs, and diffoscope reported it"; 0 is a pass, 2 a diffoscope that failed.
+rc=0
+python3 -I "$repo/scripts/image_compare.py" --a "$a" --b "$fixture/changed" --report "$fixture/report" 2>"$fixture/log" || rc=$?
+if [[ $rc != 1 ]]; then
+  echo "the fixture comparison exited $rc, not 1" >&2
+  cat "$fixture/log" >&2
   exit 1
 fi
 test -s "$fixture/report/summary.txt"
@@ -120,4 +131,5 @@ test -s "$fixture"/report/ninelives-*.root.erofs.txt || { echo "no diffoscope re
 echo "fixture: a one-byte change is reported, with a diffoscope report"
 rm -rf "$fixture"
 
-python3 -I "$repo/scripts/image_compare.py" --a "$a" --b "$b" --report "$report"
+python3 -I "$repo/scripts/image_compare.py" --a "$a" --b "$b" --kernel-a "$kernel_a" --kernel-b "$kernel_b" \
+  --init-a "$init_a" --init-b "$init_b" --report "$report"

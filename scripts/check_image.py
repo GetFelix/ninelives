@@ -55,8 +55,8 @@ GPT_PARTITIONS = [  # name, type GUID
 
 
 class Entry:
-    def __init__(self, path, kind, mode=0o444, uid=0, gid=0, size=0, xattrs=(), link="", content=None, reader=None):
-        self.path, self.kind, self.mode, self.uid, self.gid = path, kind, mode, uid, gid
+    def __init__(self, path, kind, mode=0o444, uid=0, gid=0, size=0, xattrs=(), link="", content=None, reader=None, mtime=None):
+        self.path, self.kind, self.mode, self.uid, self.gid, self.mtime = path, kind, mode, uid, gid, mtime
         self.size, self.xattrs, self.link = size, list(xattrs), link
         self._content, self._reader = content, reader
 
@@ -89,7 +89,8 @@ def walk_tree(root: pathlib.Path) -> list[Entry]:
             except OSError:
                 xattrs = []
             out.append(Entry("/" + os.path.relpath(p, root), kind, stat.S_IMODE(st.st_mode), st.st_uid, st.st_gid, st.st_size,
-                             xattrs, os.readlink(p) if kind == "symlink" else "", reader=reader if kind == "file" else None))
+                             xattrs, os.readlink(p) if kind == "symlink" else "", reader=reader if kind == "file" else None,
+                             mtime=int(st.st_mtime)))
     return sorted(out, key=lambda e: e.path)
 
 
@@ -99,6 +100,10 @@ def walk_tree(root: pathlib.Path) -> list[Entry]:
 
 def check_setuid(entries):
     return [f"setuid/setgid: {e.path} mode {e.mode:o}" for e in entries if e.mode & (stat.S_ISUID | stat.S_ISGID)]
+
+
+def check_times(entries, sde: int):
+    return [f"timestamp: {e.path} is {e.mtime}, not SOURCE_DATE_EPOCH {sde}" for e in entries if e.mtime is not None and e.mtime != sde]
 
 
 def check_xattrs(entries):
@@ -427,6 +432,7 @@ def main() -> int:
     ap.add_argument("--meta", type=pathlib.Path, required=True)
     ap.add_argument("--target", type=pathlib.Path, default=ic.IMAGES / "qemu-x86_64" / "target.toml")
     ap.add_argument("--commit", required=True)
+    ap.add_argument("--source-date-epoch", type=int, required=True)
     ap.add_argument("--propose-executables", action="store_true")
     args = ap.parse_args()
 
@@ -490,7 +496,7 @@ def main() -> int:
             if args.propose_executables:
                 print(propose_executables(entries))
                 return 0
-            errors += check_setuid(entries) + check_xattrs(entries) + check_ownership(entries)
+            errors += check_setuid(entries) + check_times(entries, args.source_date_epoch) + check_xattrs(entries) + check_ownership(entries)
             errors += check_special(entries, links) + check_users(entries, users)
             errors += check_executables(entries, execs) + check_elf(entries) + check_needed(entries, execs) + check_needed_resolve(entries)
             errors += check_packages(stage, keep, lock) + check_origins(entries, origins) + check_secrets(entries)

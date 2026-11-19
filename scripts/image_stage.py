@@ -51,10 +51,8 @@ RESIDUE = [
     # timers and docs from removed packages, and links into /run that nothing writes
     "/etc/systemd", "/usr/share/info", "/usr/local/man", "/usr/lib/clock-epoch", "/var/spool/mail",
 ]
-# Files a maintainer script copies from the package's own data, so the copy can be held to the member.
-# Links into /run, the init's tmpfs, that base-files makes in its postinst.
-RUN_LINKS = {"/var/run": "/run", "/var/lock": "/run/lock"}
-COPIES = {"/etc/nsswitch.conf": "/usr/share/base-files/nsswitch.conf"}
+# Name lookups: local files, then DNS. libnss_files and libnss_dns are the two NSS modules the image keeps.
+NSSWITCH = "passwd: files\ngroup: files\nhosts: files dns\n"
 LD_SO_CONF = "include /etc/ld.so.conf.d/*.conf\n"
 TOP_LEVEL_LINKS = {"/bin": "usr/bin", "/sbin": "usr/sbin", "/lib": "usr/lib", "/lib64": "usr/lib64"}
 INSTALL_MODE = 0o555
@@ -223,12 +221,6 @@ def main() -> int:
 
     removed = remove_packages(root, keep)
     prune_files(root, ic.load_toml(ic.ROOT / "rootfs" / "prune.toml").get("prune", []))
-    for dest, src in COPIES.items():
-        member = origins.get(src)
-        target = root / dest.lstrip("/")
-        if member is None or not target.is_file() or ic.sha256_file(target) != member["sha256"]:
-            raise SystemExit(f"{dest} is not a copy of {src}")
-        origins[dest] = {**member, "origin": "deb"}
     write_file(root, "/etc/ld.so.conf", LD_SO_CONF)
     subprocess.run(["ldconfig", "-r", str(root)], check=True)
     for r in RESIDUE:
@@ -261,7 +253,7 @@ def main() -> int:
 
     users = ic.load_toml(ic.IMAGES / "users.toml")
     passwd, group = passwd_group(users)
-    generated = {"/etc/passwd": passwd, "/etc/group": group, "/usr/lib/os-release": os_release(args.variant, args.commit)}
+    generated = {"/etc/passwd": passwd, "/etc/group": group, "/etc/nsswitch.conf": NSSWITCH, "/usr/lib/os-release": os_release(args.variant, args.commit)}
     for path, text in generated.items():
         write_file(root, path, text)
         origins[path] = {"type": "file", "mode": 0o444, "sha256": hashlib.sha256(text.encode()).hexdigest(),

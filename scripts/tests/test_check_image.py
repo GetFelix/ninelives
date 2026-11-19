@@ -55,6 +55,10 @@ class Checks(unittest.TestCase):
     def test_setgid_directory(self):
         self.assertTrue(ci.check_setuid(with_(clean(), ci.Entry("/var", "dir", 0o2555))))
 
+    def test_timestamp_not_source_date_epoch(self):
+        self.assertEqual(ci.check_times([ci.Entry("/a", "file", mtime=5)], 5), [])
+        self.assertTrue(ci.check_times([ci.Entry("/a", "file", mtime=6)], 5))
+
     def test_file_capability_attribute(self):
         self.assertTrue(ci.check_xattrs(with_(clean(), ci.Entry("/usr/bin/ping", "file", 0o555, xattrs=["security.capability"]))))
 

@@ -171,9 +171,9 @@ python3 -I "$repo/scripts/image_assemble.py" --root "$root" --kernel "$kernel_di
 python3 -I "$repo/scripts/image_inventory.py" --meta "$meta" --store "$store" --kernel-dir "$kernel_dir" \
   --commit "$COMMIT" --source-date-epoch "$SOURCE_DATE_EPOCH" --output "$out/$name.inventory.json"
 cp "$meta/origins.json" "$out/$name.origins.json"
-if ! python3 -I "$repo/scripts/check_image.py" --image "$out/$name.raw" --meta "$meta" --commit "$COMMIT"; then
+if ! python3 -I "$repo/scripts/check_image.py" --image "$out/$name.raw" --meta "$meta" --commit "$COMMIT" --source-date-epoch "$SOURCE_DATE_EPOCH"; then
   # A starting point for images/executables.toml, to review by hand.
-  python3 -I "$repo/scripts/check_image.py" --image "$out/$name.raw" --meta "$meta" --commit "$COMMIT" \
+  python3 -I "$repo/scripts/check_image.py" --image "$out/$name.raw" --meta "$meta" --commit "$COMMIT" --source-date-epoch "$SOURCE_DATE_EPOCH" \
     --propose-executables > "$out/executables.proposed.toml" || true
   exit 1
 fi

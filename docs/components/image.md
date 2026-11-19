@@ -130,18 +130,18 @@ qemu x86_64 target it is, on one line:
 init=/usr/lib/ninelives/init console=ttyS0,115200 ro rootfstype=erofs root=/dev/dm-0
 dm-mod.waitfor=/dev/vda2,/dev/vda3
 dm-mod.create="root,,,ro,0 <sectors> verity 1 /dev/vda2 /dev/vda3 4096 4096 <blocks> 0 sha256 <roothash> <salt> 1 panic_on_corruption"
-panic=10 oops=panic page_alloc.shuffle=1
+panic=10 oops=panic page_alloc.shuffle=1 pti=on
 sysctl.kernel.kptr_restrict=2 sysctl.kernel.yama.ptrace_scope=3
-sysctl.net.core.bpf_jit_harden=2 sysctl.vm.memfd_noexec=2
-sysctl.fs.suid_dumpable=0 sysctl.fs.protected_symlinks=1
-sysctl.fs.protected_hardlinks=1 sysctl.fs.protected_fifos=2
-sysctl.fs.protected_regular=2
-pti=on sysctl.kernel.perf_event_paranoid=2
+sysctl.net.core.bpf_jit_enable=1 sysctl.net.core.bpf_jit_harden=2
+sysctl.vm.memfd_noexec=2 sysctl.fs.suid_dumpable=0
+sysctl.fs.protected_symlinks=1 sysctl.fs.protected_hardlinks=1
+sysctl.fs.protected_fifos=2 sysctl.fs.protected_regular=2
+sysctl.kernel.perf_event_paranoid=2
 ```
 
-The words from `panic=10` on are the kernel policy's, read from the kernel's
-`policy.toml` ([kernel design](kernel.md#the-command-line)); the last line is
-x86_64 only. aarch64 uses `console=ttyAMA0` and drops that line. The build
+The words from `panic=10` on are the kernel policy's, in the order of the
+kernel's `policy.toml` ([kernel design](kernel.md#the-command-line)); `pti=on`
+is x86_64 only. aarch64 uses `console=ttyAMA0` and drops `pti=on`. The build
 fails if the line is missing a policy word or holds a word the kernel design
 forbids (`mitigations=off`, `lockdown=`, `lsm=` and the rest of its list).
 Everything the init design puts on the command line (`init=`, `panic=`,
@@ -450,6 +450,14 @@ Each check fails the build on any violation. Each allowlist lives in
 | Actions hygiene | The workflow checks in [Actions hygiene](#actions-hygiene). | S21 |
 | Size budget | Each output is within `images/budget.toml`: the root partition, the UKI, the ESP's contents and the raw image. The budget is set from the first M0 build with a margin, the build warns at 90%, and raising it is a reviewed change that says why. Every pull request reports the size change. | S1 |
 
+The first slice runs every check above except these, which are tracked in
+[#97](https://github.com/GetFelix/ninelives/issues/97) (kernel config and
+`init check`, which the kernel job and the init's config own) and
+[#101](https://github.com/GetFelix/ninelives/issues/101) (the pin-only
+pull request check): Actions hygiene stays with
+[#65](https://github.com/GetFelix/ninelives/issues/65). The size budget in
+`images/budget.toml` was set from the first build plus 20%.
+
 Each check has a test that seeds one violation into a small fixture image and
 watches the check fail ([Test plan](#test-plan)).
 
@@ -756,7 +764,6 @@ first published image.
 
 | Question | Proposal | Decides | Needed by |
 |---|---|---|---|
-| erofs or squashfs for the root, and whether that choice needs a decision record | erofs; a short record if reviewers see it as an image format choice | Review of this page | M0 (#1) |
 | Do `PARTLABEL=` or `PARTUUID=` and `dm-mod.waitfor` work in `dm-mod.create` on the pinned kernel? | Verify in #3; if not, fall back to `/dev` paths per target, which some clouds do not keep stable | Kernel (#3) | M0 |
 | Can the pinned systemd stub be made to load no addon, credential or system extension from the ESP, and ignore firmware load options? | Verify in #9; if not, a minimal stub that loads only the UKI's own sections | #9 | M3 |
 | PID 1 checks `/proc/cmdline` against the expected words before M3 | Add it to the init design's boot steps | Init design | M1 |
@@ -769,5 +776,4 @@ first published image.
 | GitHub-hosted runners cannot be pinned to an exact image build, which S21 asks for | Record the version in provenance and accept it with the bootstrap container; the independent rebuild checks the result | NineLives maintainers | First published image |
 | Who runs the independent rebuild (T39) | The maintainer, on their own hardware, before signing targets, fetching every input from the pins; a second rebuilder later | Threat model | First published image |
 | aarch64: native arm runners or cross-compiled on x86_64, given both builds must match | Native runners for both builds where available; one method per architecture, never mixed | #1 | M0 |
-| Size budgets | Set from the first M0 build plus 20% | #1 | M0 |
 | Felix's AGPL source for S12: `components.toml` pins no source archive | Add a source archive and its SHA-256 per component | NineLives maintainers | First published image |

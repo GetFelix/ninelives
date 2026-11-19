@@ -40,7 +40,8 @@ A design in `docs/components/<name>.md` has these sections, in this order:
   floods output, the disk fills, power is cut, the component itself
   panics), what happens and why that is acceptable.
 - **Security.** What it runs as, what it can reach, what it trusts and why,
-  and which [requirements](docs/requirements.md) it meets.
+  which [requirements](docs/requirements.md) it meets, and which threats in
+  the [threat model](docs/threat-model.md) it answers.
 - **Test plan.** Which test proves which invariant, and which failure mode
   is exercised where (unit, qemu, fault injection).
 - **Open questions.** Anything not decided, with who decides and by when.

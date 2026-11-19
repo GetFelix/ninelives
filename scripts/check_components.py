@@ -113,12 +113,18 @@ def check_against_base(path: pathlib.Path, base: pathlib.Path) -> list[str]:
         data = tomllib.loads(p.read_text(encoding="utf-8"))
         return {c.get("name"): c.get("signature", {}).get("kind") for c in data.get("component", [])}
 
+    # A signed component may not lose its signature, be renamed or be removed
+    # without the check noticing; removing one needs this script changed too.
     old, new = kinds(base), kinds(path)
-    return [
-        f"component {n!r}: signature dropped from sigstore to {new[n]!r}"
-        for n in old
-        if old[n] == "sigstore" and n in new and new[n] != "sigstore"
-    ]
+    errors = []
+    for n, kind in old.items():
+        if kind != "sigstore":
+            continue
+        if n not in new:
+            errors.append(f"component {n!r}: signed component removed or renamed")
+        elif new[n] != "sigstore":
+            errors.append(f"component {n!r}: signature dropped from sigstore to {new[n]!r}")
+    return errors
 
 
 def main() -> int:

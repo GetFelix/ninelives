@@ -38,7 +38,7 @@ reviewer is checking a hash the upstream vouched for, not one copied from a
 web page. For a component with no signature (Felix today) the hash is
 trusted because a reviewer checked it when it was pinned, and nothing more.
 The manifest says so for that component, with the issue that fixes it, and
-CI refuses a change that drops a component's signature.
+CI refuses a change that drops, renames or removes a signed component.
 
 The manifest changes only through a reviewed pull request, and the CI boot
 and integration tests must pass on it.

@@ -123,13 +123,20 @@ class Policy:
 
 
 def param_key(word: str) -> str:
-    """A parameter's name as the kernel compares it: dashes and underscores alike."""
-    return word.split("=", 1)[0].replace("-", "_")
+    """A parameter's name as the kernel compares it: dashes and underscores alike.
+
+    sysctl.* is the exception: the kernel maps it to a /proc/sys path as written.
+    """
+    return _fold(word.split("=", 1)[0])
+
+
+def _fold(key: str) -> str:
+    return key if key.startswith("sysctl.") else key.replace("-", "_")
 
 
 def normalize_word(word: str) -> str:
     key, sep, value = word.partition("=")
-    return key.replace("-", "_") + sep + value
+    return _fold(key) + sep + value
 
 
 def load_policy(path: pathlib.Path, arch: str) -> Policy:

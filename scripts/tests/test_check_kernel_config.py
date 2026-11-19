@@ -260,11 +260,15 @@ class Cmdline(unittest.TestCase):
         # The kernel reads dm_mod.x as dm-mod.x, so a dashed spelling can neither
         # slip past a required key nor be refused where the underscore is allowed.
         self.assertEqual(self.errors(self.GOOD + " dm_mod.waitfor=/dev/vda2"), [])
-        self.assertIn("cmdline: 'sysctl.kernel.kptr-restrict=0' conflicts with required "
-                      "'sysctl.kernel.kptr_restrict=2'",
-                      self.errors(self.GOOD + " sysctl.kernel.kptr-restrict=0"))
-        self.assertEqual(self.errors(self.GOOD.replace("sysctl.kernel.kptr_restrict=2",
-                                                       "sysctl.kernel.kptr-restrict=2")), [])
+        self.assertNotEqual(self.errors(self.GOOD + " sysctl.kernel.kptr-restrict=0"), [])
+
+    def test_sysctl_keys_are_compared_exactly(self):
+        # The kernel maps sysctl.* to a /proc/sys path as written, so the dashed
+        # spelling sets nothing and must not satisfy the required one.
+        errors = self.errors(self.GOOD.replace("sysctl.kernel.kptr_restrict=2",
+                                               "sysctl.kernel.kptr-restrict=2"))
+        self.assertNotEqual(errors, [])
+        self.assertTrue(any("sysctl.kernel.kptr_restrict=2" in e for e in errors), errors)
 
     def test_repository_policy_takes_an_image_line(self):
         for arch in ckc.SRCARCH:

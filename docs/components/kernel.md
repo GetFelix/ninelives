@@ -683,8 +683,8 @@ Each is checked by a test in the [Test plan](#test-plan).
   (`IKCONFIG_PROC`, kept for this test; the config is public anyway) equals
   `kernel/resolved/<target>-<arch>.config`.
 - **K5.** `/proc/cmdline` contains every word `policy.toml` requires for
-  the architecture and no word outside `policy.toml`'s allowlist. That it equals the image's line
-  byte for byte is the image design's check.
+  the architecture and no word outside `policy.toml`'s allowlist. That it
+  equals the image's line byte for byte is the image design's check.
 - **K6.** Every sysctl in `policy.toml` reads back its value, and after boot
   every write to any file under `/proc/sys` fails with `EROFS`, from every
   process including those holding `CAP_NET_ADMIN`.
@@ -701,9 +701,9 @@ Each is checked by a test in the [Test plan](#test-plan).
   `RTM_NEWQDISC`, `RTM_NEWTFILTER` and `RTM_NEWACTION` from a process
   holding `CAP_NET_ADMIN` are refused.
 - **K11.** Nothing turns a CPU mitigation off: no word outside the
-  allowlist in the command line, every `MITIGATION_*` in `policy.toml` set, and on cloud
-  targets no file in `/sys/devices/system/cpu/vulnerabilities` starts with
-  `Vulnerable` (S17).
+  allowlist in the command line, every `MITIGATION_*` in `policy.toml` set,
+  and on cloud targets no file in `/sys/devices/system/cpu/vulnerabilities`
+  starts with `Vulnerable` (S17).
 - **K12.** KASLR is active: two boots of the same image print different
   kernel offsets, and the console never shows that KASLR was disabled.
 - **K13.** The kernel never starts a user program on its own: the static

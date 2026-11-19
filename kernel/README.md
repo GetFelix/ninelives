@@ -131,8 +131,8 @@ image.
 
 The image design plans to meet this from the first published image (S12)
 by publishing the tarball, the config and these scripts next to each
-image, from the same place, and by shipping the licence text in the image. A link to kernel.org alone is not enough,
-because kernel.org may drop the release. Firmware built into the kernel
+image, from the same place, and by shipping the licence text in the image.
+A link to kernel.org alone is not enough, because kernel.org may drop the release. Firmware built into the kernel
 with `CONFIG_EXTRA_FIRMWARE` (the x86_64 microcode, once the image build
 adds it) is not GPL code: it is redistributed under its own licence, which
 has to allow that, and is published with the rest.

@@ -87,6 +87,11 @@ if [[ ${NL_IMAGE_PHASE:-fetch} == fetch ]]; then
 fi
 
 # ---- build phase: no network from here on --------------------------------
+# A build step that reaches the network means the namespace is not doing its job (I2).
+if python3 -I -c 'import socket,sys; socket.create_connection(("1.1.1.1", 53), timeout=3)' 2>/dev/null; then
+  echo "the network is reachable in the build phase" >&2
+  exit 1
+fi
 snapshot=$(toml "$repo/images/tools.toml" debian snapshot)
 release_root=$(toml "$repo/images/tools.toml" root release)
 mirror=$store/mirror

@@ -20,7 +20,7 @@ it on and says which requirement needs it.
 It defines the kernel every NineLives image boots: one pinned upstream
 long-term release, built with Clang from a config that starts from
 `allnoconfig` and adds only what a listed requirement, the init, Felix or a
-target's hardware needs. It fixes the kernel command line and the boot-time
+target's hardware needs. It sets the command line words and boot-time
 sysctls, so the kernel is locked down in confidentiality mode, cannot load
 code, offers no unprivileged namespaces, BPF, io_uring or userfaultfd, and
 has no packet path a process can rewrite except the nftables ruleset loaded
@@ -47,27 +47,35 @@ test reads the effective state back from the running kernel.
   for one target and architecture boots the same bytes and the same command
   line. A development image differs in what the root contains, not in the
   kernel.
-- **Not the verified boot design.** Signing the kernel, the command line and
-  the dm-verity root is M3 ([#9](https://github.com/GetFelix/ninelives/issues/9));
-  this page lists only what the kernel must build in for it.
+- **Not the verified boot design.** The root boots through dm-verity from M0
+  ([image design](image.md#boot-without-an-initrd)); signing the kernel, the
+  command line and the root hash is M3
+  ([#9](https://github.com/GetFelix/ninelives/issues/9)). This page lists
+  only what the kernel must build in for both.
+- **Not the exact command line.** The image design owns it. This page lists
+  the parameters the kernel policy requires, and CI checks the image's
+  command line contains them (see [The command line](#the-command-line)).
 
 ## Interfaces
 
 ### The release and how it moves
 
 **The pinned line is 6.18**, at **6.18.64** (released 2026-11-17).
-kernel.org projects support for 6.18 until December 2028.
+kernel.org projects support for 6.18 until December 2028 (checked against
+[kernel.org's releases page](https://www.kernel.org/category/releases.html)
+on 2026-11-18).
 
-Why 6.18 and not 6.12, which has the same projected end of life and is the
-series Debian 13 ships:
+Why 6.18 and not 6.12, which has the same projected end of life (December
+2028, same page) and is the series Debian 13 ships:
 
-- Landlock ABI 7, which adds denial logging that the S6 profile work can
-  use; the ABI 6 scopes the init depends on (signal and abstract socket
-  scoping) are in both.
 - kCFI under its final name (`CONFIG_CFI`), FineIBT with the branch history
   variant, and the newer slab hardening, all in upstream's
   `hardening.config` fragment for this series.
 - A year of point releases already behind it, so it is not a fresh series.
+
+Landlock is not a reason: the ABI 6 scopes the init depends on (signal and
+abstract socket scoping) are in both, and ABI 7's addition, denial logging,
+goes through audit, which is off (see [Open questions](#open-questions)).
 
 The cost: N1 compares against Debian 13's stock 6.12 kernel, so a gap in
 the matrix can come from the version as well as the config. A cell that
@@ -126,11 +134,9 @@ kernel/
   resolved/
     qemu-x86_64.config        the full resolved .config, committed
     qemu-aarch64.config
-  cmdline/
-    qemu-x86_64               the exact command line, one per target
-    qemu-aarch64
-  policy.toml                 options that must be set or unset,
-                              expected sysctls, forbidden command line words
+  policy.toml                 options that must be set or unset, expected
+                              sysctls, required and forbidden command line
+                              words; a common table and one per architecture
   hardening-exceptions.toml   each kernel-hardening-checker finding we do
                               not fix, with the reason
 ```
@@ -146,11 +152,37 @@ CONFIG_SECURITY_LANDLOCK=y
 # CONFIG_MODULES is not set
 ```
 
-Many options a working system needs are hidden behind `CONFIG_EXPERT` and
-off in `allnoconfig` (`FUTEX`, `EPOLL`, `SIGNALFD`, `TIMERFD`, `EVENTFD`,
-`SHMEM`, `MEMBARRIER`, `RSEQ`, `ADVISE_SYSCALLS`, `POSIX_TIMERS`,
-`MULTIUSER`, `PRINTK`, `BUG`). `common.config` sets `CONFIG_EXPERT=y` and
-lists each one it needs, so these are explicit rather than inherited.
+`allnoconfig` turns off every option it can see, including many a working
+system needs that are hidden behind `CONFIG_EXPERT`. `common.config` sets
+`CONFIG_EXPERT=y` and lists each one it needs, so these are explicit rather
+than inherited. The EXPERT options, and who needs each:
+
+| On | Needed by |
+|---|---|
+| `MULTIUSER`, `POSIX_TIMERS`, `PRINTK`, `BUG` | everything: uids, `timer_create`, a kernel log, `BUG()` that stops instead of running on |
+| `FUTEX`, `EPOLL`, `EVENTFD`, `SIGNALFD`, `TIMERFD` | Felix and felixd (tokio's reactor, Rust's locks), the init's loop |
+| `FILE_LOCKING` | Felix: `flock` on each log directory (`felix-storage`'s `disk_log/dir_lock.rs`) |
+| `SHMEM` (with `TMPFS`, `MEMFD_CREATE`) | `/run`, `/tmp`, memfds |
+| `ADVISE_SYSCALLS` | `madvise` and `fadvise`, used by the Rust allocators and Felix's segment reads |
+| `MEMBARRIER`, `RSEQ` | glibc registers rseq for every thread; Rust's runtime and wasmtime use membarrier |
+
+| Off | Why |
+|---|---|
+| `UID16`, `SGETMASK_SYSCALL`, `SYSFS_SYSCALL`, `FHANDLE`, `AIO`, `IO_URING`, `KALLSYMS`, `CACHESTAT_SYSCALL`, `PCSPKR_PLATFORM` | Unused interfaces; most are in the tables below |
+| `ELF_CORE` | Goes with `COREDUMP=n` |
+
+The visible non-EXPERT options `allnoconfig` turns off are handled the same
+way: what Felix, felixd and the init need is listed with its user
+(`INOTIFY_USER` only if a service watches files, for example). This table
+is a reading of the code, not proof. The proof is a test: the image design
+records a syscall trace of every service from a qemu boot and checks each
+seccomp profile against it ([image design](image.md#service-profiles),
+[init design](init.md#the-config)). This page adds two uses of
+that trace. Any traced call that returned `ENOSYS`, or `EINVAL` for an
+unknown flag, fails the build, because it names an option we compiled out
+that something uses. And Felix's own test binaries (`felix-storage`,
+`felix-broker` and the QUIC tests, built for the image's target) run on the
+built kernel in qemu, which reaches calls a five-minute service run may not.
 
 **The compiler is Clang** (`LLVM=1`), from the pinned Debian 13 snapshot
 ([0006](../decisions/0006-debian-base.md)). kCFI and arm64's shadow call
@@ -188,9 +220,12 @@ every point-release bump:
 4. **kernel-hardening-checker passes** on the resolved config, the command
    line and the expected sysctls, with every finding either fixed or listed
    in `hardening-exceptions.toml` (S2). Its version is pinned (S21).
-5. **The command line is exact.** The image build takes the command line
-   only from `kernel/cmdline/<target>`. CI also rejects any word that turns
-   a protection off: `mitigations=off` or any per-mitigation `=off`,
+5. **The command line carries the kernel policy.** The image design owns
+   the exact command line and checks it byte for byte. This check reads
+   that line from the built UKI and fails unless it contains every word
+   `policy.toml` requires for the architecture (see
+   [The command line](#the-command-line)). It also rejects any word that
+   turns a protection off: `mitigations=off` or any per-mitigation `=off`,
    `nokaslr`, `nopti`, `lsm=`, `security=`, `lockdown=`, `init_on_alloc=0`,
    `init_on_free=0`, `hardened_usercopy=off`, `slab_merge`, `iommu=pt`,
    `module_blacklist`, and a `sysctl.` word that differs from `policy.toml`.
@@ -209,7 +244,7 @@ are from the [threat model](../threat-model.md) and
 | `CONFIG_KEXEC=n`, `CONFIG_KEXEC_FILE=n`, `CONFIG_CRASH_DUMP=n`, `CONFIG_KEXEC_HANDOVER=n` | kexec replaces the running kernel with any image root supplies, which undoes verified boot from inside. The cost is no kdump (see S11 under [Open questions](#open-questions)). |
 | `CONFIG_HIBERNATION=n`, `CONFIG_SUSPEND=n` | Hibernation writes all memory, credentials included, to disk and reads it back as trusted kernel state. The init has no suspend. |
 | `CONFIG_BINFMT_MISC=n`, `CONFIG_BINFMT_SCRIPT=n` | No interpreter registration and no `#!` scripts. There is no shell or interpreter in the image (S1), so a script on any mount cannot run. |
-| `CONFIG_STATIC_USERMODEHELPER=y` with an empty path, `CONFIG_UEVENT_HELPER=n` | The kernel never starts a user program on its own (core dump pipes, `request-key`, hotplug, `poweroff_cmd`). Each of those helpers would run as full root. An orderly power-off request from the kernel falls back to a forced one, which the init's shutdown does not rely on. |
+| `CONFIG_STATIC_USERMODEHELPER=y` with an empty path, `CONFIG_UEVENT_HELPER=n` | The kernel never starts a user program on its own (core dump pipes, `request-key`, hotplug, `poweroff_cmd`). Each of those helpers would run as full root. One consequence: with an empty helper path, `call_usermodehelper` returns 0 without running anything, so `orderly_poweroff` thinks it succeeded and never falls back to a forced power-off. A host shutdown request that arrives that way (Hyper-V's `hv_utils`, Xen's shutdown watch) does nothing. The M5 targets on those hypervisors need another path. The power button is not affected: on both architectures it is an ACPI button that reports `KEY_POWER` to PID 1 as an input event, with no helper involved. |
 | `CONFIG_COREDUMP=n` | See [Core dumps](#core-dumps). |
 
 #### Lockdown in confidentiality mode (T16, T22, T47)
@@ -239,7 +274,7 @@ change.
 | `CONFIG_IO_URING=n` | io_uring performs file and network operations that seccomp never sees, and has been one of the largest sources of local privilege escalation. S6 and [0007](../decisions/0007-kernel-from-upstream-source.md). |
 | `CONFIG_BPF_SYSCALL=n` | No `bpf(2)` at all, so no unprivileged eBPF, no verifier to attack, no BPF LSM, no XDP. `kernel.unprivileged_bpf_disabled` does not exist and is not needed. Classic BPF stays: seccomp filters and socket filters are built on it. |
 | `CONFIG_BPF_JIT=y`, `CONFIG_BPF_JIT_ALWAYS_ON=y`, `net.core.bpf_jit_harden=2` | Classic BPF programs (seccomp filters, socket filters any process can attach) are JIT-compiled with constant blinding, and the interpreter, a known speculative execution gadget, is not built. |
-| `CONFIG_USER_NS=n` | Unprivileged user namespaces hand any process `CAP_NET_ADMIN` and `CAP_SYS_ADMIN` over objects it creates, which has exposed nf_tables, mount and filesystem code to unprivileged users for years. Compiled out, nobody can create one. |
+| `CONFIG_USER_NS=n` | Unprivileged user namespaces hand any process `CAP_NET_ADMIN` and `CAP_SYS_ADMIN` over objects it creates, which has exposed nf_tables, mount and filesystem code to unprivileged users for years. Compiled out, nobody can create one. Ubuntu and Debian restricted unprivileged user namespaces for the same reason: they were the first step of many privilege-escalation chains. |
 | No network, IPC, UTS or time namespaces (`NET_NS`, `IPC_NS`, `UTS_NS`, `TIME_NS` off) | Nothing in the image uses them: the init isolates services with uids, cgroups, Landlock and seccomp ([init design](init.md#what-it-does-not-do)). |
 | `CONFIG_PID_NS=y`, kept for one sysctl | `vm.memfd_noexec` (below) is built only with PID namespaces. Creating one needs `CAP_SYS_ADMIN`, which no process holds after the drop, and with no user namespaces there is no way to get it. Mount and cgroup namespaces cannot be compiled out and need the same capability. |
 | `CONFIG_USERFAULTFD=n` | userfaultfd lets a process stall the kernel at a chosen page fault, which turns narrow race conditions into reliable exploits. Nothing in the image uses it. Stronger than `vm.unprivileged_userfaultfd=0`. |
@@ -258,6 +293,7 @@ On aarch64, `CONFIG_COMPAT=n`.
 | Setting | Why |
 |---|---|
 | `CONFIG_SECURITY_YAMA=y`, `kernel.yama.ptrace_scope=3` | No process can `ptrace` another, whatever its uid or capabilities, and the value can never be lowered. Yama's check covers every attach-mode access, so `process_vm_readv`, `process_vm_writev`, opening `/proc/<pid>/mem` and `pidfd_getfd` are refused too. Debugging a live process needs a test image with a different command line, which is a different image. |
+| `CONFIG_PROC_MEM_NO_FORCE=y` | A process's own `/proc/self/mem` writes obey page permissions, so it cannot patch its read-only code pages (the `FOLL_FORCE` override). That would bypass `noexec` and W^X the same way an executable memfd would. |
 | `fs.suid_dumpable=0` | A process that changed credentials stays non-dumpable, so its `/proc` files stay root-owned. There are no setuid binaries (S24); this covers the launchers' uid change. |
 | `fs.protected_symlinks=1`, `fs.protected_hardlinks=1`, `fs.protected_fifos=2`, `fs.protected_regular=2` | A service cannot plant a link or FIFO in a shared directory (`/run`, `/tmp`) that another uid then follows or opens. |
 | `CONFIG_SECCOMP=y`, `CONFIG_SECCOMP_FILTER=y` | Each service's filter (S6). |
@@ -412,20 +448,23 @@ client sends before it has an address, and opening one needs `CAP_NET_RAW`.
   guest's view of sibling vCPUs says little about the host's cores, so
   `nosmt` in a guest buys less than it costs. Bare metal (M5) reopens this.
 - **Microcode** (x86_64): `CONFIG_MICROCODE` with
-  `CONFIG_MICROCODE_LATE_LOADING=n`. Microcode loads only early, from an
-  uncompressed cpio built at image time from Debian's `intel-microcode` and
-  `amd64-microcode` packages (pinned like every package) and passed as the
-  initrd, so it is in place before the kernel starts PID 1.
-  `CONFIG_BLK_DEV_INITRD=y` is on for that alone, with no decompressors; the
-  cpio has no `/init`, so the kernel goes on to the real root. From M3 it is
-  the signed kernel image's initrd section. In a VM the hypervisor owns
-  microcode and the guest's load does nothing; the cloud provider's
-  microcode is in what we trust. aarch64 has no OS-loaded microcode.
+  `CONFIG_MICROCODE_LATE_LOADING=n`. There is no initrd
+  (`CONFIG_BLK_DEV_INITRD=n`), so microcode is built into the kernel with
+  `CONFIG_EXTRA_FIRMWARE`, listing the files from Debian's
+  `intel-microcode` and `amd64-microcode` packages (pinned like every
+  package). With no initrd, the early loader falls back to
+  built-in firmware, so it still loads before the kernel starts PID 1, and
+  from M3 the UKI's signature covers it. The cost: a microcode update is a
+  kernel rebuild. That is the same pull request, review and tests as a point
+  release, and fits S9's 72 hours. In a VM the hypervisor owns microcode and
+  the guest's load does nothing; the cloud provider's microcode is in what
+  we trust. aarch64 has no OS-loaded microcode.
 
 ### Core dumps
 
 `CONFIG_COREDUMP=n`. No process on the machine can produce a core, and
-`kernel.core_pattern` does not exist. That is a stronger form of what S24
+`/proc/sys/kernel/core_pattern` does not exist: the sysctl is registered by
+the core dump code, so a write to it fails with `ENOENT`. That is a stronger form of what S24
 asks for: the risk is a `core_pattern` that names a pipe (`|`), or in recent
 kernels a socket (`@`), whose handler the kernel runs or trusts as root on the
 next crash. With core dumps compiled out there is no pattern to point
@@ -435,19 +474,24 @@ If a later design (S11) wants service cores, `COREDUMP` comes back with the
 pattern fixed on the command line as
 `sysctl.kernel.core_pattern=/usr/lib/ninelives/no-core`: a path on the
 read-only root, so every write fails, never `|` or `@`, and CI rejects any
-other value. S24's text, and the init design's step that writes
-`core_pattern`, need to follow whichever is chosen.
+other value. Either way the init does not write `core_pattern`: there is
+no file to write now, and the command line would set it then. S24's text
+needs to follow whichever is chosen.
 
 ### The command line
 
-The whole line for qemu x86_64 (aarch64 differs only in the console):
+The image design owns the exact line, including `init=`, the console, the
+root and the dm-verity table ([image design](image.md#boot-without-an-initrd)).
+This page owns the words the kernel policy requires, kept in `policy.toml`
+per architecture. CI check 5 fails if the image's line is missing any of
+them.
+
+Both architectures:
 
 ```
-init=<the init's path> ro console=ttyS0,115200
-panic=10 oops=panic pti=on page_alloc.shuffle=1
+ro panic=10 oops=panic page_alloc.shuffle=1
 sysctl.kernel.kptr_restrict=2
 sysctl.kernel.yama.ptrace_scope=3
-sysctl.kernel.perf_event_paranoid=2
 sysctl.net.core.bpf_jit_harden=2
 sysctl.vm.memfd_noexec=2
 sysctl.fs.suid_dumpable=0
@@ -457,17 +501,28 @@ sysctl.fs.protected_fifos=2
 sysctl.fs.protected_regular=2
 ```
 
-plus the root and, on qemu in M0 and M1, `ip=` (the init design), whose
-values come from the image design. On aarch64 the console is
-`ttyAMA0,115200` and `pti=on` is absent (aarch64's equivalent,
-`UNMAP_KERNEL_AT_EL0`, is set in config).
+x86_64 adds:
+
+```
+pti=on
+sysctl.kernel.perf_event_paranoid=2
+```
+
+aarch64 adds nothing. `pti=on` has no meaning there (its equivalent,
+`UNMAP_KERNEL_AT_EL0`, is set in config), and with `PERF_EVENTS=n`
+`kernel.perf_event_paranoid` does not exist, so setting it would only log
+an unknown sysctl. `policy.toml`'s expected sysctls are split the same way.
+
+The root is erofs on dm-verity, set up by the kernel from `dm-mod.create`.
+That parameter takes each device as `major:minor` or a `/dev` path, not
+`PARTUUID=`, so the image's line names the devices that way.
 
 Where a setting has a config default, the config sets it and the command
 line does not repeat it: lockdown, `init_on_alloc`, `init_on_free`,
 `dmesg_restrict`, `slab_nomerge`, hardened usercopy, IOMMU strict mode,
 `mmap_min_addr`. The rest are `sysctl.` words, which the kernel applies
 before it starts PID 1, so no process ever sees the defaults and the init
-writes no sysctl. From M3 the command line is inside the signed kernel
+needs to write no sysctl. From M3 the command line is inside the signed kernel
 image (S13); before M3 it is as trusted as the kernel file itself (T46).
 
 `panic_on_warn` is deliberately not set. A `WARN` is a kernel bug report,
@@ -501,9 +556,9 @@ From the [init design](init.md):
 | `clone3` with `CLONE_INTO_CGROUP` and `CLONE_PARENT`, `waitid`, pidfds | core, always built |
 | Landlock ABI 6 or later, seccomp filters, `no_new_privs`, securebits, ambient capabilities | `SECURITY_LANDLOCK`, `SECCOMP_FILTER`, `MULTIUSER`; the rest is core |
 | `signalfd`, `epoll`, `timerfd`, `eventfd` | `SIGNALFD`, `EPOLL`, `TIMERFD`, `EVENTFD` (each behind `EXPERT`, so listed) |
-| Project quotas on the data partition | `QUOTA`, `QUOTACTL`, ext4 |
+| Project quotas on the data partition (`prjquota`) | `QUOTA`, `QUOTACTL`, `QFMT_V2` (the format of ext4's internal quota files; without it the `prjquota` mount fails), ext4 |
 | `/proc` with `hidepid`, sysfs, devtmpfs, tmpfs for `/run`, cgroup2 | `PROC_FS`, `PROC_SYSCTL`, `SYSFS`, `DEVTMPFS`, `TMPFS` (`SHMEM`); `DEVTMPFS_MOUNT=n` so the init mounts `/dev` with its own options |
-| The power button as an input device reporting `KEY_POWER` | `INPUT`, `INPUT_EVDEV`; x86_64 `ACPI_BUTTON`; aarch64 qemu `KEYBOARD_GPIO` with `GPIO_PL061` |
+| The power button as an input device reporting `KEY_POWER` | `INPUT`, `INPUT_EVDEV`, `ACPI_BUTTON` on both architectures. On aarch64 the button is an ACPI Generic Event Device, which the ACPI core handles. |
 | `/dev/watchdog` | `WATCHDOG`, `I6300ESB_WDT`, `SOFT_WATCHDOG` as the fallback, and `WATCHDOG_NOWAYOUT=y`, so no process holding the device can disarm it |
 | `reboot(2)` with `LINUX_REBOOT_CMD_CAD_OFF`, `RB_AUTOBOOT`, `RB_POWER_OFF` | core |
 | `/sys/kernel/security` for the tests below | `SECURITYFS` |
@@ -515,7 +570,7 @@ booting through UEFI.
 
 | Need | x86_64 | aarch64 |
 |---|---|---|
-| Guest support | `ACPI`, `HYPERVISOR_GUEST`, `PARAVIRT`, `KVM_GUEST` (kvm-clock) | built into the architecture; the device tree describes the machine |
+| Guest support | `ACPI`, `HYPERVISOR_GUEST`, `PARAVIRT`, `KVM_GUEST` (kvm-clock) | `ACPI`, `ACPI_SPCR_TABLE`. Booted through UEFI, `virt` describes the machine with ACPI tables, not a device tree, as arm64 clouds do. To verify in [#3](https://github.com/GetFelix/ninelives/issues/3): the kernel picks ACPI and the power button reaches PID 1. |
 | Firmware boot | `EFI`, `EFI_STUB` | same |
 | Console | `SERIAL_8250`, `SERIAL_8250_CONSOLE`; `VT=n`, no framebuffer | `SERIAL_AMBA_PL011`, `SERIAL_AMBA_PL011_CONSOLE` |
 | Bus | `PCI`, `VIRTIO_PCI` | `PCI`, `PCI_HOST_GENERIC`, `VIRTIO_PCI` |
@@ -525,15 +580,31 @@ booting through UEFI.
 | Clock | `RTC_DRV_CMOS`; `PTP_1588_CLOCK_KVM`, so chrony can use the hypervisor's clock (S15) | `RTC_DRV_PL031`; `PTP_1588_CLOCK_KVM` |
 | Power button, watchdog | as in the table above | as above; `i6300esb` is a PCI device and works on `virt` too |
 
-**Filesystems:** ext4 with `QUOTA` (the data partition, and the root until
-the image design settles its format), tmpfs, proc, sysfs, devtmpfs, cgroup2,
-securityfs. Off: every other disk filesystem, FUSE, overlayfs, NFS, CIFS,
-9p, squashfs, and vfat (the kernel never mounts the EFI partition before
-M3). The root's format is [#1](https://github.com/GetFelix/ninelives/issues/1)'s
-choice; if it is erofs, that one is added. M3 adds `BLK_DEV_DM`,
-`DM_VERITY` and `DM_INIT` (so dm-verity is set up from the signed command
-line with no initramfs logic), and for S16, `DM_CRYPT` and `DM_INTEGRITY`
-or authenticated encryption.
+**The root, from M0.** The image design boots an erofs root on dm-verity,
+set up by the kernel itself with no initrd
+([image design](image.md#boot-without-an-initrd)). So `common.config` has:
+
+| Setting | Why |
+|---|---|
+| `BLK_DEV_DM`, `DM_VERITY`, `DM_INIT` | dm-verity, created from `dm-mod.create` on the command line before the root is mounted |
+| `CRYPTO_SHA256` | The verity hash |
+| `DM_VERITY_FEC=n`, `DM_VERITY_VERIFY_ROOTHASH_SIG=n` | No error correction (a bad block panics, it is not repaired), and the root hash is covered by the UKI's signature, not a kernel keyring |
+| `EROFS_FS` | The root |
+| `EROFS_FS_ZIP=n`, and so no LZ4, LZMA, DEFLATE or zstd decompressor | The root is uncompressed. Every erofs CVE so far has been in the compressed-data paths, and a decompressor is a parser for attacker-shaped bytes if verity is ever bypassed. The cost is a larger root partition, which the image design budgets. |
+| `EROFS_FS_XATTR=n`, `EROFS_FS_POSIX_ACL=n` | The image writes no extended attributes |
+| `BLK_DEV_INITRD=n` | No initrd at all; microcode is built in (see [CPU flaws and microcode](#cpu-flaws-and-microcode-t56-t47-s17)) |
+
+What happens when verity finds a bad block is the image design's call. The
+table it uses panics, and `panic=10` reboots into the same corrupted root.
+ChromeOS avoids that loop by marking the kernel slot bad on verity
+corruption so the firmware falls back to the other slot; the A/B layout in
+the image design is where that belongs.
+
+**Other filesystems:** ext4 with `QUOTA` and `QFMT_V2` (the data
+partition), tmpfs, proc, sysfs, devtmpfs, cgroup2, securityfs. Off: every
+other disk filesystem, FUSE, overlayfs, NFS, CIFS, 9p, squashfs, and vfat
+(the kernel never mounts the EFI partition). M3 adds, for S16, `DM_CRYPT`
+and `DM_INTEGRITY` or authenticated encryption.
 
 **Off for every M0 to M2 target:** USB, Thunderbolt, FireWire, sound, DRM,
 framebuffers, HID, wireless, Bluetooth, NVMe and SCSI (no target uses them
@@ -569,14 +640,18 @@ Each is checked by a test in the [Test plan](#test-plan).
 - **K4.** The booted kernel's config is the reviewed one: `/proc/config.gz`
   (`IKCONFIG_PROC`, kept for this test; the config is public anyway) equals
   `kernel/resolved/<target>-<arch>.config`.
-- **K5.** `/proc/cmdline` equals `kernel/cmdline/<target>` byte for byte.
+- **K5.** `/proc/cmdline` contains every word `policy.toml` requires for
+  the architecture and no forbidden word. That it equals the image's line
+  byte for byte is the image design's check.
 - **K6.** Every sysctl in `policy.toml` reads back its value, and after boot
   every write to any file under `/proc/sys` fails with `EROFS`, from every
   process including those holding `CAP_NET_ADMIN`.
 - **K7.** No process can ptrace, `process_vm_readv` or open
-  `/proc/<pid>/mem` of another; `kernel.yama.ptrace_scope` reads 3.
-- **K8.** The active LSMs are exactly capability, landlock, lockdown and
-  yama (`/sys/kernel/security/lsm`), and Landlock reports ABI 6 or later.
+  `/proc/<pid>/mem` of another; `kernel.yama.ptrace_scope` reads 3. A write
+  through `/proc/self/mem` to a read-only page of its own code fails.
+- **K8.** The set of active LSMs in `/sys/kernel/security/lsm` is exactly
+  {capability, landlock, lockdown, yama}, compared as a set since the order
+  changes no outcome, and Landlock reports ABI 6 or later.
 - **K9.** After the packet filter is loaded, no service can open a
   `NETLINK_NETFILTER` socket or change the ruleset: the ruleset's hash at
   the end of a run equals the hash right after loading.
@@ -627,8 +702,8 @@ every other boundary (B2, B3).
 maintainers' keys; upstream commits (T38, accepted); the pinned Clang.
 
 **What an unprivileged service can still reach** after this config and
-before its own seccomp filter narrows it: the system call core, VFS and
-ext4, tmpfs, procfs and sysfs reads (narrowed by `hidepid` and Landlock),
+before its own seccomp filter narrows it: the system call core, VFS,
+ext4, erofs reads, tmpfs, procfs and sysfs reads (narrowed by `hidepid` and Landlock),
 `AF_UNIX`, UDP and TCP over IPv4 and IPv6, `NETLINK_ROUTE` reads, classic
 BPF socket filters, futexes, memory management, signals, pidfds, epoll, and
 the cgroup files it owns. That is the residual surface. A holder of
@@ -701,15 +776,15 @@ qemu test captures the serial console.
 | Every fragment line is in the resolved config as written; every line has a reason; seeded with a misspelt option to see it fail | CI | fragment lines landed |
 | `policy.toml` must-set and must-unset lists, seeded with `CONFIG_IO_URING=y` to see it fail | CI | the removed surface stays removed |
 | kernel-hardening-checker on config, command line and sysctls | CI | K14 |
-| Command line equals the committed file and contains no forbidden word | CI | K5 (build side), K11 (command line) |
+| The UKI's command line contains every required word for its architecture and no forbidden word; seeded with one missing and one forbidden word to see it fail | CI | K5 (build side), K11 (command line) |
 | Read `/sys/kernel/security/lockdown`; try `/proc/kcore`, `/dev/mem`, `/dev/port`, `/sys/kernel/debug` | qemu | K1 |
 | `init_module`, `finit_module`, `kexec_load`, `kexec_file_load`; `/proc/modules` | qemu | K2 |
 | Each call in K3 from the permissive test service; `unshare` and `clone3` with each namespace flag | qemu | K3 |
 | `/proc/config.gz` against the resolved config | qemu | K4 |
-| `/proc/cmdline` against the committed file | qemu | K5 |
+| `/proc/cmdline` against `policy.toml` | qemu | K5 |
 | Read every `policy.toml` sysctl; write each from the inspector and from a test service holding `CAP_NET_ADMIN` | qemu | K6 |
-| `ptrace(PTRACE_ATTACH)`, `process_vm_readv` and a `/proc/<pid>/mem` write between two test processes of the same uid, and against PID 1 | qemu | K7 |
-| Read `/sys/kernel/security/lsm`; query the Landlock ABI | qemu | K8 |
+| `ptrace(PTRACE_ATTACH)`, `process_vm_readv` and a `/proc/<pid>/mem` write between two test processes of the same uid, and against PID 1; a `/proc/self/mem` write to the caller's own text | qemu | K7 |
+| Read `/sys/kernel/security/lsm` and compare as a set; query the Landlock ABI | qemu | K8 |
 | From each service's real profile, open `NETLINK_NETFILTER`; hash `nft list ruleset` (test image) after loading and at the end of the run | qemu | K9 |
 | From a test service with `CAP_NET_ADMIN`, send `RTM_NEWQDISC`, `RTM_NEWTFILTER`, `RTM_NEWACTION` | qemu | K10 |
 | Read `/sys/devices/system/cpu/vulnerabilities/*` | qemu (reported), cloud boot test (fails on `Vulnerable`, M5) | K11, S17 |
@@ -717,7 +792,10 @@ qemu test captures the serial console.
 | Read `/sys/kernel/security/`, `/proc/sys/kernel/core_pattern`; crash a test service and check nothing was run and no file was written | qemu | K13 |
 | Microcode revision against the pinned package | bare metal (M5) | K15 |
 | `UDP_SEGMENT` and `UDP_GRO` on the image's UDP sockets | qemu | N2 |
-| Every real service under its real profile for five minutes | qemu | nothing a service needs is compiled out |
+| Every real service under its real profile for five minutes; fail on any traced call that returned `ENOSYS` or `EINVAL` for an unknown flag | qemu | nothing a service needs is compiled out |
+| Felix's own test binaries (`felix-storage`, `felix-broker`, the QUIC tests) on the built kernel | qemu | nothing Felix needs is compiled out, including paths a service run does not reach |
+| Mount the data partition with `prjquota`; take and release a `flock` on a directory | qemu | `QFMT_V2`, `FILE_LOCKING` |
+| qemu `system_powerdown` on both architectures reaches PID 1 as `KEY_POWER` | qemu | the ACPI power button, with the empty helper path |
 | The durability tests from [0001](../decisions/0001-linux-kernel.md) on every line change | qemu, fault | Felix's storage assumptions still hold |
 | N1 matrix, and the diagnostic runs above when a cell fails | cloud (M2) | the cost of the hardening is known |
 
@@ -727,7 +805,8 @@ qemu test captures the serial console.
 |---|---|---|---|
 | **S11 asks for kernel crash dumps holding memory.** With kexec compiled out that is impossible on the machine. | S11 changes to "the kernel's panic log", kept through pstore (ramoops on qemu, EFI variables where the platform keeps them) and copied to the data partition by the init before the drop. Memory dumps are taken from the hypervisor in test environments only. | S11 design, requirement change | M1 |
 | Who reads the kernel log after boot, with `dmesg_restrict` and no `CAP_SYSLOG` anywhere | The init opens `/dev/kmsg` before the drop and hands its output to the S11 sinks like a service's | S11 design, init design | M1 |
-| Kernel audit (`CONFIG_AUDIT`) for Landlock and seccomp denials | Off in M0. If the S6 profile work needs denial records, it comes in with that design, in every image, not only test images. | S6 profile design | M1 |
+| Kernel audit (`CONFIG_AUDIT`) for Landlock and seccomp denials. Landlock ABI 7's denial logging needs it. | Off in M0, so 6.18 is not chosen for that logging. If the S6 profile work needs denial records, audit comes in with that design, in every image, not only test images. | S6 profile design | M1 |
+| Host shutdown requests that go through `orderly_poweroff` (Hyper-V `hv_utils`, Xen) do nothing with the empty helper path | Each M5 target on those hypervisors shows how its stop request arrives; if it is not the ACPI button, that target needs a decision (a helper is not the answer) | M5 design | M5 |
 | `KSTACK_ERASE` with Clang needs a newer compiler feature than Debian 13's Clang may have | Check the resolved config at the first build; if it does not land, list it as an exception until a pinned toolchain supports it | #3 | M0 |
 | Whether felixd asks for speculative store bypass and branch predictor isolation for its WebAssembly workloads | felixd's choice, filed upstream; the kernel leaves the `prctl` controls available | felixd, threat model | M2 |
 | `nosmt` on bare metal | Measured and decided with the first bare metal target | M5 design | M5 |
@@ -735,6 +814,4 @@ qemu test captures the serial console.
 | `panic_on_warn` | Off, as above; revisit with WARN counts from the M2 clusters | NineLives maintainers | M2 review of 0001 |
 | IPE (run only from the dm-verity root) and `CONFIG_KEYS` for S16's sealed key | Evaluate both with verified boot and encryption at rest | M3 designs ([#9](https://github.com/GetFelix/ninelives/issues/9), [#60](https://github.com/GetFelix/ninelives/issues/60)) | M3 |
 | `io.weight` does nothing until iocost is enabled on the device (`io.cost.qos` at the root) | The init enables it when it builds the cgroup tree, or drops `io_weight` from its config | Init design | M1 |
-| The root filesystem's format | ext4 or erofs; the kernel adds whichever is chosen | [#1](https://github.com/GetFelix/ninelives/issues/1) | M0 |
-| Power button on aarch64 clouds, which use ACPI rather than a device tree | `ACPI` and `ACPI_BUTTON` in that target's fragment | M5 design | M5 |
 | When to move to the next long-term line | By the rule above: listed as longterm, three months of point releases, and before twelve months from 6.18's end of life | NineLives maintainers | Late 2027 at the latest |

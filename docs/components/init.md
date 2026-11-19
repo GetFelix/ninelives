@@ -19,8 +19,9 @@ partition, builds the cgroup tree, creates the directories services need,
 forks one launcher per service, each of which drops at once to that
 service's uid, and has the firewall's launcher load the packet filter.
 Then the init drops to its own unprivileged user for good, keeping only
-`CAP_KILL` and `CAP_SYS_BOOT`, before any service runs. From then on no process on the machine is root (S24). It reaps every orphan, has
-the launchers start the services the machine's role needs in a fixed order
+`CAP_KILL` and `CAP_SYS_BOOT`, before any service runs. From then on no
+process on the machine is root (S24). It reaps every orphan, has the
+launchers start the services the machine's role needs in a fixed order
 of phases, each in its own cgroup v2 group with its output captured, and
 restarts a service that exits, with capped exponential backoff. On a reboot
 or power-off request, including the platform's power button, it stops
@@ -47,7 +48,9 @@ Each of these is left out on purpose. Adding one needs a change to 0002.
 - **No reload, and no services added after boot.** The config is read once.
   A new config is a new image.
 - **No cluster decisions.** The init never drains, reboots because a service
-  is failing, or changes the machine's role.
+  is failing, or changes the machine's role. The one reboot it makes on its
+  own follows a lost launcher ([Launchers](#launchers)), because without a
+  launcher that service can never start again.
 - **No Felix client.** PID 1 must not depend on what it starts. Shipping
   records to Felix is a later service's job.
 - **No device management.** No udev, no hotplug, no module loading (there are
@@ -91,7 +94,8 @@ design. Every one runs under its own non-zero uid from its first instruction
 | firewall | the packet filter loader, [open](#open-questions) | all | 0, run once, before the drop | Loads the S7 ruleset before any interface is configured, so no packet arrives unfiltered, and before the drop, so no running service needs netfilter access. |
 | time | `chronyd` (Debian `chrony`) | all | 1 | Runs in the foreground (`-d`), starts non-root with only `CAP_SYS_TIME` (`-U`), ships its own seccomp filter (`-F 1`), opens no port (`port 0`, `cmdport 0`), and supports NTS. |
 | network | a DHCP client split into a parser and an applier, [open](#open-questions) | all, except where the kernel command line configures the network | 1 | The parser handles packets from the network with no capability; the applier holds `CAP_NET_ADMIN` and can reach only routing netlink. No hook script, so no shell is needed (S1). qemu in M0 and M1 uses the kernel's `ip=` instead. |
-| join | the join ([#5](https://github.com/GetFelix/ninelives/issues/5)) | all | 2, run once | Runs every boot and exits 0 at once if the machine has already joined, so the init needs no "first boot" logic. |
+| renew-felixd, renew-broker, renew-controlplane | `nl-renew` ([0008](https://github.com/GetFelix/ninelives/blob/docs/ca-decision/docs/decisions/0008-ca-keys-and-machine-certificates.md), proposed) | the roles of the service it renews | 1 | Renews one service's certificate at that service's uid, writing only that service's credential directory. The init starts it like any other long-running service; renewal itself is `nl-renew`'s design, including waiting for the join's first certificate on first boot. |
+| join | the join ([#5](https://github.com/GetFelix/ninelives/issues/5)) | all | 2, first boot only | The join's uid never runs again after it succeeds (T71). PID 1 starts it only when `$DATA/join/role` does not exist; the join writes that file last, after everything else it writes is synced. A machine with a broken join state is wiped and rejoins. |
 | felix-controlplane | Felix release | core | 3 | |
 | felix-broker | Felix release | core, storage | 4 | Needs the control plane. |
 | felixd | felixd release | all | 5 | Needs Felix ([felixd-contract.md](../felixd-contract.md#starting)). |
@@ -138,25 +142,33 @@ exec = ["/usr/lib/felixd/felixd", "agent"]
 uid = 1105
 gid = 1105
 state_dir = "felixd"                # $DATA/felixd, 0700, owned by uid
-env = { FELIX_AUTH_TOKEN_FILE = "/var/lib/ninelives/credentials/felixd/token", FELIX_CA_FILE = "/var/lib/ninelives/credentials/felixd/ca.pem", FELIX_CLIENT_CERT_FILE = "/var/lib/ninelives/credentials/felixd/client.pem", FELIX_CLIENT_KEY_FILE = "/var/lib/ninelives/credentials/felixd/client.key" }
+env = { FELIX_AUTH_TOKEN_FILE = "/var/lib/ninelives/credentials/felixd/token", FELIX_CA_FILE = "/var/lib/ninelives/trust/cluster-ca.pem", FELIX_CLIENT_CERT_FILE = "/var/lib/ninelives/credentials/felixd/client.pem", FELIX_CLIENT_KEY_FILE = "/var/lib/ninelives/credentials/felixd/client.key" }
 join_env = ["FELIX_BROKERS", "FELIX_AUTH_TENANT", "FELIX_CONTROLPLANE_URL", "FELIX_SERVER_NAME", "FELIXD_NODE_ID"]
 ambient = []                        # capabilities; non-empty only for firewall, time, network
 seccomp = "/usr/lib/ninelives/seccomp/felixd.bpf"
-landlock.read = ["/usr/lib", "/etc/ssl/certs", "/run/resolv", "/proc", "/var/lib/ninelives/credentials/felixd"]
+landlock.read = ["/usr/lib", "/etc/ssl/certs", "/run/resolv", "/proc", "/var/lib/ninelives/credentials/felixd", "/var/lib/ninelives/trust"]
 landlock.execute = ["/usr/lib/felixd/felixd", "/usr/lib/x86_64-linux-gnu"]
 landlock.write = []                 # felixd writes nothing locally
 landlock.devices = ["/dev/null", "/dev/urandom"]
 stop_timeout_s = 135
 rlimits = { nofile = 65536 }
+oom_score_adj = 0                   # the default; -1000 is refused
 cgroup = { cpu_weight = 100, memory_min = "0", memory_low = "0", memory_max = "2G", io_weight = 100, pids_max = 1024 }
 quota = "1G"                        # project quota on state_dir
 ```
 
-What each part is for, so none of it is speculative:
+What each part is for:
 
 - `uid` and `gid` are numbers. The init does not parse `/etc/passwd` or use
   NSS, and the image build checks that the numbers match the users it
-  creates. No service uid or gid may be 0, `init_uid`, or another service's.
+  creates. No service uid or gid may be 0, `init_uid`, or another service's,
+  except a renewal helper's: `renews = "felixd"` runs it at that service's
+  uid and gid, and `init check` allows it only with a Landlock write list of
+  exactly that service's credential directory.
+- `env` names files, not secrets. `FELIX_CLIENT_CERT_FILE` and
+  `FELIX_CLIENT_KEY_FILE` are proposed names: felixd 0.1.0 presents no
+  client certificate, and the names are settled in
+  [felixd#275](https://github.com/GetFelix/felixd/issues/275).
 - `join_env` names values the join learns (brokers, tenant, control plane,
   node id) and writes to `$DATA/join/env`. They cannot be in the image. The
   init passes **only** the names listed here, and only to this service. See
@@ -166,18 +178,32 @@ What each part is for, so none of it is speculative:
   service with a non-empty `ambient` list, so a value from writable state
   never reaches a process that holds a capability.
 - `seccomp` is a compiled BPF program built and reviewed at image build. The
-  init loads it and never compiles a filter.
+  init loads it and never compiles a filter. Whatever else a filter allows,
+  it allows `prlimit64` only with pid 0, `setpriority` only with
+  `PRIO_PROCESS` and who 0, `ioprio_set` only with `IOPRIO_WHO_PROCESS` and
+  who 0, and `sched_setattr`, `sched_setscheduler`, `sched_setparam` and
+  `sched_setaffinity` only with pid 0. The kernel allows those calls between
+  any two processes with the same uid, and a service shares its uid with its
+  launcher, so without these rules a service could set its launcher's
+  `RLIMIT_CPU` to 0 and kill it. The image build checks every filter for
+  these rules, and checks every profile against a syscall trace recorded
+  from the qemu boot, failing on a traced call the profile does not allow.
+- `oom_score_adj` is the service's OOM score, 0 unless set. `init check`
+  refuses -1000.
 - `landlock` lists exactly what the program needs. Every path not listed,
   including `/dev`, `/sys/fs/cgroup`, `/run/ninelives` and the rest of
   `$DATA`, is denied. The profile test below runs the real program under its
   real profile, because a missing path shows only as a crash loop.
+  `init check` refuses a write rule at or under `/proc`.
 - `ambient` is the only way a service gets a capability, and only the
   firewall, time and network services have one
   ([What each service keeps](#what-each-service-keeps)).
 - `quota` is an ext4 project quota on the state directory, so one service
   filling the disk cannot starve Felix or the init's records.
 - `kind = "once"` is for the firewall (phase 0) and the join: each must
-  exit 0 before the next phase starts.
+  exit 0 before the next phase starts. The join also has
+  `first_boot = true`, which makes PID 1 skip it once `$DATA/join/role`
+  exists.
 
 CI runs `init check` (the same binary, not as PID 1) against every image's
 config, so a malformed config fails the build rather than a boot.
@@ -226,12 +252,15 @@ and reads only the kernel, the read-only root and directory entries on
 5. Directories, each opened with `openat2(RESOLVE_NO_SYMLINKS |
    RESOLVE_BENEATH | RESOLVE_NO_XDEV)` and changed through the fd: `$DATA`
    (root, 0755), `$DATA/init` (init, 0700), `$DATA/join` (`nl-join`, group
-   init, 2750), `$DATA/credentials` (root, 0755), and per service
-   `$DATA/<state_dir>` (service, 0700) and `$DATA/credentials/<service>`
-   (`nl-join`, group service, 2750). The setgid bit gives every file the
-   join creates the directory's group, so PID 1 can read `join/env` and
-   `join/role` and each service its own credentials; without it the files
-   would get group `nl-join` and only the join could read them. Each
+   init, 2750), `$DATA/credentials` (root, 0755), `$DATA/trust` (`nl-join`,
+   0755), and per service `$DATA/<state_dir>` (service, 0700) and
+   `$DATA/credentials/<service>` (`nl-join`, group service, 2770). The
+   setgid bit gives every file created there the directory's group, so
+   PID 1 can read `join/env` and `join/role` and each service its own
+   credentials; without it the join's files would get group `nl-join` and
+   only the join could read them. The group write bit is for the renewal
+   helper, which runs at the service's uid; Landlock keeps the service
+   itself from writing there. Each
    directory gets its project id and quota, and project 0, which holds
    anything outside these directories, gets a small quota of its own, so a
    file that leaves its service's project is still bounded. Every parent
@@ -283,8 +312,8 @@ one launcher per service, and each launcher:
    or for another service: the console, `/dev/kmsg`, the watchdog, input
    devices, the `$DATA` fd, other launchers' sockets and other services'
    pipes;
-2. opens `/dev/null` and its service's `run/` cgroup directory, the only
-   files it needs later;
+2. opens `/dev/null`, its service's `run/` cgroup directory and its own
+   `/proc/self/oom_score_adj` for writing, the only files it needs later;
 3. sets its `oom_score_adj` to -1000, so the OOM killer never picks it over
    its service;
 4. sets securebits `NOROOT` and `NO_SETUID_FIXUP` with both locks (S24), so
@@ -295,22 +324,30 @@ one launcher per service, and each launcher:
    `capset` with permitted and inheritable equal to the `ambient` list and
    effective empty;
 7. sets `PR_SET_DUMPABLE` to 0 and `PR_SET_NO_NEW_PRIVS`;
-8. applies its own Landlock ruleset and seccomp filter: the service's,
-   widened only by what starting it takes (`clone3`, `sendmsg`, `recvmsg`,
-   `landlock_*`, `seccomp`, `prctl`, `capset`, `setsid`). Filters and
-   Landlock domains stack, so the service still ends with exactly its own
-   profile, and the service's domain nests inside the launcher's, so the
-   service cannot signal or ptrace it;
-9. waits on its end of a `SOCK_SEQPACKET` socketpair PID 1 created.
+8. builds the service's Landlock ruleset and loads its seccomp program into
+   memory, once, so no start needs to open a path;
+9. applies its own Landlock ruleset and seccomp filter: the service's,
+   widened only by what starting it takes. Its own loop adds `recvmsg`,
+   `sendmsg`, `pipe2`, `clone3`, `read`, `write`, `close`, `brk`, `mmap`,
+   `munmap` and `exit_group`. The child adds `rt_sigprocmask`,
+   `rt_sigaction`, `setsid`, `dup3`, `close_range`, `chdir`, `prlimit64`
+   (pid 0 only), `prctl`, `capset`, `landlock_restrict_self`, `seccomp` and
+   `execve`. Filters and Landlock domains stack, so the service still ends
+   with exactly its own profile, and the service's domain nests inside the
+   launcher's, so the service cannot signal or ptrace it;
+10. waits on its end of a `SOCK_SEQPACKET` socketpair PID 1 created.
 
 A launcher is the same binary as the init, so nothing new ships. It stays in
 `<service>/launcher` in the cgroup tree for the life of the machine and is
 idle except while starting its service. It runs at its service's uid, so
-without step 8 a compromised service could ptrace it and run outside its own
+without step 9 a compromised service could ptrace it and run outside its own
 filter; `PR_SET_DUMPABLE`, `ptrace_scope = 3` and Landlock each stop that on
-their own.
+their own. The service's filter stops the rest of what a same-uid process
+can do to it (`prlimit64`, priorities, scheduling; see the `seccomp` item
+under [The config](#the-config)).
 
-The protocol has fixed-size messages, at most 8 KiB:
+Each message is one datagram of at most 8 KiB with a fixed layout per type;
+only `start` has a variable part, the values:
 
 | From | Message | Meaning |
 |---|---|---|
@@ -338,6 +375,15 @@ which no process can enter except through that launcher's
 `CLONE_INTO_CGROUP`. The pidfd names the process the launcher created, not a
 number it typed.
 
+**The OOM score.** A child inherits its launcher's -1000, which would make
+every service unkillable by the OOM killer. So around each `clone3` the
+launcher writes the service's `oom_score_adj` through the fd from step 2,
+and -1000 again straight after. The child cannot set its own: Landlock rules
+attach to inodes, and the child's `/proc` entry did not exist when the
+launcher's ruleset was built. A score lowered by root can be lowered again
+to -1000 without a capability, so it is Landlock, with no service allowed
+to write under `/proc`, that keeps a service at its configured value.
+
 The child waits for `go` because a service that exits right after `execve`
 could otherwise be reaped before its pid reached PID 1, which would count it
 as an orphan, lose its exit status and leave the service in `starting`.
@@ -350,20 +396,30 @@ cannot hang a service in `starting`.
 
 **A launcher that dies cannot be replaced**: re-forking it at the service's
 uid would need `CAP_SETUID`. PID 1 sees it from `SIGCHLD` and the socket's
-end of file and records `failed: launcher lost`. What follows depends on the
-service:
+end of file. During an ordered shutdown that is expected and recorded as
+`stopped`. At any other time PID 1 records `launcher lost`, and the machine
+goes `degraded` at once with the service named as the reason. A running
+instance keeps running, is reaped by PID 1, and is still stopped at
+shutdown through `CAP_KILL` and `cgroup.kill`. What happens when the
+service next needs a start depends on the service:
 
-- **Felix services and felixd: ordered shutdown, then power off.** A storage
-  or core machine that can never restart its broker would sit in the
-  cluster degraded forever. Gone, it is a clean loss the cluster already
-  handles, and its next boot has fresh launchers. Power off rather than
-  reboot, because a launcher lost to a bug would be lost again, and a
-  machine rebooting in a loop flaps in and out of the cluster.
-- **Every other service: `failed`, machine `degraded`.** A running instance
-  keeps running, is reaped by PID 1, and is still stopped at shutdown
-  through `CAP_KILL` and `cgroup.kill`; it is just never restarted. Losing
-  time sync or DHCP renewal leaves the machine useful, and both show in the
-  records.
+- **Felix services, felixd and their renewal helpers: ordered shutdown,
+  then reboot.** A machine that can never restart its broker or felixd
+  would sit in the cluster degraded forever, and one that cannot renew a
+  certificate loses it within 24 h. A reboot brings fresh launchers and
+  recovers without an operator; a power-off would need one. PID 1 first
+  writes a `launcher-loss-reboot` record to `$DATA/init` and `fsync`s it,
+  and does not reboot if that fails.
+- **The reboot is rate limited.** If the previous boot ended in a
+  `launcher-loss-reboot` and this boot has run for less than 1 hour of
+  `CLOCK_MONOTONIC`, a second loss does not reboot: the service is
+  `failed`, the machine stays up and `degraded`, and the reason says the
+  launcher was lost twice within the hour. A launcher lost to a bug would be
+  lost again, and a machine rebooting in a loop flaps in and out of the
+  cluster.
+- **Every other service: `failed`, machine `degraded`.** It is never
+  restarted. Losing time sync or DHCP renewal leaves the machine useful, and
+  both show in the records.
 
 Nothing kills a launcher but a bug, PID 1 at shutdown, or a process with its
 uid, and its service cannot (see [Escalation](#escalation-through-the-init)).
@@ -384,10 +440,12 @@ PID 1's drop, after the launchers exist:
    PID 1 or read its memory through `/proc`.
 5. `PR_SET_NO_NEW_PRIVS`.
 6. Load PID 1's own seccomp filter, an allow-list of what its event loop and
-   worker use. The `setuid` family, `setgroups`, `capset` raising anything,
-   `mount` and the new mount API, `ptrace`, `bpf`, `kexec_load`,
-   `init_module`, `quotactl` and `clone` are not on it; the launchers do the
-   cloning.
+   worker use. The `setuid` family, `setgroups`, `mount` and the new mount
+   API, `ptrace`, `bpf`, `kexec_load`, `init_module`, `quotactl` and `clone`
+   are not on it; the launchers do the cloning. `capset` is on it, because
+   PID 1 raises its two capabilities to effective around their calls.
+   Seccomp cannot read the struct `capset` points to, so the filter cannot
+   limit it; the kernel does, refusing anything outside the permitted set.
 
 If any step fails, PID 1 reports the step and errno on the console and
 powers off ([Failure modes](#failure-modes)).
@@ -468,9 +526,10 @@ now" request: every step is already bounded.
 ### Starting a service
 
 PID 1 sends `start` to the service's launcher. The launcher is
-single-threaded, and it builds everything the child needs (argv,
-environment, the Landlock ruleset, the seccomp program, a close-on-exec
-error pipe) before the clone, so the child only makes system calls. The
+single-threaded. It built the Landlock ruleset and the seccomp program at
+fork, and builds the rest the child needs (argv, environment, a
+close-on-exec error pipe, the service's OOM score) before the clone, so the
+child only makes system calls. The
 child is in the service's `run` cgroup from its first instruction, then:
 
 1. Clears its signal mask and resets every disposition. The init's blocked
@@ -512,7 +571,7 @@ including any the service forked.
 └── ninelives/                     memory.min and memory.low = sum of children
     ├── init/                      PID 1
     ├── system/
-    │   └── firewall/ time/ network/ join/    one service group each
+    │   └── firewall/ time/ network/ join/ renew-*/    one service group each
     ├── felix/                     the reservation for the log
     │   └── controlplane/ broker/
     └── felixd/
@@ -618,9 +677,11 @@ starts at R.
 
 Then the final steps:
 
-1. Kill every service group, launchers included. An orphan stays in the
-   cgroup of the service that created it, because cgroup membership survives
-   reparenting, so this takes every orphan too; the init only reaps them.
+1. Kill every service group, launchers included. A launcher that exits from
+   here on is recorded `stopped`, never `launcher lost`. An orphan stays in
+   the cgroup of the service that created it, because cgroup membership
+   survives reparenting, so this takes every orphan too; the init only reaps
+   them.
 2. Write the shutdown record (see below) and `fsync` it.
 3. Close every fd the init holds on `$DATA` except the one from boot step 4.
 4. `syncfs` on that fd, then `sync()`, bounded at 30 s together.
@@ -649,7 +710,7 @@ file, and it needs `CAP_SYS_ADMIN` in PID 1.
 | felixd | 135 s | felixd's worst case is about `2 s × 64 workloads + 2 s` = 130 s ([felixd-contract.md](../felixd-contract.md#stopping)), plus 5 s for the process to exit. |
 | felix-broker | 30 s, proposed | Felix documents no stop bound. Open question. |
 | felix-controlplane | 30 s, proposed | Same. |
-| join, network, time | 5 s each | They hold no state that must be written. |
+| join, network, time, renewal helpers | 5 s each | They hold no state that must be written; a renewal cut short keeps the old certificate. |
 
 With no platform budget the worst case from request to `reboot(2)` is the
 deadline plus the 5 s kill wait of each phase with a running service, plus
@@ -754,8 +815,10 @@ up. Publishing records to Felix is M4.
 - One thread runs the event loop (`signalfd`, the pipes, the launcher
   sockets, the power button, the request FIFO, each service's
   `cgroup.events`, a timeout from the nearest deadline). One worker thread
-  runs the calls that can block in the kernel (`syncfs`, `sync`, `fsync`),
-  started after the launchers are forked and the signal mask is set.
+  runs the calls that can block in the kernel (`syncfs`, `sync`, `fsync`,
+  and reading `$DATA/join/env`, `$DATA/join/role` and the previous boot's
+  records), started after the launchers are forked and the signal mask is
+  set.
 - Deadlines use `CLOCK_MONOTONIC`. A clock step from time sync changes no
   decision.
 - The decision logic is a pure state machine over events (signal, child
@@ -807,8 +870,9 @@ up. Publishing records to Felix is M4.
   by the config on the read-only root. Nothing on `$DATA`, the command line,
   a signal, a launcher message or the request FIFO changes it. A missing or
   malformed config starts no service.
-- **I13.** The init never opens a file under `$DATA/credentials/`, and no
-  record or output it writes contains a value from `join_env`.
+- **I13.** The init never opens a file under `$DATA/credentials/` or
+  `$DATA/trust/`, and no record or output it writes contains a value from
+  `join_env`.
 - **I14.** No main loop iteration waits on the console, a service pipe or the
   data partition; the longest iteration stays under 100 ms. What does not fit
   is dropped and counted.
@@ -828,9 +892,16 @@ up. Publishing records to Felix is M4.
 - **I19.** After boot, no sysctl changes, and no root-owned file outside
   `/proc`, `/sys` and `/dev` is writable.
 - **I20.** A launcher holds no fd but its socket, its service's pipe write
-  ends, `/dev/null` and its `run/` directory, and runs under a seccomp filter
-  and Landlock ruleset no wider than its service's plus the calls that start
-  it.
+  ends, `/dev/null`, its `run/` directory and its own `oom_score_adj`, and
+  runs under a seccomp filter and Landlock ruleset no wider than its
+  service's plus the calls that start it. Its `oom_score_adj` is -1000
+  between starts; every service's is its configured value.
+- **I22.** No service can change another process's resource limits,
+  priority, I/O priority or scheduling, its launcher's included.
+- **I23.** A lost launcher reboots the machine at most once per hour of
+  uptime after a launcher-loss reboot, only for Felix, felixd and their
+  renewal helpers, and only after its record is on disk. A launcher that
+  exits during an ordered shutdown is never counted as lost.
 - **I21.** Every exit of a service's main process is attributed to that
   service, never counted as an orphan, and no start stays unresolved longer
   than 10 s.
@@ -850,9 +921,10 @@ PID 1 exiting panics the kernel, which reboots after 10 s. The rows marked
 | A service floods its output | Rotation and drop counters | Rotated, then dropped and counted; the service never blocks | yes |
 | A service exhausts memory | `memory.max`, `memory.oom.group` on `run/` | The kernel kills the whole service, never the launcher, and the service restarts | yes |
 | A service fills the disk | Its project quota | It gets `EDQUOT`; Felix and the init's records keep their space | yes |
-| A Felix or felixd launcher dies | `SIGCHLD`, socket end of file | `failed: launcher lost`, then ordered shutdown and power off | no, powered off on purpose |
-| Any other launcher dies | `SIGCHLD`, socket end of file | `failed: launcher lost`, machine `degraded`; a running instance is left to run and still stopped at shutdown; no restart until reboot | yes, without that service |
-| A launcher sends a malformed or unexpected message, a wrong pidfd or extra fds | Fixed sizes, generation numbers, one pidfd checked with `waitid` and against that service's `run/cgroup.procs`, any other fd closed | Ignored and recorded; the service's state follows the kernel's `SIGCHLD` and `cgroup.events`, not the message | yes |
+| A Felix, felixd or renewal launcher dies | `SIGCHLD`, socket end of file | `degraded` at once, the service keeps running; when it next needs a start, ordered shutdown and reboot. A second loss within 1 h of such a reboot, or a failed record write: `failed`, `degraded`, no reboot | no, rebooted on purpose; yes after the second loss |
+| Any other launcher dies | `SIGCHLD`, socket end of file | `launcher lost`, machine `degraded`; a running instance is left to run and still stopped at shutdown; `failed` and no restart until reboot | yes, without that service |
+| A service tries to kill or starve its launcher with `prlimit64`, `setpriority`, `ioprio_set` or `sched_set*` | Its seccomp filter | Refused: each is allowed only on the caller itself | yes |
+| A launcher sends a malformed or unexpected message, a wrong pidfd or extra fds | Bounded sizes, fixed layouts, generation numbers, one pidfd checked with `waitid` and against that service's `run/cgroup.procs`, any other fd closed | Ignored and recorded; the service's state follows the kernel's `SIGCHLD` and `cgroup.events`, not the message | yes |
 | A launcher never answers a `start` | 10 s bound | `cgroup.kill` on `run/`, retried with backoff | yes |
 | A permanent setup error (binary, Landlock, seccomp, ambient raise) | `setup_failed` | `failed`, machine `degraded`, others keep running | yes |
 | A transient start error (`EAGAIN`, `ENOMEM`) | `setup_failed` or `clone3` error | Retried with backoff | yes |
@@ -862,7 +934,7 @@ PID 1 exiting panics the kernel, which reboots after 10 s. The rows marked
 | A fixed early mount fails | `mount` error | `emergency`: the drop still happens, no service starts, the error repeats on the console every 30 s, stop requests and reaping still work | yes, does nothing else |
 | Config missing, unreadable or malformed | Read or parse error | Fail closed: `emergency`, as above. Never a default config. | yes, does nothing else |
 | **Any step of PID 1's drop fails** | The call's error | No `start` is ever sent. PID 1 kills every launcher, reports the step and errno on the console, `syncfs`s `$DATA` and powers off. Staying up is not an option, because S24 forbids a running machine with a root PID 1; power off rather than reboot because a broken drop would fail again. | no, powered off on purpose |
-| A launcher's drop fails | It exits before its socket is ready | As a lost launcher: power off for Felix and felixd, otherwise that service `failed`, machine `degraded` | depends on the service |
+| A launcher's drop fails | It exits before its socket is ready | As a lost launcher: a rate-limited reboot for Felix, felixd and renewal helpers, otherwise that service `failed`, machine `degraded` | depends on the service |
 | Data partition missing, duplicated or unmountable | Not found within `data_wait_s`, two matches, `mount` error | `degraded`: firewall, time and network run, nothing else; never formatted; no retry, a reboot retries | yes |
 | Data partition full despite quotas | Write errors | Dropped and counted on the console | yes |
 | Console blocked or absent | `EAGAIN`, open failure | Dropped and counted; `/dev/kmsg`, opened in boot step 8, used if the console cannot be opened | yes |
@@ -874,7 +946,7 @@ PID 1 exiting panics the kernel, which reboots after 10 s. The rows marked
 | The init panics | Panic hook | Message on the console, abort, kernel panic, reboot after 10 s | no |
 | An allocation in the init fails | Rust aborts | As a panic. The init's memory is bounded by its fixed buffers, and the kernel never OOM-kills PID 1. | no |
 | Kernel oops | `oops=panic` | Reboot after 10 s | no |
-| Hostile `$DATA/join/env`: unknown names, `LD_PRELOAD`, huge file, binary bytes, a symlink | `O_NOFOLLOW`, 4 KiB cap, per-service allowlist, value checks | Values must be printable ASCII under 1 KiB; `LD_*` and `GLIBC_TUNABLES` are refused even if listed; anything else rejects the whole file, the service does not start, `degraded` | yes |
+| Hostile `$DATA/join/env` or `$DATA/join/role`: unknown names, `LD_PRELOAD`, huge file, binary bytes, a symlink, a FIFO or device | Opened on the worker thread with `O_NONBLOCK \| O_NOFOLLOW`, beneath the `$DATA` fd; `fstat` must show a regular file of at most 4 KiB; per-service allowlist, value checks | Values must be printable ASCII under 1 KiB; `LD_*` and `GLIBC_TUNABLES` are refused even if listed; anything else rejects the whole file, the service does not start, `degraded` | yes |
 | Hostile symlink planted in a state directory | Not followed: the init opens only the directory itself, beneath root-owned parents, without following links | Nothing outside is touched | yes |
 | A service signals or ptraces PID 1, its launcher or another service | Kernel permission checks, Landlock scoping, `ptrace_scope = 3`, non-dumpable launchers and PID 1 | Refused | yes |
 | A service writes the request FIFO | File permissions | Refused: not in `nl-stop` | yes |
@@ -909,13 +981,13 @@ makes no network connection.
 | Kernel command line, `argv`, environment | The bootloader; signed from M3 | Ignored as PID 1. `panic=` and `oops=` are the kernel's. |
 | Signals | The kernel; nobody else after the drop | Four signals, three meanings, all of them stop or reap. |
 | Child exit status | The kernel, from `waitpid` | A pid that is not a service's main process or a launcher is an orphan, reaped and counted. |
-| Launcher sockets | A launcher, at its service's uid, so hostile if that service is | `SOCK_SEQPACKET`, fixed-size messages, a truncated message or control data refused, generation-checked; at most one fd, a pidfd checked with `waitid` and against that service's `run/cgroup.procs`, any other fd closed; a 10 s bound per start. State follows the kernel's events, so a lying launcher can only fail its own service. |
+| Launcher sockets | A launcher, at its service's uid, so hostile if that service is | `SOCK_SEQPACKET`, messages of at most 8 KiB with a fixed layout per type, a truncated message or control data refused, generation-checked; at most one fd, a pidfd checked with `waitid` and against that service's `run/cgroup.procs`, any other fd closed; a 10 s bound per start. State follows the kernel's events, so a lying launcher can only fail its own service. |
 | Service stdout and stderr | The service, hostile by assumption | Non-blocking pipes read into fixed buffers; opaque bytes stored, size bounded, never parsed or acted on. |
 | `/sys/class/block/*/uevent` | The kernel, from partition tables anyone with the disk can write | Only `PARTNAME` on the root's disk, exact match, duplicates refused, before the drop only. |
 | `cgroup.events` | The kernel | Only `populated`. |
 | Power button input devices | The kernel, from the platform | Fixed-size events, only `KEY_POWER` press. |
 | `/run/ninelives/init/request` | The init and `nl-stop` (empty in production) | One byte, `r` or `p`, else ignored. |
-| `$DATA/join/env`, `$DATA/join/role` | The join | Read after the drop, through group `init` from the setgid directory. Never follows links, capped, allowlisted, see the failure table. An unknown role starts no role service. |
+| `$DATA/join/env`, `$DATA/join/role` | The join, on first boot only | Read after the drop on the worker thread, through group `init` from the setgid directory: `O_NONBLOCK \| O_NOFOLLOW` beneath the `$DATA` fd, then `fstat`, which must show a regular file of at most 4 KiB, so a planted FIFO cannot block the open. Allowlisted, see the failure table. An unknown role starts no role service. |
 | `$DATA/init/records.jsonl` (previous boot) | Only the init | Read after the drop, to report `previous_shutdown`; a line that does not parse counts as missing. |
 | Directory entries on `$DATA` | Earlier boots' services, inside their own directories only | Opened before the drop beneath root-owned parents with `RESOLVE_NO_SYMLINKS \| RESOLVE_BENEATH \| RESOLVE_NO_XDEV`. |
 
@@ -943,6 +1015,7 @@ set as its service, in permitted and inheritable only.
 | network, DHCP parser | own | none | It handles packets from the network, so it holds nothing. |
 | network, DHCP applier | own | `CAP_NET_ADMIN`, ambient; `CAP_NET_RAW` and `CAP_NET_BIND_SERVICE` only until it has opened the DHCP sockets and passed them to the parser | Configuring addresses and routes needs `CAP_NET_ADMIN`, sending before there is an address needs a raw socket, and the client port is 68. |
 | join | `nl-join` | none | |
+| renewal helpers | the service's own | none | They connect out with the service's current certificate and write its credential directory. |
 | felix-controlplane, felix-broker | own each | none | Their ports are above 1024. |
 | felixd | own | none | [felixd-contract.md](../felixd-contract.md#running-it): needs no root and no capabilities. |
 
@@ -969,6 +1042,14 @@ file and no file capabilities, and the image build fails if one appears
   (which scopes signals and, in every Landlock domain, ptrace), PID 1 and
   the launchers are not dumpable, and `ptrace_scope = 3` forbids ptrace
   outright.
+- **Limits and scheduling.** `prlimit64`, `setpriority`, `ioprio_set` and
+  the `sched_set*` calls need only a matching uid, so a service could set
+  its launcher's `RLIMIT_CPU` to 0 and kill it. Every service's filter
+  allows them only on the caller (I22). Even so, a lost Felix or felixd
+  launcher costs a reboot, not a powered-off machine, so a workload that
+  found another way to do this on every node would cost each node at most
+  one reboot an hour, which recovers on its own, instead of a powered-off
+  cluster that needs an operator.
 - **Pid reuse.** PID 1 signals only its own direct children by pid (every
   service is one, through `CLONE_PARENT`), and only before reaping them. A
   pid cannot be reused until its parent reaps it, and PID 1 is that parent,
@@ -997,20 +1078,36 @@ file and no file capabilities, and the image build fails if one appears
 
 The init never reads credentials and never holds one (I13, S8). Each
 service's credential directory, `$DATA/credentials/<service>/`, is owned by
-`nl-join` with the service's group, mode 2750. The join writes each file
+`nl-join` with the service's group, mode 2770. The join writes each file
 there mode 0640 with write-and-rename, so it needs no capability, the file
 takes the service's group from the setgid directory, the service reads it
-through that group, and no other service can.
+through that group, and no other service can. The CA bundles go to
+`$DATA/trust/`, owned by `nl-join` and readable by all, so nothing but the
+join can change what a service trusts.
 
-Felix requires mTLS on every listener, so every Felix client (felixd, and
-the Felix services toward each other) presents a certificate bound to its
-token's subject. The join obtains each certificate and key with the token and
-writes them beside it: `token`, `ca.pem`, `client.pem` and `client.key`,
-plus a broker's or control plane's own server certificate and key. They get
-the token's permissions because a stolen key is as good as a stolen token.
-felixd gets only paths from the image config, `FELIX_AUTH_TOKEN_FILE`,
-`FELIX_CA_FILE`, `FELIX_CLIENT_CERT_FILE` and `FELIX_CLIENT_KEY_FILE`, and
-reads the files itself ([felixd-contract.md](../felixd-contract.md#running-it)).
+The join runs on first boot only (T71). After that, each service's
+certificate is renewed by its renewal helper, which runs at the service's
+uid, may write only that service's credential directory, and is otherwise
+an ordinary phase 1 service to the init
+([0008](https://github.com/GetFelix/ninelives/blob/docs/ca-decision/docs/decisions/0008-ca-keys-and-machine-certificates.md),
+proposed). The group write bit on the directory is for the helper; the
+service's own Landlock ruleset lists the directory as read-only.
+
+Felix's broker listeners and Raft peer port require mTLS, so every Felix
+client (felixd, and the Felix services toward each other) presents a
+certificate bound to its token's subject. The control-plane API is the
+exception until Felix can take a client CA there
+([felix#2811](https://github.com/GetFelix/felix/issues/2811)): it runs
+server TLS with bearer tokens. The join obtains each certificate and key
+with the token and writes them beside it: `token`, `client.pem` and
+`client.key`, plus a broker's or control plane's own server certificate and
+key. They get the token's permissions because a stolen key is as good as a
+stolen token. felixd gets only paths from the image config,
+`FELIX_AUTH_TOKEN_FILE`, `FELIX_CA_FILE`, `FELIX_CLIENT_CERT_FILE` and
+`FELIX_CLIENT_KEY_FILE`, and reads the files itself
+([felixd-contract.md](../felixd-contract.md#running-it)). The last two are
+proposed names until felixd can present a certificate
+([felixd#275](https://github.com/GetFelix/felixd/issues/275)).
 So no token or key passes through the init, a launcher message, a command
 line or an environment. Service output may contain whatever a service prints; keeping
 secrets out of it is each service's obligation under S8, and the S8 test
@@ -1042,17 +1139,24 @@ not contain. Fault tests run on the schedule in
 | A static check that `std::process::exit` and a returning `main` appear only in the `init check` and local paths | CI | I1 |
 | A `SIGCHLD` event always yields `waitpid` until empty in the same step | unit | I2 |
 | A test service makes 1000 children that exit; the inspector polls `/proc` every 10 ms and sees no zombie of PID 1 older than 100 ms | qemu | I2 |
-| Every process's `/proc/<pid>/status` (Uid, Gid with all four ids, Groups, CapPrm, CapEff, CapInh, CapAmb, NoNewPrivs, Seccomp) and `/proc/<pid>/cgroup` match the config and the capability tables, PID 1 and launchers included | qemu | I3, I17, S6, S24 |
-| A test service reads `PR_GET_SECUREBITS` and finds `NOROOT`, `NO_SETUID_FIXUP` and both locks; `kernel.yama.ptrace_scope` reads 3 | qemu | I17, S24 |
-| The inspector dumps `/proc/<launcher>/fd` for every launcher: only its socket, its service's pipe write ends, `/dev/null` and its `run/` directory | qemu | I20 |
+| Every process's `/proc/<pid>/status` (Uid, Gid with all four ids, Groups, CapPrm, CapEff, CapInh, CapAmb, NoNewPrivs, and `Seccomp: 2`, which shows only that a filter is loaded) and `/proc/<pid>/cgroup` match the config and the capability tables, PID 1 and launchers included | qemu | I3, I17, S6, S24 |
+| `/proc/<pid>/status` has no securebits field, so a test-build fault hook makes PID 1 and every launcher call `prctl(PR_GET_SECUREBITS)` and write the result to the console, and each test service does the same: all show `NOROOT`, `NO_SETUID_FIXUP` and both locks; `kernel.yama.ptrace_scope` reads 3 | qemu (test image) | I17, S24 |
+| The inspector dumps `/proc/<launcher>/fd` for every launcher: only its socket, its service's pipe write ends, `/dev/null`, its `run/` directory and its `oom_score_adj` | qemu | I20 |
+| A test-build fault hook makes each launcher, between starts, call what its filter denies (`ptrace`, `mount`, `setuid`, `socket` outside its service's families, `prlimit64` and `sched_setaffinity` on another pid): each fails; each test service does the same against its own filter | qemu (test image) | I20, I3 |
+| The inspector reads `/proc/<pid>/oom_score_adj`: -1000 for every launcher, the configured value for every service; a test service writing -1000 to its own is refused | qemu | I20, OOM score |
+| A test service calls `prlimit64` with its launcher's pid and `RLIMIT_CPU` 0, `setpriority` with `PRIO_USER` and `PRIO_PGRP`, `ioprio_set` with `IOPRIO_WHO_USER`, and each `sched_set*` call on its launcher: all refused, the launcher is still alive and starts the next instance | qemu | I22 |
 | A service that exits right after `execve`, started 1000 times: every exit is attributed to it, none to orphans, and it never stays `starting` | qemu | I21 |
 | A test-image launcher sends a wrong generation, another service's pidfd, a pidfd of an unrelated process, extra fds, a truncated message, or nothing at all: each is ignored or times out, and state follows the kernel | qemu (test image) | I12 (launcher messages), I21 |
 | A fault hook makes PID 1 send `start` with an unlisted name, `LD_PRELOAD` or a binary value: the launcher refuses it | qemu (test image) | launcher re-check |
 | `init check` rejects `join_env` on a service with a non-empty `ambient` list, and a non-`once` service in phase 0 | unit | I12 |
 | The packet filter loader made to fail: `emergency`, nothing else starts; on a normal boot the DHCP applier's attempt to open a `NETLINK_NETFILTER` socket is refused | qemu, fault | phase 0, S7 |
 | A test service clears project inheritance on its state directory and tries to change its project id: both ioctls refused; a test-image service without those filter rules moves a file into project 0 and hits project 0's quota | qemu (test image) | quota escape |
-| After the join: `$DATA/join/env` has group init, each credential file has its service's group and mode 0640, and felixd connects with its client certificate | qemu | setgid directories, mTLS handoff |
-| A launcher killed for the broker: ordered shutdown and power off; for the time service: `failed`, `degraded` | qemu (test image) | launcher rows |
+| After the join: `$DATA/join/env` has group init, and each credential file has its service's group and mode 0640; a second boot does not start the join | qemu | setgid directories, first boot only |
+| felixd connects with its client certificate. Gated on [felixd#275](https://github.com/GetFelix/felixd/issues/275); until then the test checks the files are in place | qemu | mTLS handoff |
+| A test program under the felixd renewal helper's profile replaces a file in felixd's credential directory; under felixd's profile the same write is refused, and neither can write `$DATA/trust` | qemu (test image) | renewal, Landlock |
+| Unit traces: a launcher lost while its service runs gives `degraded` and no other action; the next start gives a record, its `fsync`, ordered shutdown and `reboot`; the same after a `launcher-loss-reboot` boot under 1 h gives `failed` and no reboot; a failed record write gives no reboot; launchers exiting after a stop request give `stopped` | unit | I23 |
+| A fault hook makes the broker's launcher exit: the broker keeps running and the machine reports `degraded`; then the broker exits: ordered shutdown and reboot. Within the hour after that boot, the same again: no reboot, `failed`, the reason reported. For the time service: `failed`, `degraded`, no reboot | qemu (test image) | I23, launcher rows |
+| A normal power-off: no `launcher lost` record | qemu | I23 |
 | A fault hook makes PID 1 call `setresuid(0, 0, 0)`, `setresuid` to a service uid, and `mount` after the drop; each fails and the init keeps running | qemu (test image) | I17 |
 | Fault injected at each child setup step: the service never execs, the step and errno are reported | unit (sys mocked), qemu | I3, permanent and transient errors |
 | Each real service runs under its real Landlock and seccomp profile against a single-node cluster in the image and stays `running` for 5 minutes; felixd appears in `nodes` | qemu | profiles are complete |
@@ -1067,7 +1171,7 @@ not contain. Fault tests run on the schedule in
 | Event traces with services exiting, being killed and going `stuck` in every order: the `syncfs` action comes only after every service cgroup is empty or `stuck`, and `reboot` only after `syncfs` or a passed bound | unit | I10 ordering |
 | A writeback error injected on the data disk (dm-flakey) before shutdown: `syncfs` reports it, no `synced` record, next boot `forced` | fault | I10, errseq |
 | A test service dumps its environment and `/proc/self/fd` | qemu | I11 |
-| `$DATA/join/env` planted with `LD_PRELOAD`, `GLIBC_TUNABLES`, a symlink, an oversized file and binary bytes | qemu | I12, hostile inputs |
+| `$DATA/join/env` planted with `LD_PRELOAD`, `GLIBC_TUNABLES`, a symlink, a FIFO, an oversized file and binary bytes; with the FIFO the main loop keeps running (watchdog petted, stop requests handled) | qemu | I12, I14, hostile inputs |
 | `init check` rejects overlapping `env` and `join_env`, `LD_*`, and uid 0 or a shared uid | unit | I12 |
 | A symlink planted inside a state directory pointing at `/run/ninelives`; nothing outside changes | qemu | hostile inputs |
 | Known test credentials planted; console, records, output and `/run` searched | qemu | I13, S8 |
@@ -1076,7 +1180,7 @@ not contain. Fault tests run on the schedule in
 | A service writes 1 GB of output and a fault hook makes the init emit records in a loop: `$DATA/init` never holds more than 8 MiB of records plus 32 MiB of output per service | qemu (test image) | I15 size bound |
 | Every transition in the unit traces yields a record or a drop count per sink; console order matches | unit, qemu | I16 |
 | Image build scan for setuid, setgid and `security.capability` files, seeded with one to see it fail | CI | S24 |
-| Each drop step, PID 1's and a launcher's, made to fail (fault hook): no service starts under that failure; PID 1's failure is reported and powers off, a launcher's leaves its service `failed`, or powers off for Felix and felixd | fault (test image) | I18 |
+| Each drop step, PID 1's and a launcher's, made to fail (fault hook): no service starts under that failure; PID 1's failure is reported and powers off, a launcher's leaves its service `failed`, or reboots once for Felix, felixd and renewal helpers | fault (test image) | I18 |
 | `/proc/self/mountinfo` shows `/proc/sys` read-only; a test-image probe with `CAP_SYS_ADMIN` and `CAP_NET_ADMIN` writes every sysctl and gets `EROFS`; the inspector walks every writable mount for root-owned writable files | qemu (test image) | I19 |
 | Services send every signal to PID 1, their launcher and each other, try `ptrace` on each, and write the request FIFO and cgroup files: all refused | qemu | escalation |
 | A test-image service with `CAP_KILL` sends every signal but the four to PID 1, `SIGABRT` and `SIGSEGV` included; nothing changes | qemu (test image) | signal table |
@@ -1101,7 +1205,7 @@ not contain. Fault tests run on the schedule in
 | **Which DHCP client, and whether it splits.** It must run non-root with no hook script, as a parser with no capability and an applier whose only capability after start is `CAP_NET_ADMIN` and whose seccomp filter allows only `AF_NETLINK` with `NETLINK_ROUTE`. dhcpcd's privilege separation expects to start as root, and whether its pieces map onto this split is unverified. | Try dhcpcd in qemu; if it cannot be split this way, a small DHCP client in Rust as two processes (not PID 1) | Network design | M1 |
 | DNS: something must write `/run/resolv/resolv.conf` without a shell hook | The DHCP client writes it directly, or the join records brokers by address | Network design, #5 | M1 |
 | Which program loads the packet filter (S7) | A static nftables ruleset from the image, loaded by a minimal loader in phase 0, before the drop | Network design | M1 |
-| How the seccomp and Landlock profiles are produced and reviewed | Recorded from qemu runs, minimised by hand, compiled at image build, reviewed on each component bump | Image design | M1 |
+| How the seccomp and Landlock profiles are produced and reviewed | Recorded from qemu runs, minimised by hand, compiled at image build, reviewed on each component bump; the image build fails when a call in the recorded trace is outside its profile | Image design | M1 |
 | **Authenticated time.** Clouds' metadata NTP servers do not offer NTS. Without it an on-path attacker can step the clock: certificates then fail (forward) or expired ones pass (back). chronyd is limited to stepping during its first three updates (`makestep 1 3`) and refuses offsets over 1000 s after that (`maxchange`). Whether Felix and felixd leases depend on wall time is not documented. | NTS where the servers support it; otherwise the limits above, and the threat model decides | Threat model (#56) | M1 |
 | Whether Felix waits for time sync, since certificate checks need a sane clock | No wait; qemu and clouds have an RTC | Threat model (#56) | M1 |
 | **Data partition integrity.** Anyone who can rewrite the disk offline reaches the kernel's ext4 parser while the init is still root, and can plant or alter Felix's data and credentials. Integrity or encryption sealed to a TPM or vTPM would close that. | Treat it as a likely requirement; #56 decides, with M3's verified boot | Threat model (#56) | M3 at the latest |

@@ -54,7 +54,7 @@ v2 filesystem, so it does not tie NineLives to Linux more than
 
 ### Amended by the init's design, 2026-11-18
 
-The design review changed the list in four places:
+The design review changed the list in seven places:
 
 - **Launchers.** Before dropping root, PID 1 forks one small process per
   service at that service's uid, which starts the service when PID 1 asks.
@@ -71,6 +71,16 @@ The design review changed the list in four places:
 - **The packet filter** is not part of PID 1. A separate loader runs once
   in phase 0, before the drop, like the helpers in item 3; the init only
   starts it earlier, so no running service needs netfilter access.
+- **Sysctl lockdown** (item 1). Before the drop PID 1 sets `core_pattern`,
+  `suid_dumpable` and `ptrace_scope`, then remounts `/proc/sys` read-only.
+  Only root can do it, and PID 1 is the last root process.
+- **felixd's stop can be cut short** (item 6). With a platform stop budget,
+  Felix's deadline counts from the stop request, and felixd is killed if it
+  would push Felix past it. A felixd cut short leaves leases to expire on
+  their TTL; a Felix killed mid-flush can lose acknowledged records.
+- **A lost launcher reboots the machine** for Felix, felixd and their
+  certificate renewal, at most once an hour. Without a launcher the service
+  can never start again, and a reboot recovers without an operator.
 
 ## Options considered
 

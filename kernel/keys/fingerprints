@@ -1,0 +1,8 @@
+# Primary key fingerprints allowed to sign the pinned kernel tarball (0007).
+# One per line, 40 uppercase hex digits, then the owner. The build accepts a
+# signature only when gpgv reports VALIDSIG for one of these primary keys;
+# the .asc files next to this one carry the key material.
+#
+# Every 6.18.y release from 6.18.1 to 6.18.64 is signed by this key, so it
+# is the only one trusted. Adding a signer is its own reviewed pull request.
+647F28654894E3BD457199BE38DBBDC86092693E Greg Kroah-Hartman <gregkh@kernel.org>

@@ -1,0 +1,4 @@
+[[exception]]
+option = "CONFIG_RANDSTRUCT_FULL"
+arch = ["x86_64"]
+reason = "fixture"

@@ -1,0 +1,5 @@
+[
+  {"option_name": "CONFIG_BUG", "type": "kconfig", "reason": "self_protection", "decision": "defconfig", "desired_val": "y", "check_result": "OK", "check_result_bool": true},
+  {"option_name": "CONFIG_RANDSTRUCT_FULL", "type": "kconfig", "reason": "self_protection", "decision": "kspp", "desired_val": "y", "check_result": "FAIL: is not found", "check_result_bool": false},
+  {"option_name": "panic_on_warn", "type": "cmdline", "reason": "self_protection", "decision": "kspp", "desired_val": "1", "check_result": "FAIL: is not found", "check_result_bool": false}
+]

@@ -1,0 +1,402 @@
+# Every kernel-hardening-checker finding that is not fixed, with the reason
+# (S2, docs/components/kernel.md check 4). scripts/check_kernel_config.py
+# fails on a finding missing here, and on an entry that no longer fails or
+# that the checker no longer reports.
+#
+# option: the checker's option name (CONFIG_ names for kconfig checks).
+# type:   kconfig (default), cmdline or sysctl.
+# arch:   the architectures the exception applies to.
+
+# Kconfig.
+
+[[exception]]
+option = "CONFIG_RANDSTRUCT_FULL"
+arch = ["x86_64", "aarch64"]
+reason = "S5: the build is reproducible, so the layout seed would be published, and a published seed gives the layout away (kernel.md, Reproducibility)."
+
+[[exception]]
+option = "CONFIG_KSTACK_ERASE"
+arch = ["x86_64", "aarch64"]
+reason = "Needs Clang's sanitizer-coverage stack depth callback, which Debian 13's Clang 19 lacks. Comes back with a toolchain that has it (kernel.md open question)."
+
+[[exception]]
+option = "CONFIG_KSTACK_ERASE_METRICS"
+arch = ["x86_64", "aarch64"]
+reason = "Reported only because KSTACK_ERASE is off; see that exception."
+
+[[exception]]
+option = "CONFIG_KSTACK_ERASE_RUNTIME_DISABLE"
+arch = ["x86_64", "aarch64"]
+reason = "Reported only because KSTACK_ERASE is off; see that exception."
+
+[[exception]]
+option = "CONFIG_GCC_PLUGIN_LATENT_ENTROPY"
+arch = ["x86_64", "aarch64"]
+reason = "A GCC plugin; the kernel is built with Clang for kCFI and the shadow call stack."
+
+[[exception]]
+option = "CONFIG_CFI_CLANG"
+arch = ["x86_64", "aarch64"]
+reason = "Renamed to CONFIG_CFI upstream; the pinned checker predates the rename. CONFIG_CFI=y is required by policy.toml."
+
+[[exception]]
+option = "CONFIG_CFI_PERMISSIVE"
+arch = ["x86_64", "aarch64"]
+reason = "Reported only through the CFI_CLANG name; CFI_PERMISSIVE is unset and policy.toml requires that."
+
+[[exception]]
+option = "CONFIG_CFI_AUTO_DEFAULT"
+arch = ["x86_64"]
+reason = "KSPP prefers kCFI. Decided: FineIBT where the CPU has IBT, as kernel.md describes; it costs less per indirect call. Elsewhere the kernel uses kCFI."
+
+[[exception]]
+option = "CONFIG_KASAN_HW_TAGS"
+arch = ["aarch64"]
+reason = "KASAN is off: it costs memory and CPU on every allocation, and it reports a bad access rather than panicking (kernel.md, Memory corruption hardening)."
+
+[[exception]]
+option = "CONFIG_SECURITY_SELINUX"
+arch = ["x86_64", "aarch64"]
+reason = "S6: the init's policy is uids, Landlock and seccomp. A MAC policy nobody writes is surface without protection (kernel.md, LSMs)."
+
+[[exception]]
+option = "CONFIG_LSM"
+arch = ["x86_64", "aarch64"]
+reason = "Wants selinux in the list; see the SECURITY_SELINUX exception. The list is exactly landlock,lockdown,yama."
+
+[[exception]]
+option = "CONFIG_LSM_MMAP_MIN_ADDR"
+arch = ["x86_64", "aarch64"]
+reason = "Exists only with SELinux. DEFAULT_MMAP_MIN_ADDR=65536 sets the floor."
+
+[[exception]]
+option = "CONFIG_RSEQ"
+arch = ["x86_64", "aarch64"]
+reason = "glibc registers rseq for every thread (kernel.md, EXPERT options)."
+
+[[exception]]
+option = "CONFIG_SCHED_CORE"
+arch = ["x86_64", "aarch64"]
+reason = "Core scheduling only acts on tasks given a cookie, and nothing sets one; it would add a prctl interface for nothing. SMT is reopened with bare metal (M5)."
+
+[[exception]]
+option = "CONFIG_HW_RANDOM_TPM"
+arch = ["x86_64", "aarch64"]
+reason = "No TPM driver until M3 (kernel.md open questions); virtio-rng seeds the pool."
+
+[[exception]]
+option = "CONFIG_SLUB_DEBUG"
+arch = ["x86_64", "aarch64"]
+reason = "Only enables the slub_debug= boot parameter's debugging; nothing on the command line uses it, and every slab hardening option is set."
+
+[[exception]]
+option = "CONFIG_WERROR"
+arch = ["x86_64", "aarch64"]
+reason = "A new compiler warning in a point release would block a security fix past S9's deadline. The toolchain is pinned and warnings show in the build log."
+
+# Command line. The image design owns the line; kernel.md lists the words
+# the kernel policy requires.
+
+[[exception]]
+option = "mitigations"
+type = "cmdline"
+arch = ["x86_64"]
+reason = "Wants auto,nosmt. SMT stays on (kernel.md, CPU flaws); auto is the default, and check 5 rejects mitigations=off."
+
+[[exception]]
+option = "nosmt"
+type = "cmdline"
+arch = ["x86_64", "aarch64"]
+reason = "SMT stays on: in a guest nosmt halves the vCPUs and buys little. Reopened for bare metal (M5)."
+
+[[exception]]
+option = "cfi"
+type = "cmdline"
+arch = ["x86_64"]
+reason = "Wants cfi=kcfi. CFI_AUTO_DEFAULT sets cfi=auto, so FineIBT is used where the CPU has IBT (see CONFIG_CFI_AUTO_DEFAULT above), and check 5 rejects any cfi= word."
+
+[[exception]]
+option = "hash_pointers"
+type = "cmdline"
+arch = ["x86_64", "aarch64"]
+reason = "The default already hashes %p output, kptr_restrict=2 hides %pK, and check 5 rejects no_hash_pointers."
+
+[[exception]]
+option = "iommu"
+type = "cmdline"
+arch = ["x86_64"]
+reason = "Wants iommu=force. The qemu target has no IOMMU; strict DMA mode is set by config. Decided with bare metal (M5)."
+
+[[exception]]
+option = "rodata"
+type = "cmdline"
+arch = ["aarch64"]
+reason = "rodata=full is the 6.18 default (RODATA_FULL_DEFAULT_ENABLED no longer exists), and check 5 rejects any rodata= word."
+
+# Each x86 per-mitigation word passes the checker only when present and not
+# off, or with mitigations=auto,nosmt. Absent, the kernel uses its default,
+# which the CONFIG_MITIGATION_* options set on; check 5 rejects any word that sets them.
+
+[[exception]]
+option = "spectre_v2"
+type = "cmdline"
+arch = ["x86_64"]
+reason = "Absent means the CONFIG_MITIGATION_* default, which is on; see mitigations."
+
+[[exception]]
+option = "spectre_v2_user"
+type = "cmdline"
+arch = ["x86_64"]
+reason = "Absent means the CONFIG_MITIGATION_* default, which is on; see mitigations."
+
+[[exception]]
+option = "spectre_bhi"
+type = "cmdline"
+arch = ["x86_64"]
+reason = "Absent means the CONFIG_MITIGATION_* default, which is on; see mitigations."
+
+[[exception]]
+option = "spec_store_bypass_disable"
+type = "cmdline"
+arch = ["x86_64"]
+reason = "Absent means the CONFIG_MITIGATION_* default, which is on; see mitigations."
+
+[[exception]]
+option = "l1tf"
+type = "cmdline"
+arch = ["x86_64"]
+reason = "Absent means the CONFIG_MITIGATION_* default, which is on; see mitigations."
+
+[[exception]]
+option = "mds"
+type = "cmdline"
+arch = ["x86_64"]
+reason = "Absent means the CONFIG_MITIGATION_* default, which is on; see mitigations."
+
+[[exception]]
+option = "tsx_async_abort"
+type = "cmdline"
+arch = ["x86_64"]
+reason = "Absent means the CONFIG_MITIGATION_* default, which is on; see mitigations."
+
+[[exception]]
+option = "srbds"
+type = "cmdline"
+arch = ["x86_64"]
+reason = "Absent means the CONFIG_MITIGATION_* default, which is on; see mitigations."
+
+[[exception]]
+option = "mmio_stale_data"
+type = "cmdline"
+arch = ["x86_64"]
+reason = "Absent means the CONFIG_MITIGATION_* default, which is on; see mitigations."
+
+[[exception]]
+option = "retbleed"
+type = "cmdline"
+arch = ["x86_64"]
+reason = "Absent means the CONFIG_MITIGATION_* default, which is on; see mitigations."
+
+[[exception]]
+option = "spec_rstack_overflow"
+type = "cmdline"
+arch = ["x86_64"]
+reason = "Absent means the CONFIG_MITIGATION_* default, which is on; see mitigations."
+
+[[exception]]
+option = "gather_data_sampling"
+type = "cmdline"
+arch = ["x86_64"]
+reason = "Absent means the CONFIG_MITIGATION_* default, which is on; see mitigations."
+
+[[exception]]
+option = "reg_file_data_sampling"
+type = "cmdline"
+arch = ["x86_64"]
+reason = "Absent means the CONFIG_MITIGATION_* default, which is on; see mitigations."
+
+[[exception]]
+option = "tsa"
+type = "cmdline"
+arch = ["x86_64"]
+reason = "Absent means the CONFIG_MITIGATION_* default, which is on; see mitigations."
+
+[[exception]]
+option = "indirect_target_selection"
+type = "cmdline"
+arch = ["x86_64"]
+reason = "Absent means the CONFIG_MITIGATION_* default, which is on; see mitigations."
+
+[[exception]]
+option = "vmscape"
+type = "cmdline"
+arch = ["x86_64"]
+reason = "Absent means the CONFIG_MITIGATION_* default, which is on; see mitigations."
+
+# Sysctls. Network sysctls belong to the network design (kernel.md, What it
+# does not do); it decides accept_redirects and accept_ra, which T70 cares about.
+
+[[exception]]
+option = "vm.mmap_min_addr"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "DEFAULT_MMAP_MIN_ADDR=65536 sets it, and /proc/sys is read-only after boot."
+
+[[exception]]
+option = "vm.mmap_rnd_bits"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "ARCH_MMAP_RND_BITS is at its maximum for the architecture in config."
+
+[[exception]]
+option = "kernel.randomize_va_space"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "The kernel default is 2, /proc/sys is read-only after boot, and check 5 rejects norandmaps."
+
+[[exception]]
+option = "kernel.dmesg_restrict"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "SECURITY_DMESG_RESTRICT sets it to 1."
+
+[[exception]]
+option = "dev.tty.ldisc_autoload"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "LDISC_AUTOLOAD is off, and there are no modules to autoload."
+
+[[exception]]
+option = "dev.tty.legacy_tiocsti"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "LEGACY_TIOCSTI is off in config."
+
+[[exception]]
+option = "user.max_user_namespaces"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "USER_NS is compiled out; the sysctl does not exist."
+
+[[exception]]
+option = "kernel.oops_limit"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "oops=panic panics on the first oops."
+
+[[exception]]
+option = "kernel.warn_limit"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "Same reasoning as panic_on_warn being off: one WARN reachable on every machine would reboot the whole cluster (kernel.md, The command line)."
+
+[[exception]]
+option = "kernel.perf_event_paranoid"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "Wants 3, which is a distribution patch; 2 is the strictest upstream level. On aarch64 perf is compiled out and the sysctl does not exist."
+
+[[exception]]
+option = "net.ipv4.icmp_ignore_bogus_error_responses"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "Owned by the network design, which sets the network sysctls."
+
+[[exception]]
+option = "net.ipv4.icmp_echo_ignore_broadcasts"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "Owned by the network design, which sets the network sysctls."
+
+[[exception]]
+option = "net.ipv4.conf.all.accept_redirects"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "Owned by the network design, which sets the network sysctls."
+
+[[exception]]
+option = "net.ipv4.conf.default.accept_redirects"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "Owned by the network design, which sets the network sysctls."
+
+[[exception]]
+option = "net.ipv6.conf.all.accept_redirects"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "Owned by the network design, which sets the network sysctls."
+
+[[exception]]
+option = "net.ipv6.conf.default.accept_redirects"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "Owned by the network design, which sets the network sysctls."
+
+[[exception]]
+option = "net.ipv4.conf.all.accept_source_route"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "Owned by the network design, which sets the network sysctls."
+
+[[exception]]
+option = "net.ipv4.conf.default.accept_source_route"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "Owned by the network design, which sets the network sysctls."
+
+[[exception]]
+option = "net.ipv6.conf.all.accept_source_route"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "Owned by the network design, which sets the network sysctls."
+
+[[exception]]
+option = "net.ipv6.conf.default.accept_source_route"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "Owned by the network design, which sets the network sysctls."
+
+[[exception]]
+option = "net.ipv4.tcp_syncookies"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "Owned by the network design, which sets the network sysctls."
+
+[[exception]]
+option = "net.ipv6.conf.all.accept_ra"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "Owned by the network design, which sets the network sysctls."
+
+[[exception]]
+option = "net.ipv6.conf.default.accept_ra"
+type = "sysctl"
+arch = ["x86_64", "aarch64"]
+reason = "Owned by the network design, which sets the network sysctls."
+
+# aarch64 only.
+
+[[exception]]
+option = "CONFIG_ARM_SMMU"
+arch = ["aarch64"]
+reason = "No SMMU on qemu virt. Added with the first aarch64 target that has one (M5), with DISABLE_BYPASS_BY_DEFAULT."
+
+[[exception]]
+option = "CONFIG_ARM_SMMU_V3"
+arch = ["aarch64"]
+reason = "No SMMU on qemu virt. Added with the first aarch64 target that has one (M5)."
+
+[[exception]]
+option = "CONFIG_ARM_SMMU_DISABLE_BYPASS_BY_DEFAULT"
+arch = ["aarch64"]
+reason = "Exists only with ARM_SMMU; see that exception."
+
+[[exception]]
+option = "CONFIG_RANDOMIZE_MODULE_REGION_FULL"
+arch = ["aarch64"]
+reason = "There are no modules, so there is no module region to randomise."
+
+[[exception]]
+option = "CONFIG_RODATA_FULL_DEFAULT_ENABLED"
+arch = ["aarch64"]
+reason = "Removed upstream; rodata=full is the default in 6.18."

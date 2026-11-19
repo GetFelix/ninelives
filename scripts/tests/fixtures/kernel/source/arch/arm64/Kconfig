@@ -1,0 +1,2 @@
+config ARM64_ONLY
+	bool "arm64"

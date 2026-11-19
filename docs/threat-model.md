@@ -482,7 +482,7 @@ mitigation, and what checks it. Rows are numbered so designs can cite them.
 |---|---|---|---|---|---|
 | T46 | Replace the kernel or root on disk, or boot another signed loader | X7, X4 | B6 | Signed kernel image and dm-verity root; a key database with only NineLives keys, so a stock signed shim does not boot. Before M3, none. | S13; accepted before M3 (no published images) |
 | T47 | Change the kernel command line (`init=`, `mitigations=off`, lockdown off) | X7, X4 | B6 | The command line is inside the signed kernel image | S13, S17 |
-| T48 | Boot an older signed image with known holes | X6, X7 | B6 | Minimum version | S13 |
+| T48 | Boot an older signed image with known holes | X6, X7 | B6 | From M3, an old image boots but gets no credentials: they are TPM-sealed under a PCR policy signed offline and a minimum-version NV floor | S13 |
 | T49 | A production machine boots a development image with a console shell | X6, X7 | B6 | Production refuses development images | gap: S22 |
 | T50 | A malicious, old, withheld or badly timed update | X6, X1 | B6 | Signed, fresh, staged updates; versions reported | gap: S22 |
 | T51 | A rollback onto a Felix that cannot read the data | X6, X4 | B6 | Rollback limited to images whose Felix reads the data partition | gap: S22 |

@@ -150,19 +150,18 @@ The kernel creates the verity device from `dm-mod.create`, mounts it as the
 root, and starts the init. A block that does not match the hash tree panics
 the kernel, and `panic=10` reboots it, so a changed root is never read.
 
-**Naming the root device.** `dm-mod.create` and `dm-mod.waitfor` take a
-device as `major:minor` or a `/dev` path, not `PARTUUID=`
+**Naming the root device.** Since about Linux 6.5, dm-init resolves the
+devices in `dm-mod.create` through `early_lookup_bdev`, so `PARTLABEL=` and
+`PARTUUID=` should work there
 ([dm-init](https://docs.kernel.org/admin-guide/device-mapper/dm-init.html)).
-The line therefore names partitions by their fixed number on the boot disk:
-the layout above puts the root at 2 and its hash tree at 3, and each target
-names its boot disk by the path it always has there (`/dev/vda` for qemu's
-virtio disk, `/dev/nvme0n1` on a cloud whose boot volume is the first NVMe
-device). So the command line, and with it the UKI, is per target. A target
-that cannot promise its boot disk's name is not supported until that is
-solved. A wrong name is a liveness failure, not an integrity one: whatever
-the named device holds must still match the root hash, or the kernel panics.
-That `dm-mod.waitfor` and these paths work on the pinned kernel is checked in
-[#3](https://github.com/GetFelix/ninelives/issues/3) before M0 closes.
+The line names the root and its hash tree by `PARTLABEL=` (or `PARTUUID=`,
+both fixed by the build), so one UKI serves every target of an architecture.
+A `/dev` path is the fallback, and a poor one: `/dev/nvme0n1` depends on
+enumeration order, and some clouds present the boot disk as SCSI `sda`.
+That `dm-mod.waitfor` and these names work on the pinned kernel is checked in
+[#3](https://github.com/GetFelix/ninelives/issues/3) before M0 closes. A
+wrong name is a liveness failure, not an integrity one: whatever the named
+device holds must still match the root hash, or the kernel panics.
 
 The root hash on the command line is inside the UKI, so from M3 one signature
 on the UKI covers the kernel, the command line, the root hash and through it
@@ -244,7 +243,7 @@ repository; changing one is a reviewed pull request
 | **NineLives' own programs** (init, join, the firewall loader) | This commit, `Cargo.lock`, and the Rust toolchain by exact version in `rust-toolchain.toml` | Cargo checks each crate's checksum against `Cargo.lock`. The toolchain archives are checked against SHA-256s committed in `images/tools.toml`, because rustup does not enforce its signatures. | Build fails |
 | **mkosi** | `images/tools.toml`: an exact release, its source archive URL and SHA-256 | SHA-256. mkosi needs only Python's standard library, so it runs from the archive with nothing resolved from PyPI. The version is chosen in #1. | Build fails |
 | **Bootstrap container** | `images/tools.toml`: a Debian 13 container image by digest, built from the same snapshot | The container runtime checks the digest. It holds the python3, `gpgv` and apt that the fetch phase and mkosi run on ([Bootstrap](#bootstrap)). | Build fails |
-| **Build tools** (`mkfs.erofs`, `veritysetup`, `ukify`, `sbsign`, gcc, the Sigstore verifier, diffoscope) | mkosi's tools tree, built from the same Debian snapshot and listed in the lock; the Sigstore verifier, if not in Debian 13, by SHA-256 in `images/tools.toml` | As Debian packages | Build fails |
+| **Build tools** (`mkfs.erofs`, `veritysetup`, `ukify`, `sbsign`, Clang (the kernel's compiler, [kernel design](kernel.md)), the Sigstore verifier, diffoscope) | mkosi's tools tree, built from the same Debian snapshot and listed in the lock; the Sigstore verifier, if not in Debian 13, by SHA-256 in `images/tools.toml` | As Debian packages | Build fails |
 | **CI runner** | The `ubuntu-24.04` label, never `ubuntu-latest`. The image version GitHub reports is recorded in the provenance. | Nothing can verify a hosted runner. The bootstrap container and tools tree keep it to its kernel, its container runtime and the network. | See [Open questions](#open-questions) |
 | **GitHub Actions** | Each by full commit SHA, with the tag in a comment | The workflow checks in [Actions hygiene](#actions-hygiene) (S21, #65) | PR fails |
 
@@ -356,11 +355,11 @@ it.
 **Everything else that varies.** The kernel build sets
 `KBUILD_BUILD_TIMESTAMP`, `KBUILD_BUILD_USER`, `KBUILD_BUILD_HOST` and
 `-ffile-prefix-map`. With no loadable modules there is no per-build module
-signing key. Build-time randomness in the kernel's hardening options
-(the randstruct seed, latent entropy) is either fixed or the option is off,
-and each is listed with the other hardening exceptions in `kernel/`
-(S2). For a public image the randstruct layout is public anyway, because
-anyone can read it out of the published kernel. Rust builds use
+signing key. randstruct is off, as in the
+[kernel design](kernel.md): for a public image its layout is public anyway,
+because anyone can read it out of the published kernel. Any other build-time
+randomness in a hardening option is fixed or the option is off, and each is
+listed with the other hardening exceptions in `kernel/` (S2). Rust builds use
 `--remap-path-prefix`, `--locked` and `--offline`. UUIDs, the verity salt and
 any other value a tool would pick at random come from fixed seeds in the
 config or from the commit.
@@ -468,18 +467,22 @@ installed. They use different keys, held differently.
 - The **image key**, a Secure Boot `db` key, signs the UKI's Authenticode
   digest. That one signature covers the kernel, its command line and the
   verity root hash, so the whole root. The firmware's key database holds
-  only NineLives keys (S13), so nothing signed by another vendor boots. The
-  same release also signs the UKI's expected PCR 11 values with the **PCR
-  policy key** ([Rollback](#rollback)).
+  only NineLives keys (S13), so nothing signed by another vendor boots.
+- The **PCR policy key** signs the UKI's expected PCR 11 values. It is used
+  offline at the targets ceremony, after the independent rebuild matches,
+  and CI never holds it. A UKI signed by the pipeline alone boots but cannot
+  unseal credentials ([Rollback](#rollback)).
 - **Update metadata** follows TUF
   ([specification](https://theupdateframework.github.io/specification/latest/)).
   Machines trust a NineLives-owned TUF root, not "signed by this GitHub
-  repository". The root keys are hardware keys kept offline. The targets
-  role, which lists each release's digests and the minimum version, is
-  signed offline by the maintainer, and only after the independent rebuild
-  matches ([Reproducibility](#reproducibility)). The snapshot and timestamp
-  roles are online keys with short expiry (proposed: snapshot 7 days,
-  timestamp 1 day), so a frozen mirror is noticed; they cannot add a target.
+  repository". The root role has a threshold (proposed: 2 of 3 hardware
+  keys, kept offline). The targets key is separate from the root keys and
+  also offline. The targets role, which lists each release's digests and the
+  minimum version, is signed by the maintainer only after the independent
+  rebuild matches ([Reproducibility](#reproducibility)). The snapshot and
+  timestamp keys are online, held in the release job's protected
+  environment, with short expiry (proposed: snapshot 7 days, timestamp 1
+  day), so a frozen mirror is noticed; they cannot add a target.
   The metadata format and expiries are #8's and
   [#66](https://github.com/GetFelix/ninelives/issues/66)'s.
 - The **provenance attestation** is signed keylessly through Sigstore by the
@@ -488,7 +491,8 @@ installed. They use different keys, held differently.
 
 A UKI signed through a subverted pipeline can therefore boot only where
 someone writes it to disk by hand. No updater installs it, because it is not
-in offline-signed targets.
+in offline-signed targets, and it cannot unseal credentials, because its PCR
+11 values were not signed at the ceremony.
 
 **Where the keys live.** Outside CI, generated in and never exported from
 hardware. Custody follows [0008](../decisions/0008-ca-keys-and-machine-certificates.md)'s
@@ -520,8 +524,8 @@ revocation are written down with #9 (S13).
    repository, a `v*` tag and that environment. A change to any workflow in
    this repository changes none of those claims' meaning, and a change to the
    signing workflow is a new SHA the signer does not accept until its
-   allowlist is updated, which is itself a reviewed change in the signer's
-   configuration.
+   allowlist is updated. That update is reviewed, but the account that tags
+   can also edit the allowlist, so it is not a second party.
 6. Every signature is recorded in Rekor, Sigstore's public transparency log,
    and a monitor ([rekor-monitor](https://github.com/sigstore/rekor-monitor))
    watches for entries under NineLives' identities and alerts on any that do
@@ -529,6 +533,12 @@ revocation are written down with #9 (S13).
    ([Sigstore security model](https://docs.sigstore.dev/about/security/)).
 7. Build jobs and pull request workflows have no `id-token` permission and no
    secrets.
+
+The main-ancestor check only stops a tag on a commit that was never merged.
+None of these steps stops whoever controls the maintainer account. The
+backstop is outside CI: targets are signed offline only after an independent
+rebuild matches, so a UKI the pipeline signs is neither installed nor able to
+unseal credentials without that ceremony.
 
 What this does not stop: whoever controls the maintainer account merging and
 tagging a malicious commit (T42, open in
@@ -544,8 +554,8 @@ none of which stops an old image from booting by itself:
 
 | Layer | What it does | Lands |
 |---|---|---|
-| **TPM-sealed credentials** | The data partition key (S16) and the machine's cluster key are sealed to the TPM under a policy that authorises PCR 11 values signed by the PCR policy key (the mechanism of systemd-measure and mkosi's `SignExpectedPcr=`), require PCR 12 and 13 at their initial value ([The ESP](#the-esp-is-input-to-the-stub)), and compare a TPM NV index holding the machine's minimum version with the version in the image's signed policy. An older image boots, but once the minimum version rises or the policy key rotates it cannot unseal, so it has no cluster identity and no data. | M3, with S16 ([#60](https://github.com/GetFelix/ninelives/issues/60)) |
-| **Updater floor** | The updater refuses any image below the minimum version. The floor is in the offline-signed targets metadata and in the TPM NV index, which only rises. | M3 (#8, #66) |
+| **TPM-sealed credentials** | The data partition key (S16) and the machine's cluster key are sealed to the TPM under a policy that authorises PCR 11 values signed offline by the PCR policy key, requires PCR 12 and 13 at their initial value ([The ESP](#the-esp-is-input-to-the-stub)), and compares a TPM NV index holding the machine's minimum version with the image's version. systemd-measure and `SignExpectedPcr=` produce only the PCR part (a PolicyPCR under PolicyAuthorize); the NV comparison is its own PolicyNV, combined with it through PolicyAuthorize or PolicyOR. The exact construction is prototyped at M3. The NV index's write policy (PolicySigned or PolicyAuthorize) accepts only a raise signed offline for that exact value, so no process on the machine can raise it alone, and raising it to a bogus maximum to brick the machine needs the offline key. An older image boots, but once the minimum version rises or the policy key rotates it cannot unseal, so it has no cluster identity and no data. Unsealing needs TPM drivers built into the kernel ([kernel design](kernel.md)). | M3, with S16 ([#60](https://github.com/GetFelix/ninelives/issues/60)) |
+| **Updater floor** | The updater refuses any image below the minimum version. The floor is in the offline-signed targets metadata and in the TPM NV index, which only rises, and only by an offline-signed raise. | M3 (#8, #66) |
 | **SBAT generations** | The UKI's `.sbat` section carries a NineLives generation, bumped when a release fixes a hole that must not be booted again. It is enforced only where a shim or stub checks SBAT; NineLives' chain has no shim, so today it is metadata for that day. | M3, enforcement open |
 | **`dbx`** | A specific vulnerable UKI's Authenticode hash is added to the firmware's forbidden list, so it does not boot at all. `dbx` space is small, so this is for serious holes only. | M3 (#9) |
 
@@ -576,7 +586,7 @@ Per architecture and variant, named
 |---|---|---|
 | `.raw` | The GPT disk image above, sparse | M0 |
 | `.root.erofs`, `.root.verity`, `.roothash` | The root, its hash tree and root hash, for the M3 updater to write into a slot | M0 (used from M3) |
-| `.efi` | The unsigned UKI per target; after a release, also `.signed.efi` and the signed expected PCR 11 values | M0; signed from M3 |
+| `.efi` | The unsigned UKI per architecture; after a release, also `.signed.efi` and the signed expected PCR 11 values | M0; signed from M3 |
 | Cloud formats | Converted from `.raw` with pinned tools: qemu needs none, then per cloud as M5 adds them (#13) | M5 |
 | `.inventory.json` | Every package (name, version, architecture, source package, `.deb` SHA-256, license), every component from `components.toml`, the kernel (version, tarball SHA-256, config SHA-256), mkosi and the toolchain | M0 |
 | `.files.json` | Every path in the root with type, mode, owner, size and SHA-256, sorted. Pull requests diff it. | M0 |
@@ -678,7 +688,7 @@ Each is written so a test can check it.
 | A backdoor in an upstream tarball that builds reproducibly | Caught only where the tarball is compared with its git tag | Debian packages are out of reach; keeping network daemons' libraries few limits where one can land |
 | A corrupt block in the root | Before M3: panic and a reboot loop, the panic on the console, and the cluster reports the machine missing. From M3: the slot is marked bad and the machine falls back ([Boot](#boot-without-an-initrd)) | One machine is lost, never a wrong byte read |
 | The signer is down at release time | The release waits | There is no fallback key in CI, on purpose |
-| The image key is stolen | Signed malicious images boot where someone writes them to disk, until the key is revoked in `dbx`. No updater installs them without offline-signed targets, and unless the PCR policy key was stolen too, they cannot unseal credentials. The Rekor monitor shows the signatures. | Rotation and revocation are written down with #9 (S13) |
+| The image key is stolen | Signed malicious images boot where someone writes them to disk, until the key is revoked in `dbx`. No updater installs them without offline-signed targets, and they cannot unseal credentials, because the PCR policy key is offline and was not stolen with it. The Rekor monitor shows the signatures. | Rotation and revocation are written down with #9 (S13) |
 | An older signed image is written to a machine | It boots. From M3 it cannot unseal credentials once the minimum version has risen, and the updater never installs it; before M3 nothing stops it | Firmware has no version; [Rollback](#rollback) is layered for that reason |
 | A file added to the ESP | Before M3, the stub may load it. From M3 an unsigned addon fails the firmware check, and anything measured into PCR 12 or 13 blocks unsealing | Pre-M3 has no boot integrity (T46) |
 | The runner's disk fills or a job times out | The run fails | Nothing partial is kept or published |
@@ -743,11 +753,11 @@ first published image.
 | Question | Proposal | Decides | Needed by |
 |---|---|---|---|
 | erofs or squashfs for the root, and whether that choice needs a decision record | erofs; a short record if reviewers see it as an image format choice | Review of this page | M0 (#1) |
-| Do the fixed partition paths and `dm-mod.waitfor` work on the pinned kernel for each target, and does each target always give its boot disk the same name? | Verify in #3 for qemu; a cloud target ships only once its name is shown stable | Kernel (#3), each target | M0 for qemu |
+| Do `PARTLABEL=` or `PARTUUID=` and `dm-mod.waitfor` work in `dm-mod.create` on the pinned kernel? | Verify in #3; if not, fall back to `/dev` paths per target, which some clouds do not keep stable | Kernel (#3) | M0 |
 | Can the pinned systemd stub be made to load no addon, credential or system extension from the ESP, and ignore firmware load options? | Verify in #9; if not, a minimal stub that loads only the UKI's own sections | #9 | M3 |
 | PID 1 checks `/proc/cmdline` against the expected words before M3 | Add it to the init design's boot steps | Init design | M1 |
 | Whether the image key is signed offline at the targets ceremony instead of by a CI signer | Keep a CI signer for the UKI, since the offline targets decide what is installed; revisit if the CI signer is ever misused | #9 | M3 |
-| Which TPM NV index and write policy hold the minimum version, and how a minimum version is raised across a cluster | The updater raises it after the new image reports healthy; #8 decides | #8, #60 | M3 |
+| The exact TPM policy: PolicyPCR under PolicyAuthorize combined with the PolicyNV floor, the NV index, and how an offline-signed raise reaches each machine in a cluster | Prototype at M3; the updater applies the signed raise after the new image reports healthy | #8, #60 | M3 |
 | Whether the B slot is reserved from M0 | Reserve it, so M3 does not change the layout | A/B design (#8) | M3, but cheapest now |
 | The config partition's format, and how the join reads it without root (the init could hand the join that one partition's device node before the drop) | A raw, length-prefixed, size-capped blob | Join (#5) with the init design | M1 |
 | Where the image key lives | 0008's custody model, as a separate key | #9, #16 | M3 |

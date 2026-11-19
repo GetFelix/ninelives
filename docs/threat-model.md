@@ -196,9 +196,12 @@ would run that program as full root on the next crash. So:
   service's uid without the service's seccomp filter or Landlock rules, so the
   service could otherwise ptrace it. Yama's `ptrace_scope` is 3, so nothing
   can ptrace anything, and launchers are non-dumpable. A launcher takes no
-  input from its service. PID 1 cannot fork a new launcher after the drop, so
-  when a Felix or felixd launcher dies the init powers the machine off and the
-  cluster sees a clean loss (T74).
+  input from its service, and each service's seccomp filter allows
+  `prlimit64`, `setpriority`, `ioprio_set` and the `sched_set*` calls only on
+  the caller itself. PID 1 cannot fork a new launcher after the drop, so when a
+  Felix or felixd launcher dies the init reboots the machine, at most twice in
+  any 24 hours of uptime counted across boots; after that the machine stays
+  up and degraded (T74).
 - **Capabilities are listed per service** (S6). The DHCP applier and the
   time client get theirs as ambient capabilities from their launchers, since
   with no file capabilities that is the only way to hold one across `exec`.
@@ -420,7 +423,7 @@ mitigation, and what checks it. Rows are numbered so designs can cite them.
 | T69 | A compromised time client sets the clock; on a core machine, minted tokens outlive their TTL on every broker | X1, X3 | B2, B5 | Authenticated time stops a network attacker, not the client itself. Nothing bounds what a process with `CAP_SYS_TIME` sets. | S15; gap: init design must bound or cross-check clock changes |
 | T70 | A compromised DHCP client uses `CAP_NET_ADMIN` to open ports, lift egress limits or reroute traffic, `CAP_NET_RAW` to sniff or spoof, or chains a parser bug with an nf_tables or tc bug into root | X1, X3 | B2, B1 | The parser holds no capability; a separate applier holds them, with seccomp allowing netlink only for `NETLINK_ROUTE`. The packet filter loads before the drop, so no service needs `NETLINK_NETFILTER`. Unprivileged user namespaces are off, so no service gets `CAP_NET_ADMIN` in a namespace of its own. TLS keeps rerouted or sniffed traffic unreadable. Left: a parser bug reaches the applier only through a typed lease; an applier bug can reroute traffic and spoof frames on the local link; a route-handling kernel bug is still root. | S6, S2, S24, S10; gap: init design ([#69](https://github.com/GetFelix/ninelives/issues/69)) |
 | T71 | A compromised join installs an attacker's CA or credentials for every service, or takes the Raft peer token on a core machine | X1, X7 | B2, B5 | The join runs only on first boot and its uid never runs again; it writes each service's directory without being able to read the others afterwards; the CA it installs must match the fingerprint in the join config | gap: join design ([#5](https://github.com/GetFelix/ninelives/issues/5)), S20 |
-| T74 | A service attacks its own launcher, which shares its uid but not its seccomp filter or Landlock rules, or kills it | X3 | B2 | Yama `ptrace_scope` 3 and non-dumpable launchers, so the service cannot ptrace or read it; the launcher takes no input from its service. PID 1 cannot re-fork a launcher, so when a Felix or felixd launcher dies the init powers the machine off and the cluster sees a clean loss. | S24, S2; the power-off is accepted (one machine is one failure domain) |
+| T74 | A service attacks its own launcher, which shares its uid but not its seccomp filter or Landlock rules, or kills it | X3 | B2 | Yama `ptrace_scope` 3 and non-dumpable launchers, so the service cannot ptrace or read it; the launcher takes no input from its service; the service's seccomp filter allows `prlimit64`, `setpriority`, `ioprio_set` and `sched_set*` only on itself. PID 1 cannot re-fork a launcher, so when a Felix or felixd launcher dies the init reboots the machine, at most twice in any 24 hours of uptime counted across boots, then leaves it up and degraded. | S24, S2; the rate-limited reboot is accepted (one machine is one failure domain) |
 
 ### One machine to the cluster
 

@@ -86,6 +86,7 @@ def verdict(log: str, expect: str) -> list[str]:
     errors = []
     if ready is not None:
         errors.append("the init reported ready on a corrupted image")
+    errors += [f"{kind} on the console: {line}" for kind, line in bad if kind == "firmware"]
     if not any(kind == "verity" for kind, _ in bad):
         errors.append("no dm-verity failure on the console")
     return errors

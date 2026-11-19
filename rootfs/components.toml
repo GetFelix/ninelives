@@ -1,0 +1,11 @@
+# Which members of each component's archive the image takes, and where they
+# go (docs/components/image.md, "Building the root", step 2). Anything else in
+# the archive, the README and LICENSE included, is left out. Each file is
+# installed 0:0, mode 0555.
+
+[felixd]
+"felixd" = "/usr/lib/felixd/felixd"
+
+[felix]
+"felix-broker" = "/usr/lib/felix/felix-broker"
+"felix-controlplane" = "/usr/lib/felix/felix-controlplane"

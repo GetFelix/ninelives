@@ -1,0 +1,5 @@
+# Every executable, ELF file and shared library in the production root
+# (docs/components/image.md, "Checks": no shells or interpreters). A path may
+# use * for one directory's worth of one kind of file. No shell or
+# interpreter may appear here. `needed` pins the shared libraries a
+# network-facing binary links against.

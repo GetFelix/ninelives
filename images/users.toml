@@ -1,0 +1,17 @@
+# /etc/passwd and /etc/group in the root, exactly (docs/components/image.md,
+# "Checks": only allowed users and groups). The numbers match the uids in the
+# init's config. uid 0 exists only to name the owner of the files: no
+# password, no shell, no home. The first slice has no service users yet; each
+# one arrives with the service that needs it.
+
+[[user]]
+name = "root"
+uid = 0
+gid = 0
+home = "/nonexistent"
+shell = "/usr/sbin/nologin"
+requirement = "S6: owns the files of the read-only root"
+
+[[group]]
+name = "root"
+gid = 0

@@ -1,0 +1,2 @@
+# Symlinks whose target is not in the image (docs/components/image.md,
+# "Checks": special files and stray links). Each says why.

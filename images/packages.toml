@@ -1,0 +1,20 @@
+# The packages in the production root, exactly (docs/components/image.md,
+# "Checks": package allowlist). Debian marks more packages essential than the
+# image needs; the build installs them, then removes everything not listed
+# here. Every entry says why it is there.
+
+[[package]]
+name = "base-files"
+reason = "os-release and the directory skeleton (S1)"
+
+[[package]]
+name = "libc6"
+reason = "the dynamic loader and libc that Felix, felixd and the init link against (S1)"
+
+[[package]]
+name = "libgcc-s1"
+reason = "libgcc_s.so.1, which Felix and felixd link against (S1)"
+
+[[package]]
+name = "gcc-14-base"
+reason = "libgcc-s1 depends on it (S1)"

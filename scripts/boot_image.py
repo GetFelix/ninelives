@@ -70,6 +70,45 @@ def record_state(line: str) -> str | None:
     return rec.get("machine") if isinstance(rec, dict) else None
 
 
+# What PID 1 must report about itself after the privilege drop (init.md,
+# "Privilege"; init/src/privilege.rs): the id and capability sets as
+# /proc/1/status prints them, plus the securebits, which it does not show.
+INIT_ID = 900
+KEPT_CAPS = "0000000000400020"  # CAP_KILL (5) and CAP_SYS_BOOT (22)
+SECUREBITS = 0b1111  # NOROOT and NO_SETUID_FIXUP, each locked
+DROP_EXPECTED = {
+    "uid": [INIT_ID] * 3,
+    "gid": [INIT_ID] * 3,
+    "groups": 0,
+    "cap_prm": KEPT_CAPS,
+    "cap_eff": "0" * 16,
+    "cap_inh": "0" * 16,
+    "cap_amb": "0" * 16,
+    "cap_bnd": KEPT_CAPS,
+    "securebits": SECUREBITS,
+    "no_new_privs": 1,
+}
+
+
+def drop_errors(log: str) -> list[str]:
+    """Why the init's drop record does not show an unprivileged PID 1; empty if it does."""
+    recs = []
+    for l in lines(log):
+        if l.startswith("ninelives-init {") and '"step":"drop root"' in l:
+            try:
+                recs.append(json.loads(l[len("ninelives-init "):]))
+            except ValueError:
+                return [f"the init's drop record does not parse: {l}"]
+    if not recs:
+        return ["no drop record: the init never reported dropping root"]
+    errors = []
+    for key, want in DROP_EXPECTED.items():
+        got = recs[-1].get(key)
+        if got != want:
+            errors.append(f"after the drop, {key} is {got!r}, not {want!r}")
+    return errors
+
+
 def failures(log: str) -> list[tuple[str, str]]:
     """(kind, line) for every console line that is a failure, in log order."""
     out = []
@@ -103,6 +142,8 @@ def verdict(log: str, expect: str) -> list[str]:
         if ready is None:
             errors.append("the init's ready line never appeared")
         errors += [f"{kind} on the console: {line}" for kind, line in bad]
+        if ready is not None:
+            errors += drop_errors(log)
         return errors
     errors = []
     if ready is not None:

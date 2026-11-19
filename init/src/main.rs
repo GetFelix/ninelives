@@ -14,6 +14,7 @@ mod boot_plan;
 mod event_loop;
 mod machine;
 mod mounts;
+mod privilege;
 mod record;
 mod signals;
 

@@ -15,6 +15,7 @@ use crate::clock;
 use crate::console::Console;
 use crate::event_loop::Os;
 use crate::machine::{Event, StopKind};
+use crate::privilege;
 use crate::record::{MachineState, Record};
 use crate::signals::{self, SIGINFO_SIZE};
 
@@ -170,10 +171,12 @@ impl Os for LinuxOs {
             StopKind::Reboot => RebootCommand::Restart,
             StopKind::PowerOff => RebootCommand::PowerOff,
         };
-        match reboot(cmd) {
-            Err(e) => e.raw_os_error(),
+        // PID 1 holds CAP_SYS_BOOT permitted only, so raise it for this call.
+        match privilege::linux::raised(privilege::CAP_SYS_BOOT, || reboot(cmd)) {
+            Err(errno) => errno,
+            Ok(Err(e)) => e.raw_os_error(),
             // Restart and power-off do not return on success.
-            Ok(()) => 0,
+            Ok(Ok(())) => 0,
         }
     }
 }

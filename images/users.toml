@@ -1,8 +1,10 @@
 # /etc/passwd and /etc/group in the root, exactly (docs/components/image.md,
 # "Checks": only allowed users and groups). The numbers match the uids in the
 # init's config. uid 0 exists only to name the owner of the files: no
-# password, no shell, no home. The first slice has no service users yet; each
-# one arrives with the service that needs it.
+# password, no shell, no home. `init` is PID 1 after the privilege drop: its
+# numbers are init_uid and init_gid in init.toml and INIT_UID and INIT_GID in
+# init/src/privilege.rs. Service users arrive with the service that needs
+# each one.
 
 [[user]]
 name = "root"
@@ -15,3 +17,15 @@ requirement = "S6: owns the files of the read-only root"
 [[group]]
 name = "root"
 gid = 0
+
+[[user]]
+name = "init"
+uid = 900
+gid = 900
+home = "/nonexistent"
+shell = "/usr/sbin/nologin"
+requirement = "S24: PID 1 runs as this user after early boot (init_uid in init.toml)"
+
+[[group]]
+name = "init"
+gid = 900

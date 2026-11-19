@@ -76,3 +76,26 @@ pub(crate) fn signalfd(set: &SignalSet) -> io::Result<OwnedFd> {
     // SAFETY: signalfd returned a new descriptor that nothing else owns.
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })
 }
+
+/// The calling thread's real, effective and saved user ids. rustix has no
+/// `getresuid`, and the drop has to read the saved id back.
+pub(crate) fn getresuid() -> io::Result<[u32; 3]> {
+    let mut ids = [0 as libc::uid_t; 3];
+    let [r, e, s] = &mut ids;
+    // SAFETY: the three pointers are to distinct, writable uid_t values.
+    if unsafe { libc::getresuid(r, e, s) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(ids)
+}
+
+/// The calling thread's real, effective and saved group ids.
+pub(crate) fn getresgid() -> io::Result<[u32; 3]> {
+    let mut ids = [0 as libc::gid_t; 3];
+    let [r, e, s] = &mut ids;
+    // SAFETY: the three pointers are to distinct, writable gid_t values.
+    if unsafe { libc::getresgid(r, e, s) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(ids)
+}

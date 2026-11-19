@@ -16,6 +16,10 @@ sys.path.insert(0, str(SCRIPTS))
 import boot_image as bi  # noqa: E402
 
 READY = 'ninelives-init {"v":1,"boot":"0f6c2a3e-6d3c-4c58-9c55-6a4b1f3e2d10","mono_ms":1234,"wall_ms":1763500000000,"machine":"up"}'
+DROP = ('ninelives-init {"v":1,"boot":"0f6c2a3e-6d3c-4c58-9c55-6a4b1f3e2d10","mono_ms":1200,"wall_ms":1763500000000,'
+        '"machine":"booting","step":"drop root","result":"ok","uid":[900,900,900],"gid":[900,900,900],"groups":0,'
+        '"cap_prm":"0000000000400020","cap_eff":"0000000000000000","cap_inh":"0000000000000000",'
+        '"cap_amb":"0000000000000000","cap_bnd":"0000000000400020","securebits":15,"no_new_privs":1}')
 CMDLINE = ('Kernel command line: init=/usr/lib/ninelives/init console=ttyS0,115200 ro root=/dev/dm-0 '
            'dm-mod.create="root,,,ro,0 1 verity 1 /dev/vda2 /dev/vda3 4096 4096 9 0 sha256 ab cd 1 panic_on_corruption" panic=10 oops=panic')
 HEALTHY = "\n".join([
@@ -42,7 +46,30 @@ VERITY_EIO = "\n".join([
 
 class Verdicts(unittest.TestCase):
     def test_ready_line_after_a_clean_boot_passes(self):
-        self.assertEqual(bi.verdict(HEALTHY + "\r\n" + READY + "\r\n", "ready"), [])
+        self.assertEqual(bi.verdict(HEALTHY + "\r\n" + DROP + "\r\n" + READY + "\r\n", "ready"), [])
+
+    def test_a_boot_without_a_drop_record_fails(self):
+        errors = bi.verdict(HEALTHY + "\n" + READY, "ready")
+        self.assertTrue(any("no drop record" in e for e in errors), errors)
+
+    def test_every_field_of_the_drop_is_checked(self):
+        import json
+        base = json.loads(DROP[len("ninelives-init "):])
+        bad = {
+            "uid": [0, 900, 900], "gid": [900, 900, 0], "groups": 1,
+            "cap_prm": "000001ffffffffff", "cap_eff": "0000000000000020", "cap_inh": "0000000000000020",
+            "cap_amb": "0000000000000020", "cap_bnd": "000001ffffffffff", "securebits": 5, "no_new_privs": 0,
+        }
+        self.assertEqual(set(bad), set(bi.DROP_EXPECTED))
+        for key, value in bad.items():
+            line = "ninelives-init " + json.dumps({**base, key: value}, separators=(",", ":"))
+            errors = bi.verdict(HEALTHY + "\n" + line + "\n" + READY, "ready")
+            self.assertTrue(any(f"{key} is" in e for e in errors), (key, errors))
+
+    def test_a_missing_field_in_the_drop_record_fails(self):
+        line = DROP.replace('"no_new_privs":1', '"other":1')
+        errors = bi.verdict(HEALTHY + "\n" + line + "\n" + READY, "ready")
+        self.assertTrue(any("no_new_privs is None" in e for e in errors), errors)
 
     def test_missing_ready_line_fails(self):
         self.assertTrue(any("ready line" in e for e in bi.verdict(HEALTHY, "ready")))
@@ -99,12 +126,12 @@ class Verdicts(unittest.TestCase):
     def test_an_init_state_other_than_up_after_up_fails_a_clean_boot(self):
         for state in ("emergency", "degraded"):
             rec = READY.replace('"up"', f'"{state}"')
-            errors = bi.verdict(HEALTHY + "\n" + READY + "\n" + rec, "ready")
+            errors = bi.verdict(HEALTHY + "\n" + DROP + "\n" + READY + "\n" + rec, "ready")
             self.assertTrue(any("init state" in e for e in errors), (state, errors))
 
     def test_records_before_up_and_repeated_up_are_fine(self):
         booting = READY.replace('"up"', '"booting"')
-        self.assertEqual(bi.verdict(HEALTHY + "\n" + booting + "\n" + READY + "\n" + READY, "ready"), [])
+        self.assertEqual(bi.verdict(HEALTHY + "\n" + booting + "\n" + DROP + "\n" + READY + "\n" + READY, "ready"), [])
 
     def test_an_unrelated_panic_is_not_a_verity_failure(self):
         log = HEALTHY + "\n[ 1.0] Kernel panic - not syncing: Fatal exception"
@@ -204,7 +231,7 @@ class Run(unittest.TestCase):
             return code, out.getvalue(), (d / "out" / "serial.log").read_text()
 
     def test_ready_boot_passes_and_keeps_the_log(self):
-        code, out, log = self.run_boot([*HEALTHY.split("\n"), READY, "sleep 30"])
+        code, out, log = self.run_boot([*HEALTHY.split("\n"), DROP, READY, "sleep 30"])
         self.assertEqual(code, 0, out)
         self.assertIn(READY, log)
 
@@ -242,7 +269,7 @@ class Run(unittest.TestCase):
     def test_clean_boot_fails_on_a_later_emergency_record(self):
         late = READY.replace('"up"', '"emergency"')
         with mock.patch.object(bi, "SETTLE", 2):
-            code, out, _ = self.run_boot([*HEALTHY.split("\n"), READY, "sleep 0.3", late, "sleep 30"])
+            code, out, _ = self.run_boot([*HEALTHY.split("\n"), DROP, READY, "sleep 0.3", late, "sleep 30"])
         self.assertEqual(code, 1)
         self.assertIn("init state", out)
 

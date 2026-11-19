@@ -331,8 +331,11 @@ and reads only the kernel, the read-only root and directory entries on
     holds netfilter access once services run: the DHCP applier's
     `CAP_NET_ADMIN` reaches only routing netlink
     ([What each service keeps](#what-each-service-keeps)).
-11. Start the worker thread, with every signal already blocked, then drop
-    privilege ([Privilege](#privilege)).
+11. Drop privilege ([Privilege](#privilege)), then start the worker thread,
+    with every signal already blocked. The order is this way round because
+    Linux keeps ids, capabilities, securebits and `no_new_privs` per thread:
+    a thread started before the drop would keep root's, and a thread started
+    after it inherits the dropped state.
 
 The host name is the image's fixed one. The machine's identity is
 `FELIXD_NODE_ID`; deriving the host name from the join's output would mean
@@ -505,7 +508,21 @@ PID 1's drop, after the launchers exist:
    limit it; the kernel does, refusing anything outside the permitted set.
 
 If any step fails, PID 1 reports the step and errno on the console and
-powers off ([Failure modes](#failure-modes)).
+powers off ([Failure modes](#failure-modes)). The drop also happens when boot
+ended in `emergency`.
+
+After step 5 PID 1 reads the result back from the kernel (`getresuid`,
+`getresgid`, `getgroups`, `capget`, `PR_CAPBSET_READ`, `PR_CAP_AMBIENT`,
+`PR_GET_SECUREBITS`, `PR_GET_NO_NEW_PRIVS`) and powers off unless every value
+is what the steps asked for. It then writes one record, `"step":"drop root"`,
+with the ids, the five capability sets as hex (as `/proc/<pid>/status` prints
+them), the securebits and `no_new_privs`, so a test can read them off the
+console without a shell in the image. `/proc/<pid>/status` has no securebits
+field, so this record is also the only place they show without a fault hook.
+Steps 1 to 5 are implemented; step 6, PID 1's seccomp filter, is not yet.
+
+Before `reboot(2)` PID 1 raises `CAP_SYS_BOOT` to effective with `capset`,
+and lowers it again if the call returns.
 
 | Kept | The operation that needs it |
 |---|---|

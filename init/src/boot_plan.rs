@@ -69,7 +69,8 @@ pub(crate) fn run(ops: &mut impl BootOps) -> Option<Failure> {
     }
     // TODO(#48): the rest of step 7 (host name, loopback, rlimits), step 8
     // (watchdog, /dev/kmsg reader, power button: #86) and steps 9 and 10.
-    // TODO(#68): step 11, the privilege drop. Until then PID 1 stays root.
+    // Step 11, the privilege drop, is `privilege::drop_root`, which `boot::run`
+    // calls next.
     emergency
 }
 

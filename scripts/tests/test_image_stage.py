@@ -90,8 +90,18 @@ class RemovePackages(unittest.TestCase):
 class Generated(unittest.TestCase):
     def test_passwd_and_group_come_from_users_toml(self):
         passwd, group = st.passwd_group(ic.load_toml(ic.IMAGES / "users.toml"))
-        self.assertEqual(passwd, "root:x:0:0:root:/nonexistent:/usr/sbin/nologin\n")
-        self.assertEqual(group, "root:x:0:\n")
+        self.assertEqual(passwd, "root:x:0:0:root:/nonexistent:/usr/sbin/nologin\n"
+                                 "init:x:900:900:init:/nonexistent:/usr/sbin/nologin\n")
+        self.assertEqual(group, "root:x:0:\ninit:x:900:\n")
+
+    def test_the_inits_user_is_the_one_the_init_drops_to(self):
+        import re
+        src = (ic.ROOT / "init" / "src" / "privilege.rs").read_text()
+        want = {k: int(re.search(rf"const INIT_{k}: u32 = (\d+);", src).group(1)) for k in ("UID", "GID")}
+        users = ic.load_toml(ic.IMAGES / "users.toml")
+        init = next(u for u in users["user"] if u["name"] == "init")
+        self.assertEqual((init["uid"], init["gid"]), (want["UID"], want["GID"]))
+        self.assertIn({"name": "init", "gid": want["GID"]}, [{k: g[k] for k in ("name", "gid")} for g in users["group"]])
 
     def test_os_release_names_the_variant(self):
         text = st.os_release("production", "a" * 40)

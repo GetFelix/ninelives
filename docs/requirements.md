@@ -67,7 +67,10 @@ questions this page left open: authenticated time (S15), encryption at rest
   to the collector over mutual TLS. An nftables rule on `lo` that matches the
   socket owner (`meta skuid`) lets only the scraper's uid reach those ports.
 - Never set: `FELIX_INTERNAL_ALLOW_UNAUTHENTICATED`,
-  `FELIX_RAFT_INSECURE_PEERS` and `FELIX_CONTROLPLANE_DELEGATE_UNBOUND_TOKENS`.
+  `FELIX_RAFT_INSECURE_PEERS`, `FELIX_CONTROLPLANE_DELEGATE_UNBOUND_TOKENS`
+  and `FELIX_CONTROLPLANE_LEGACY_UNSCOPED_GROUPS`, which links identity-provider
+  groups under bare names and would let any registered issuer claim another's
+  grants ([join design](components/join.md#felix-tokens-after-the-join)).
 
 ## Networking
 

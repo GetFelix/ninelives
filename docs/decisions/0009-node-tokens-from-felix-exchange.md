@@ -33,7 +33,7 @@ provider for machine principals.** The join never handles a Felix token.
   principal id, `sha256(iss + "|" + sub)`, and writes it into that service's
   client certificate as the `felix:principal:` URI.
 - A service's renewal helper asks the issuer, over mutual TLS with the
-  service's current certificate, for a 60-second ES256 assertion naming that
+  service's current certificate, for a 60-second ES256 assertion (usable for 120 seconds, given Felix's 60-second leeway) naming that
   subject, with groups from the issuer's registry. The issuer answers only
   for an active node's current incarnation and current serial, the same
   gate as renewal.
@@ -45,7 +45,14 @@ provider for machine principals.** The join never handles a Felix token.
   ([felix#2836](https://github.com/GetFelix/felix/issues/2836)). Grants are
   made to the issuer's groups (`group:<iss>#felixd`,
   `group:<iss>#node-<id>`), never to a principal by name. The issuer holds
-  no Felix credential.
+  no Felix token or admin credential, but its assertion key works as a
+  Felix credential for exactly the grants made to its groups: it can sign
+  any subject with any of them. An issuer compromise therefore yields every
+  grant made to `group:<iss>#*`, which is felixd's node role and
+  `node.manage` over every node, and nothing else in Felix.
+- The image never sets `FELIX_CONTROLPLANE_LEGACY_UNSCOPED_GROUPS`, which
+  would also link the issuer's groups under bare names, and its config check
+  fails if it is set.
 
 The full flow is in the [join design](../components/join.md#felix-tokens-after-the-join).
 
@@ -54,7 +61,7 @@ The full flow is in the [join design](../components/join.md#felix-tokens-after-t
 | Option | Why not |
 |---|---|
 | **A Felix endpoint that accepts join tokens** | Puts join-token checking on core machines, which already hold every tenant's signing keys (T24). Felix would need a token store and the issuer's registry, or a second copy of both. 0008 kept issuance off core machines for exactly this reason. |
-| **The issuer mints tokens with a Felix admin credential** | The issuer would then hold a cluster-admin credential for Felix as well as every CA intermediate, so an issuer compromise would also be a Felix admin compromise, without needing to join a machine. |
+| **The issuer mints tokens with a Felix admin credential** | Minting arbitrary tokens takes cluster-admin rights in Felix: tenant administration, RBAC changes, every tenant. An issuer compromise would then be a Felix admin compromise. With this decision it yields only the grants made to the issuer's groups, which are the machine identities the issuer can already create through certificates (0008). |
 | **The join receives a refresh token from the issuer** | The issuer would have to obtain it from Felix somehow (one of the two rows above), and the join, which runs before the first core machine's control plane exists, could not get one at formation anyway. |
 | **Refresh tokens provisioned on the config partition** | A 30-day secret on a partition anyone with the disk reads before first boot (X7), for every machine. |
 | **Felix exchanges a client certificate directly for a token** | The cleanest end state: no assertion key at all. It needs a larger Felix feature (certificate-to-principal mapping and grants per certificate kind) than inline keys do, and the issuer already gates every certificate. Revisit if Felix builds it. |
@@ -73,7 +80,11 @@ The full flow is in the [join design](../components/join.md#felix-tokens-after-t
   tenant admins except operators.
 - A machine has one principal (felixd) or two (felixd and the broker), so
   revoking a machine is one issuer call and one Felix revocation per
-  principal. The operator tool does both.
+  principal. The operator tool does both, and waits 150 seconds between
+  them, because Felix's revocation cutoff does not refuse an assertion
+  issued before it ([felix#2839](https://github.com/GetFelix/felix/issues/2839)).
+- M1 is blocked on [felix#2836](https://github.com/GetFelix/felix/issues/2836),
+  with no fallback.
 - A storage or core token's creation also writes one Felix grant,
   `node.manage` over `node:<id>` for `group:<iss>#node-<id>`, with the
   operator's own Felix credential.

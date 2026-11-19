@@ -12,10 +12,12 @@ built yet.
 
 [0008](../decisions/0008-ca-keys-and-machine-certificates.md) is binding:
 which CAs exist, where their keys live, what the issuer is, the token's
-properties, renewal and recovery. This page does not reopen any of it. It
-designs the machine's side of the join, the config partition, the exchange
-with the issuer, how the result lands on disk, and how Felix tokens follow
-from the certificates. Where it refines a step of 0008, it says so.
+properties, renewal and recovery. This page designs the machine's side of
+the join, the config partition, the exchange with the issuer, how the result
+lands on disk, and how Felix tokens follow from the certificates. It refines
+0008 in two places, both listed under
+[Refinements of 0008](#refinements-of-0008): re-delivery after a lost
+answer, and rate limits without a per-token limit or lockout.
 [0009](../decisions/0009-node-tokens-from-felix-exchange.md) (proposed)
 records the one choice this page makes outside 0008: how node tokens are
 minted.
@@ -36,7 +38,8 @@ an authenticated clock, connects to the cluster's issuer and checks it against
 the issuer root fingerprint in the config before it sends anything, generates
 one key per certificate the role needs, redeems the token with proof that it
 holds each key, checks what comes back, writes each service's key,
-certificate and trust bundle into that service's credential directory,
+certificate into that service's credential directory, the roots into the
+read-only trust directory,
 zeroes the config partition, and writes the role last. It then exits for
 good. Felix tokens are not part of the join: each service's renewal helper
 gets them later by presenting its certificate (see
@@ -96,6 +99,7 @@ sequenceDiagram
     P1->>J: phase 2: start the join with fd 3
     J->>J: parse the config, check the clock is synchronized
     J->>Is: TLS, issuer chain checked against the pinned root
+    Is-->>J: Hello(issuer time), compared with the local clock
     J->>Is: Join(token)
     Is-->>J: Challenge(nonce, issuer time, kinds the role needs)
     J->>J: generate one key per kind, save them
@@ -194,14 +198,21 @@ boot:
    finds partitions by GPT name on the root's disk. If `$DATA/join/role` does
    not exist (one `fstatat` that follows no link, beneath the `$DATA` fd;
    `join/` is the join's directory, so the most a planted entry can decide
-   is whether this fd is opened), it also finds `ninelives-config` on that disk, exactly
-   once, and opens it `O_RDWR | O_CLOEXEC`. Two matches, or none, mean no fd,
-   and the join then fails closed.
-2. PID 1 never reads from that fd. It keeps it only until it forks the
+   is whether this fd is opened), it also finds `ninelives-config` on that
+   disk, exactly once.
+2. Before opening it, PID 1 checks its sysfs `size` is exactly 2048
+   sectors (1 MiB) and that its `start` and `size` overlap no other
+   partition on the disk. GPT names are written by whoever wrote the disk
+   (X7): without this, an entry named `ninelives-config` laid over the data
+   partition would be read as config, and the join's zeroing would destroy
+   1 MiB of data. Only then does it open it `O_RDWR | O_CLOEXEC`. A failed
+   check, two matches or none mean no fd, and the join then fails closed.
+3. PID 1 never reads from that fd. It keeps it only until it forks the
    join's launcher, which keeps it through its `close_range`, and PID 1 then
    closes its own copy.
-3. The join's launcher passes it to the join as fd 3 and nothing else does.
-   On a later boot, when the role exists, PID 1 opens nothing.
+4. The join's launcher passes it to the join as fd 3 and nothing else does,
+   and closes it once the join exits 0. On a later boot, when the role
+   exists, PID 1 opens nothing.
 
 This is the one exception to the init's rule that a service inherits only
 fds 0, 1 and 2 (I11) and that a launcher holds only its listed fds (I20). It
@@ -292,24 +303,37 @@ Every certificate also carries the node id and the incarnation, in the
 field the issuer's design fixes (0008). Each `.pem` holds the leaf and its
 intermediate, so bundles hold roots only (0008).
 
-**Trust bundles.** Each service gets only the roots it verifies peers with,
-in `ca.pem` in its own directory ([init design](init.md#secrets)): felixd the
-cluster root; the broker the cluster and internal roots; the control plane
-the cluster and Raft roots. The issuer root goes to `$DATA/trust/issuer.pem`,
-readable by every renewal helper and writable by none
-([init design](init.md#secrets)). Felix takes one file per CA setting, so
-where a service needs two roots the join writes one file per root
-(`ca.pem` for the cluster root, `internal-ca.pem`, `raft-ca.pem`) and the
-image config points each Felix setting at the right one. The bundle format
-and generation number are `nl-renew`'s; the join writes the generation the
-issuer states.
+**Trust.** As 0008 step 5 says, the roots go into one trust directory that
+every service can read and none can write: `$DATA/trust/issuer.pem`,
+`cluster.pem`, `internal.pem` and `raft.pem`, one root per file, mode 0644,
+in a directory owned by `nl-join`, a uid that never runs again. Felix takes
+one file per CA setting, so the image config points each setting at its
+file, and each service's Landlock ruleset reads only the roots it verifies
+peers with: felixd the cluster root, the broker the cluster and internal
+roots, the control plane the cluster and Raft roots, the renewal helpers the
+issuer root.
+
+Nothing on the machine can change these files after the join, renewal
+helpers included. That is deliberate: a renewal helper is network-facing and
+runs at its service's uid, and a parser bug there must not be able to widen
+what the service trusts. The cost is 0008's own: until a trust update path
+is designed
+([0008, Consequences](../decisions/0008-ca-keys-and-machine-certificates.md#consequences)),
+a root rotation is a rolling wipe and rejoin, and recovering from an issuer
+compromise, which needs new roots everywhere, is a cluster rebuild. Without
+a rebuild, machines keep the old issuer root and lose their certificates
+within 24 hours once the old issuer is gone. The [init design](init.md#secrets)
+had proposed per-service bundles the renewal helper rewrites; this design
+returns to 0008's layout and the init design is updated to match. A trust
+update path is an [open question](#open-questions).
 
 **Principals.** Each Felix-facing service on a machine is its own Felix
 principal, so felixd's credentials do not carry the broker's node grant and
 the other way round. The issuer is the identity provider for these
 principals ([0009](../decisions/0009-node-tokens-from-felix-exchange.md)).
 Its subject for a service is `nl/<node id>/<incarnation>/<service>`, so
-every incarnation is a new principal and revoking an old one is permanent.
+every incarnation is a new principal. Revoking one is permanent once the
+window under [Renewal and revocation](#renewal-and-revocation) has passed.
 Felix names a principal `sha256(iss + "|" + sub)` in hex
 ([Felix auth](https://github.com/GetFelix/felix/blob/v0.7.2/docs/auth.md#principal-normalization)),
 so the issuer computes the principal and writes it into the client
@@ -340,6 +364,9 @@ cannot pose as the issuer (0008).
 then records in the config body's encoding, so one small parser serves both.
 Unknown tags are refused on both sides.
 
+0. **Hello**, issuer to machine, as soon as the handshake completes: the
+   protocol version and the issuer's time. The join compares that time with
+   its own clock before it sends the token ([Time](#time)).
 1. **Join**, machine to issuer: the protocol version, the token id and the
    secret. The issuer checks the token (checks 1 to 5 below) but commits
    nothing yet.
@@ -349,13 +376,13 @@ Unknown tags are refused on both sides.
 3. **Proof**, machine to issuer: for each kind, its public key as a
    SubjectPublicKeyInfo and an ECDSA signature by that key over the label
    `ninelives-join-v1`, 32 bytes of TLS exporter output (RFC 8446, label
-   `EXPORTER-ninelives-join`), the nonce, the token id, the kind and the
+   `EXPORTER-ninelives-join`, empty context), the nonce, the token id, the kind and the
    public key. The exporter ties the proof to this TLS session, so a proof
    is worthless on any other connection. The join saves the keys before it
    sends this message.
 4. **Issued**, issuer to machine: the node id, the role, the incarnation id,
    for each needed kind the leaf and intermediate, the cluster, internal and
-   Raft roots, the bundle generation, the values for `$DATA/join/env`, and
+   Raft roots, the values for `$DATA/join/env`, and
    the issuer's time. Or **Refused**, with one of three codes: `retry` (with
    a delay), `token_refused`, or `bad_request`.
 
@@ -385,8 +412,9 @@ Felix control plane, issues machine certificates. Before it signs anything:
    is unused, or the re-delivery rule below applies. A wrong secret raises
    an alert. There is no lockout: 256 random bits cannot be guessed, and a
    lockout would be a way to stop a machine's join.
-5. The node id the token names has no active incarnation and was never
-   revoked. A revoked node id is never reused (S25: a new identity).
+5. The node id the token names has no active incarnation, unless the
+   re-delivery rule below applies to this token, and was never revoked. A
+   revoked node id is never reused (S25: a new identity).
 6. The keys: every kind the role needs is present, each is a valid P-256
    point, no two are equal, and none matches any key the registry has ever
    seen.
@@ -428,8 +456,8 @@ and the machine a new incarnation.
 - every env name is one the image's `join_env` lists name, every value is
   printable ASCII under 1 KiB ([init design](init.md#the-config)), and
   `FELIXD_NODE_ID` equals the node id;
-- the issuer's time in the answer is within 60 seconds of the local clock
-  ([Time](#time)).
+- the issuer's time in Issued is within 60 seconds of the local clock,
+  as it was in Hello ([Time](#time)).
 
 Any failure is permanent: an issuer that answers wrongly is not retried.
 
@@ -451,14 +479,22 @@ signing keys (T24). So, as recorded in
    ([`idp_registry.rs`](https://github.com/GetFelix/felix/blob/v0.7.2/services/felix-controlplane-service/src/auth/idp_registry.rs),
    [`oidc.rs`](https://github.com/GetFelix/felix/blob/v0.7.2/services/felix-controlplane-service/src/auth/oidc.rs)).
    Inline keys are a Felix gap:
-   [felix#2836](https://github.com/GetFelix/felix/issues/2836).
+   [felix#2836](https://github.com/GetFelix/felix/issues/2836). M1 is
+   blocked on it, with no fallback: fetching a JWKS would need the issuer's
+   root in the system trust store of every process, or the private-address
+   flag for every issuer of every tenant, and the image does neither.
 2. Each service's renewal helper, running at the service's uid, asks the
    issuer for an assertion over mutual TLS with the service's current client
    certificate. The issuer answers only for an active node's current
    incarnation and current serial, with an ES256 JWT: `iss` the issuer's
    cluster name, `sub` the service's subject, `aud` the cluster's control
    plane, a groups claim from the registry (the service and, for a broker,
-   `node-<node id>`), a `jti`, and a lifetime of 60 seconds. A service needs
+   `node-<node id>`), a `jti`, and a lifetime of 60 seconds. Felix accepts
+   an upstream token for 60 seconds past its `exp`
+   ([`oidc.rs`](https://github.com/GetFelix/felix/blob/v0.7.2/services/felix-controlplane-service/src/auth/oidc.rs)
+   sets the leeway that
+   [`server/state.rs`](https://github.com/GetFelix/felix/blob/v0.7.2/services/felix-controlplane-service/src/server/state.rs)
+   passes), so an assertion is usable for up to 120 seconds. A service needs
    one only when it has no working refresh chain, so the issuer allows a few
    per principal per day and alerts beyond that. The control plane holds no
    Felix principal and asks for none.
@@ -478,8 +514,23 @@ Grants come from groups. Felix maps each group in an assertion to
 ([Felix auth](https://github.com/GetFelix/felix/blob/v0.7.2/docs/auth.md#group-based-role-assignment-from-idp-groups_claim)),
 so formation grants felixd's node role to `group:<iss>#felixd` once, and the
 operator's token command grants `node.manage` over `node:<id>` to
-`group:<iss>#node-<id>` when it creates a storage or core token. The issuer
-holds no Felix credential at all.
+`group:<iss>#node-<id>` when it creates a storage or core token.
+
+The issuer holds no Felix token or admin credential, but its assertion key is
+a Felix credential in effect: it can sign any subject with any group of its
+own. So an issuer compromise yields every grant made to `group:<iss>#*`:
+felixd's node role (the worker row of the
+[threat model](../threat-model.md#what-one-compromised-machine-can-do),
+which includes cluster-scope reads such as `node.view`), and `node.manage`
+over every node. It does not yield tenant administration, RBAC changes,
+signing keys, or any grant made to anything other than the issuer's groups.
+A compromised issuer can already mint any machine's certificates (0008), so
+this adds the Felix half of the same identities and nothing beyond them.
+This only holds while groups stay scoped by issuer: the image never sets
+`FELIX_CONTROLPLANE_LEGACY_UNSCOPED_GROUPS`, which also links each group
+under its bare name and reopens that hole
+([`exchange.rs`](https://github.com/GetFelix/felix/blob/v0.7.2/services/felix-controlplane-service/src/auth/exchange.rs)),
+and the image config check fails if it is set.
 
 This keeps the join out of the control plane's way, which matters for the
 first core machine: at join time its control plane is not running yet, and
@@ -503,8 +554,8 @@ All under `$DATA`, through directories the init made
 | `join/pending/keys` | 0600 | The private keys | Before the Proof is sent; removed once the keys are installed |
 | `join/pending/issued` | 0600 | The issuer's Issued answer, verbatim | Right after the checks pass |
 | `join/failed` | 0640 | The reason for a permanent failure, one line, no secrets | On a permanent failure |
-| `credentials/<service>/*.key`, `*.pem`, `ca.pem` and the other bundles | 0640, group service (setgid directory) | As in the table above | After `issued` is saved |
-| `trust/issuer.pem` | 0644 | The issuer root the join pinned | With the credentials |
+| `credentials/<service>/*.key`, `*.pem` | 0640, group service (setgid directory) | As in the table above | After `issued` is saved |
+| `trust/issuer.pem`, `cluster.pem`, `internal.pem`, `raft.pem` | 0644 | One root each; the issuer root is the one the join pinned | With the credentials |
 | `join/env` | 0640, group init | `NAME=value` lines from the answer | After the credentials |
 | `join/role` | 0640, group init | The role name | Last |
 
@@ -530,7 +581,7 @@ place, and its directory `fsync`ed. Before `role`, the join calls `syncfs` on
    load it; if it exists and does not, permanent failure; otherwise generate
    the keys and save them. Then send the Proof.
 8. Check the answer and save it as `join/pending/issued`.
-9. Write every credential file, the bundles, `trust/issuer.pem` and `env`.
+9. Write every credential file, the four root files in `trust/`, and `env`.
    Keys come from `join/pending/keys`; if that is already gone, each
    installed key must match its certificate, or the run fails permanently.
 10. `syncfs`, then remove `join/pending/keys`, so no second copy of a key
@@ -550,7 +601,7 @@ full disk. 78 (`EX_CONFIG`) for a permanent failure, after writing
 nothing and contact nothing, which is what 0008 asks ("a loud alert, not a
 retry loop"). Teaching the init to stop on 78 is optional and listed below.
 
-## Time
+### Time
 
 Certificates are checked against the clock, so the join's first question is
 whether the clock can be trusted, and at first boot it may not be: a board
@@ -571,14 +622,22 @@ waits for it.
   the time client runs in phase 1, before the join.
 - **The join waits for a synchronized clock.** It reads the kernel's clock
   state with `adjtimex` (read-only; without `CAP_SYS_TIME` a write is
-  refused) and proceeds only when `STA_UNSYNC` is clear, which chrony does
-  once it is synchronized, and the clock is no earlier than the image's
-  build time, which the join carries as a constant. Until then it exits 75
-  and is retried; nothing is sent.
-- **A second, independent check.** The issuer's time arrives in the
-  Challenge and in Issued, inside the authenticated connection. If it differs
-  from the local clock by more than 60 seconds, the join stops with a
-  permanent failure and says why. This catches a clock moved by a
+  refused) and proceeds only when `STA_UNSYNC` is clear and the clock is no
+  earlier than the image's build time, which the join carries as a
+  constant. Until then it exits 75 and is retried; nothing is sent. On
+  Linux, chrony clears `STA_UNSYNC` only when `rtcsync` is set: its
+  `set_sync_status` treats the clock as unsynchronized otherwise ("On Linux
+  clear the UNSYNC flag only if rtcsync is enabled",
+  [`sys_timex.c`](https://github.com/mlichvar/chrony/blob/4.6/sys_timex.c)).
+  So the image's chrony config sets `rtcsync`, and the image config check
+  requires it. The alternative, asking chronyd over its command socket, is
+  out: the init runs chronyd with `cmdport 0`, and a socket the join could
+  query is one more input to the join and one more listener on chronyd.
+- **A second, independent check.** The issuer sends its time in Hello, as
+  soon as the TLS handshake completes and before the join sends the token,
+  and again in Issued. If either differs from the local clock by more than
+  60 seconds, the join stops with a permanent failure, says why, and sends
+  nothing more. This catches a clock moved by a
   compromised time client (T69), which can clear `STA_UNSYNC` as easily as
   set the time. Two clocks, each synchronized from authenticated sources,
   agree far closer than 60 seconds.
@@ -600,27 +659,42 @@ its output. That is the fail-closed answer, and on clouds whose metadata NTP
 servers lack NTS, the hypervisor clock is what makes it work
 ([init design open question](init.md#open-questions)).
 
-## Renewal and revocation
+### Renewal and revocation
 
 **Renewal** is 0008's: `nl-renew` per service, at that service's uid, at half
 life, with a new key, presenting the current certificate. The join leaves it
 everything it needs: the certificate and key in the service's directory, the
-bundle and its generation, the pinned issuer root in `$DATA/trust/`, and a
+pinned issuer root in `$DATA/trust/`, and a
 registry at the issuer that records the serials the join received as
 current. `nl-renew` starts in phase 3, after the join, so the first
 certificate is always there ([init design](init.md#programs-it-starts)).
 
 **Revocation**, for one machine (S19, S25), is three steps an operator tool
-runs together:
+runs in order:
 
 1. At the issuer: mark the node revoked and add its current serials to the
    refused list. Renewals and assertions stop at once; certificates die
    within 24 hours (0008).
-2. At the control plane: revoke each of the machine's service principals
+2. Wait at least 150 seconds: the assertion lifetime (60 s), Felix's leeway
+   on upstream tokens (60 s), and 30 s for clock difference between issuer
+   and control plane. Felix's revocation is only a cutoff time. Exchange does
+   not compare an assertion with it; it waits until the cutoff second has
+   passed and then mints a fresh token and refresh chain
+   ([`revocation.rs`](https://github.com/GetFelix/felix/blob/v0.7.2/services/felix-controlplane-service/src/auth/revocation.rs),
+   `wait_out_revocation`). Without the wait, a thief who got an assertion
+   just before step 1 could exchange it just after step 3 and hold a new
+   30-day chain, which a revocation that came before it does not end, and
+   refresh is not bound to a certificate
+   ([felix#2822](https://github.com/GetFelix/felix/issues/2822)). With the
+   wait, every assertion issued before step 1 is dead before the cutoff.
+   Felix should refuse such assertions itself
+   ([felix#2839](https://github.com/GetFelix/felix/issues/2839)); the wait
+   stays until it does.
+3. At the control plane: revoke each of the machine's service principals
    (`POST /v1/tenants/{t}/refresh-tokens/revoke`), which ends their refresh
    chains and the broker streams their tokens opened
    ([Felix auth](https://github.com/GetFelix/felix/blob/v0.7.2/docs/auth.md#revoking-a-principal)).
-3. At the control plane: remove the `node-<id>` group's grant, so no later
+4. At the control plane: remove the `node-<id>` group's grant, so no later
    exchange for that node gets `node.manage`.
 
 What still works after that, and for how long, is listed under
@@ -628,7 +702,7 @@ What still works after that, and for how long, is listed under
 connections until Felix bounds them
 ([felix#2817](https://github.com/GetFelix/felix/issues/2817)).
 
-## Wipe and rejoin (S25)
+### Wipe and rejoin (S25)
 
 A compromised machine is wiped from outside, through the hypervisor or a
 reimage, never on the machine (S25, [#75](https://github.com/GetFelix/ninelives/issues/75)).
@@ -644,46 +718,37 @@ After the revocation above:
   config onto a running machine's partition does nothing. A machine with a
   half-finished or failed join is wiped too, not repaired.
 
-## Privileges, sandbox and egress
-
-| | Value | Why |
-|---|---|---|
-| uid | `nl-join`, its own | T71: the uid runs once, so nothing later shares it |
-| Capabilities | none | Everything it writes is in directories the init made for it |
-| fds | 0, 1, 2, and fd 3, the config partition, on first boot only | [Reading it without root](#reading-it-without-root) |
-| Landlock read | `/usr/lib/ninelives/nl-join`, the libraries it links, `/proc/self` | Nothing else: no system trust store, no `/etc`, no DNS config |
-| Landlock write | `$DATA/join`, `$DATA/trust`, each `$DATA/credentials/<service>` | Exactly its outputs |
-| Landlock devices | `/dev/null` | Randomness comes from `getrandom`, not a device node |
-| Network | TCP connect, IPv4 and IPv6 | To the issuer; on a cloud image also to the metadata address |
-| seccomp | An allowlist: file calls beneath its directories, `pread64`, `pwrite64` and `fdatasync` on fd 3, `getrandom`, `adjtimex`, `clock_gettime`, `socket` for `AF_INET` and `AF_INET6` with `SOCK_STREAM` only, `connect`, `sendto` and `recvfrom` on that socket, memory and thread calls, `exit_group`. No `ioctl`, no `execve`, no `AF_NETLINK`, no `AF_UNIX`, no UDP | No DNS, no other process, nothing beyond one TCP connection |
-| Egress (S18) | The join's uid may connect only to the issuer's TCP port, and on a cloud image to the metadata address | The ruleset is static, from the image, and the issuer's address is in the config, which only the join parses. So egress is limited by port, not by address. |
-| Ingress | none | The join listens on nothing |
-| Run timeout | 120 seconds per run | A hung connection is a transient failure, retried |
-| cgroup | 64 MiB memory, small pids limit | It parses at most 4 KiB of config and a 64 KiB frame |
-
-The S7 list's "the join" means the issuer's join endpoint on an issuer
-machine. An ordinary machine opens no port for the join.
-
-## Changes this design needs elsewhere
+### Changes this design needs elsewhere
 
 | Where | Change | Status |
 |---|---|---|
-| [init design](init.md) | Boot step 4 opens `ninelives-config` read-write on first boot only; the join's launcher keeps that fd and passes it as fd 3; I11 and I20 name this one exception; the join's `run_timeout_s` is 120 | Listed as an init open question in this change |
+| [init design](init.md) | Boot step 4 opens `ninelives-config` read-write on first boot only, after checking its size is exactly 2048 sectors and it overlaps no other partition; the join's launcher keeps that fd, passes it as fd 3 and closes it once the join exits 0; I11 and I20 name this one exception; the join's `run_timeout_s` is 120 | Listed as an init open question in this change |
+| [init design](init.md) | Trust roots in `$DATA/trust/`, read-only to every service and helper, as 0008 step 5 says; `FELIX_CA_FILE` points there | Updated in this change |
+| Time client config | chrony runs with `rtcsync`, so it clears `STA_UNSYNC` ([Time](#time)) | For #59 |
+| Image config check | Fails if `FELIX_CONTROLPLANE_LEGACY_UNSCOPED_GROUPS` is set; added to S10's never-set list | Requirement updated in this change; check not built |
 | [init design](init.md) | Optional: exit 78 from the join means `failed`, no restart | Proposed here; the marker file works without it |
 | [image design](image.md) | The config partition is written once more on the machine: zeroed by the join after a successful join | Updated in this change |
 | [image design](image.md) | The packet filter allows the join's uid TCP to the issuer port and, on cloud images, the metadata address, and nothing else | For the packet filter's ruleset (S18, [#62](https://github.com/GetFelix/ninelives/issues/62)) |
 | `nl-issuer` design | Every issuer check and message above; re-delivery; assertions for renewal helpers; inline assertion keys exported for formation | Not written |
 | `nl-renew` design | Assertion request, token exchange, felixd refresh until felixd#276 | Not written |
 | Formation design | Register the issuer with inline keys on the cluster tenant; grant `group:<iss>#felixd`; deliver the Raft peer token to a new core member | Not written |
-| [0008](../decisions/0008-ca-keys-and-machine-certificates.md) | Re-delivery refines step 4 | Stated here; 0008 is not edited |
-| Felix | Inline identity-provider keys ([felix#2836](https://github.com/GetFelix/felix/issues/2836)); reload the broker's control-plane client certificate ([felix#2837](https://github.com/GetFelix/felix/issues/2837)) | Filed, v0.8.0 |
+| [0008](../decisions/0008-ca-keys-and-machine-certificates.md) | Two refinements, [below](#refinements-of-0008) | Stated here; 0008 is not edited |
+| Felix | Inline identity-provider keys ([felix#2836](https://github.com/GetFelix/felix/issues/2836), blocks M1); reload the broker's control-plane client certificate ([felix#2837](https://github.com/GetFelix/felix/issues/2837)); refuse assertions issued before a revocation cutoff ([felix#2839](https://github.com/GetFelix/felix/issues/2839)) | Filed, v0.8.0 |
+
+### Refinements of 0008
+
+| 0008 says | This design | Why |
+|---|---|---|
+| Step 4: a second use of the token is refused and alerted | A retry with the same, proven keys after a committed but lost answer gets the same certificates; different keys are refused and alerted | A network drop at the wrong moment would otherwise cost a new token and a new incarnation, and the retry issues nothing new ([Re-delivery](#the-exchange-with-the-issuer)) |
+| Step 4: attempts are rate limited per source and per token (T65) | Failed attempts are limited per source address and by concurrent pending joins; there is no per-token limit and no lockout | The secret is 256 random bits, so a per-token limit or lockout adds no protection, and anyone who saw a token id in a log could use either to stop that machine's join |
 
 ## Invariants
 
 - **J1.** The join sends no byte of the token until the issuer's leaf has
   been verified against a root whose SPKI SHA-256 equals config tag 5, with
   the issuer name and server EKU checked, at a time the clock is
-  synchronized and no earlier than the image's build time.
+  synchronized and no earlier than the image's build time, and the issuer's
+  time in Hello is within 60 seconds of the local clock.
 - **J2.** The token secret is never written to the data partition, output,
   records or any file, and is zeroed in memory after the Join message is
   sent.
@@ -696,7 +761,8 @@ machine. An ordinary machine opens no port for the join.
   5 minutes. If any certificate fails, nothing is installed.
 - **J5.** The roots the join installs are exactly the three in Issued plus
   the pinned issuer root, each matching its config fingerprint, and each
-  service's bundle holds only the roots listed for that service.
+  service's Landlock ruleset reads only the roots listed for that service.
+  Nothing writes `$DATA/trust/` after the join.
 - **J6.** Each file the join writes is in its service's directory, or in
   `$DATA/join` or `$DATA/trust`, written by temporary file, `fsync` and
   rename. Keys and certificates are mode 0640 with the service's group;
@@ -722,7 +788,9 @@ machine. An ordinary machine opens no port for the join.
   token used, and a retry under one token yields the same certificates or
   nothing.
 - **J14.** The join stops with a permanent failure when the issuer's time
-  and the local clock differ by more than 60 seconds.
+  in Hello or Issued and the local clock differ by more than 60 seconds.
+- **J15.** The join never receives an fd for a config partition whose size
+  is not exactly 2048 sectors or whose range overlaps another partition.
 
 ## Failure modes
 
@@ -738,7 +806,7 @@ passed, and no role service starts without a role.
 | **Stolen config partition before first boot (X7)** | Not detected | As a stolen token, within its expiry | Fingerprints are not secret |
 | **Stolen config partition after the join (X7)** | | It is zero | J10 |
 | **Rewritten config partition (X7, before first boot)** | Not detected | The machine trusts the attacker's issuer and joins the attacker's cluster. It holds none of ours, and our issuer never hears from it. | An attacker with the disk before M3 can replace the image too (T46). From M3, attestation ties joins to a signed image. |
-| **Stolen current certificate and key** (X4 copies them off a running machine) | The real machine's next renewal presents a superseded serial (0008) | Until then the thief can renew, and can get assertions and start refresh chains for that principal. Those chains outlive the certificate, but their tokens need a certificate bound to the principal on every client port and on the control-plane API (S10), except on the forward path (T73) and on refresh itself ([felix#2822](https://github.com/GetFelix/felix/issues/2822)). Revocation (issuer first, then Felix) ends all of it | 0008's detected-not-prevented residual; the assertion rate limit and alert make a burst visible |
+| **Stolen current certificate and key** (X4 copies them off a running machine) | The real machine's next renewal presents a superseded serial (0008) | Until then the thief can renew, and can get assertions and start refresh chains for that principal. Those chains outlive the certificate, but their tokens need a certificate bound to the principal on every client port and on the control-plane API (S10), except on the forward path (T73) and on refresh itself ([felix#2822](https://github.com/GetFelix/felix/issues/2822)). Revocation (issuer first, a 150 s wait, then Felix) ends all of it | 0008's detected-not-prevented residual; the assertion rate limit and alert make a burst visible |
 | **Stolen data partition after the join (X7)** | Not detected | Plaintext keys until M3 (T52): the certificates work until they expire, and a renewal by the thief is detected when the real machine's next renewal presents a superseded serial (0008) | Accepted before M3; S16 closes it |
 | **Rogue control plane** | Felix services verify it against the cluster root | The join never talks to it; services refuse it | The join's trust is the issuer root only |
 | **Fake issuer: MITM on first contact, a compromised worker or core machine** | J1 | Connection closed before any token byte; exit 75, retried | The issuer root is pinned and only issuers hold leaves under it |
@@ -754,16 +822,16 @@ passed, and no role service starts without a role.
 | **Issuer rate-limits** | `retry` | Exit 75 after the stated delay | T65 |
 | **Disk full** | Write fails | Exit 75; quota on `$DATA/join` | Retried; nothing half-installed counts, since `role` is last |
 | **Config fd missing** (no or two config partitions) | fd 3 not open | Permanent failure | Never guesses which disk |
-| **Foreign files in credential directories with no pending state** | Step 5 | Permanent failure | The disk holds something the join did not write; wipe |
+| **Foreign files in credential directories with no pending state** | Step 3 | Permanent failure | The disk holds something the join did not write; wipe |
 | **The join panics or is killed** | Exit status | Treated as 75, retried; pending state resumes | |
 | **The join hangs** | `run_timeout_s` | Killed, retried | |
 | **A hostile issuer answer** (oversized, malformed, wrong keys or roots) | Frame cap, parser, the answer checks | Permanent failure, nothing written | J4, J5 |
-| **A compromised join** (code execution through its parser) | Not detected | It can write any credential and bundle on this machine (T71), and talk TCP to any host on the issuer port. It holds no Raft peer token and no Felix token. | Its input is a 4 KiB config and the authenticated issuer's frames; it runs once, then its uid never runs again |
+| **A compromised join** (code execution through its parser) | Not detected | It can write any credential and root on this machine (T71), and talk TCP to any host on the issuer port. It holds no Raft peer token and no Felix token. | Its input is a 4 KiB config and the authenticated issuer's frames; it runs once, then its uid never runs again |
 
 ## Security
 
-**What it runs as and reaches.** See the
-[privileges table](#privileges-sandbox-and-egress). Compromised, it is the
+**What it runs as and reaches.** See
+[Privileges, sandbox and egress](#privileges-sandbox-and-egress) below. Compromised, it is the
 machine's identity (T71) for one boot, and nothing more: no capability, no
 other service's uid, no Felix token, no route to anything but the issuer
 port.
@@ -805,7 +873,7 @@ read without root), S25 (rejoin under a new identity).
 | T31, keep working after revocation | Per-service principals and the three-step revocation; certificates die within 24 h |
 | T32, take another machine's node id | Names come from the issuer's registry; a revoked node id is never reused |
 | T52, read credentials from a stolen disk | Partial: the config is zeroed and the token never stored; keys are plaintext until S16 (accepted before M3) |
-| T65, flood the join | Rate limits at the issuer, per source and per token; lock after five bad secrets |
+| T65, flood the join | Failed attempts rate limited per source address, and concurrent pending joins capped; no per-token limit and no lockout, a declared [refinement of 0008](#refinements-of-0008) |
 | T71, a compromised join | Runs once; no capability; installs only roots matching the config's fingerprints; no Raft peer token |
 | T72 | Depends on [#77](#77-do-core-brokers-serve-tenant-clients) |
 | X7 | Config zeroed after use; a rewritten config cannot reach our cluster |
@@ -820,7 +888,8 @@ and T28 (node trims) belong to the formation design.
 | Gap | Effect here | Issue |
 |---|---|---|
 | No inline identity-provider keys | The control plane cannot trust the issuer for machine principals without a JWKS fetch through the system trust store | [felix#2836](https://github.com/GetFelix/felix/issues/2836) |
-| An upstream token can be exchanged until it expires | A stolen 60-second assertion can start a second refresh chain for that principal within its minute | [felix#2836](https://github.com/GetFelix/felix/issues/2836) (the `jti` part) |
+| An upstream token can be exchanged until 60 s past its expiry | A stolen assertion can start a second refresh chain for that principal for up to 120 s | [felix#2836](https://github.com/GetFelix/felix/issues/2836) (the `jti` part) |
+| Exchange sleeps past a revocation cutoff instead of refusing older assertions | The operator tool waits 150 s between the issuer and Felix revocation steps | [felix#2839](https://github.com/GetFelix/felix/issues/2839) |
 | The broker reads its control-plane client certificate once | A 24-hour certificate expires under a running broker | [felix#2837](https://github.com/GetFelix/felix/issues/2837) |
 | Refresh is not bound to the client certificate | A stolen refresh token plus any cluster certificate refreshes another principal's chain | [felix#2822](https://github.com/GetFelix/felix/issues/2822) |
 | Connections outlive their certificate | A revoked machine's open connection outlives its certificate | [felix#2817](https://github.com/GetFelix/felix/issues/2817) |
@@ -833,6 +902,26 @@ The control-plane API's client CA
 ([felix#2811](https://github.com/GetFelix/felix/issues/2811)) is closed on
 Felix's main branch, after 0.7.2; the broker's `cp-client` certificate is for
 it.
+
+### Privileges, sandbox and egress
+
+| | Value | Why |
+|---|---|---|
+| uid | `nl-join`, its own | T71: the uid runs once, so nothing later shares it |
+| Capabilities | none | Everything it writes is in directories the init made for it |
+| fds | 0, 1, 2, and fd 3, the config partition, on first boot only | [Reading it without root](#reading-it-without-root) |
+| Landlock read | `/usr/lib/ninelives/nl-join`, the libraries it links, `/proc/self`, `$DATA/join`, `$DATA/trust`, each `$DATA/credentials/<service>` | Its own outputs, to resume and to check installed keys. No system trust store, no `/etc`, no DNS config |
+| Landlock write | `$DATA/join`, `$DATA/trust`, each `$DATA/credentials/<service>` | Exactly its outputs. Every file call is confined here by Landlock, not by seccomp, which cannot read paths |
+| Landlock devices | `/dev/null` | Randomness comes from `getrandom`, not a device node |
+| Network | TCP connect, IPv4 and IPv6 | To the issuer; on a cloud image also to the metadata address |
+| seccomp | An allowlist: the file calls it uses (`openat2`, `read`, `write`, `fsync`, `renameat2`, `unlinkat`, `mkdirat`, `syncfs`), `pread64`, `pwrite64` and `fdatasync` on fd 3, `getrandom`, `adjtimex`, `clock_gettime`, `socket` for `AF_INET` and `AF_INET6` with `SOCK_STREAM` only, `connect`, `sendto` and `recvfrom` on that socket, memory and thread calls, `exit_group`. No `ioctl`, no `execve`, no `AF_NETLINK`, no `AF_UNIX`, no UDP | No DNS, no other process, nothing beyond one TCP connection |
+| Egress (S18) | The join's uid may connect only to the issuer's TCP port, and on a cloud image to the metadata address | The ruleset is static, from the image, and the issuer's address is in the config, which only the join parses. So egress is limited by port, not by address. |
+| Ingress | none | The join listens on nothing |
+| Run timeout | 120 seconds per run | A hung connection is a transient failure, retried |
+| cgroup | 64 MiB memory, small pids limit | It parses at most 4 KiB of config and a 64 KiB frame |
+
+The S7 list's "the join" means the issuer's join endpoint on an issuer
+machine. An ordinary machine opens no port for the join.
 
 ## Test plan
 
@@ -849,9 +938,12 @@ step.
 | Used, expired, unknown and wrong-role tokens: `token_refused`, `join/failed`, a second boot exits 78 without a connection (packet capture) | qemu | S20, J11 |
 | Join twice with one token from two machines: the second is refused and the issuer raises an alert | qemu | single use, stolen token row |
 | Drop the connection after the issuer's commit: the next run gets the same certificates and incarnation | unit and qemu | J13, re-delivery |
-| Kill the join at each step 3 to 10, then boot again: it finishes, or fails permanently where the table says, and never yields two incarnations | fault | partial failure rows, J7 |
+| Kill the join at each step 6 to 12, then boot again: it finishes, or fails permanently where the table says, and never yields two incarnations | fault | partial failure rows, J7 |
 | Answers with a certificate on another key, under the wrong root, with a 48-hour lifetime, a root that does not match its fingerprint, an env name outside `join_env`: nothing is written | unit | J4, J5, J8 |
-| Clock: start with `STA_UNSYNC` set; with a clock before the build time; with an issuer 2 minutes off. No token sent in the first two; permanent failure in the third | unit and qemu | J1, J14 |
+| Clock: start with `STA_UNSYNC` set; with a clock before the build time; with an issuer 2 minutes off. No token sent in any of them; permanent failure in the third | unit and qemu | J1, J14 |
+| With the image's real chrony and the KVM clock in qemu, the join gets past the clock wait within 60 s of boot; with `rtcsync` removed from a test config, it never does and says why | qemu | Time, `rtcsync` |
+| Disks with a `ninelives-config` entry of the wrong size, one overlapping the data partition, and two such entries: no fd is opened, the join fails permanently, and the data partition is unchanged | qemu (test images) | J15 |
+| Revocation tool: an assertion obtained just before the issuer step, exchanged after the Felix step, is refused or its chain is ended | qemu, M2 | Renewal and revocation |
 | After a join: the config partition reads all zeros; file modes and groups as in the table; `role` is newer than every other file | qemu | J6, J7, J10 |
 | A planted known token and test keys: the console, captured output, records and the data partition outside the credential directories are searched; the token is never found anywhere | qemu | J2, S8 |
 | Under the join's profile: opening `/dev/vda`, an `ioctl` on fd 3, a UDP socket, a connection to another port, writing outside its directories all fail | qemu (test image) | J12, sandbox |
@@ -872,6 +964,7 @@ step.
 | Should the init stop retrying on exit 78? | Yes, small change: `failed`, no restart. The marker file already makes retries harmless. | Init design | M1 |
 | The frame encoding with the issuer | The config's record encoding, as above | `nl-issuer` design | M1 |
 | Bare metal without a hypervisor clock: does chrony's `nocerttimecheck` count as authenticated time under S15? | Yes for at most its first update, with the issuer cross-check as the second factor | [#59](https://github.com/GetFelix/ninelives/issues/59) | M5 |
+| How are roots replaced on a running machine, so that a root rotation or an issuer compromise is not a rebuild? 0008 leaves this open, and this design keeps `$DATA/trust/` writable by nothing after the join. | A single-purpose updater with its own uid, the only writer of `$DATA/trust/`, that accepts a new set of roots only when signed by the offline issuer root with a strictly higher generation, so a replayed old set cannot bring back a removed root. Not `nl-renew`, which is network-facing and runs at service uids | Owner, with the `nl-issuer` design | Before the first production cluster |
 | Egress by port, not address, for the join | Accept: the issuer address is only in the config, and the packet filter must not parse it | Threat model | M1 |
 
 ### #77: do core brokers serve tenant clients

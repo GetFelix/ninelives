@@ -4,8 +4,8 @@
 
 [project]
 stage = "Design stage"
-summary = "Nothing boots yet, and the big choices are still open. The first milestone is next."
-updated = "2026-10-30"
+summary = "Nothing boots yet. The choices for the first three milestones are made, and the first one is next."
+updated = "2026-11-18"
 
 [[milestones]]
 id = "M0"
@@ -15,9 +15,11 @@ status = "next"
 proves = "The image can be built the same way every time, and CI can boot it. Every later test stands on this."
 ends = "An image boots in qemu on x86_64 and aarch64, and CI boots it on every pull request."
 issues = [
-  { n = 1, title = "Build a qemu image (mkosi is proposed)" },
+  { n = 1, title = "Build a qemu image with mkosi" },
+  { n = 3, title = "Kernel: pin a version and write the config fragments" },
+  { n = 46, title = "init: design document" },
+  { n = 47, title = "init: first slice that boots" },
   { n = 2, title = "CI: build the image and boot it in qemu on every PR" },
-  { n = 3, title = "Kernel: pin the first image's kernel (which kernel is open)" },
 ]
 
 [[milestones]]
@@ -31,8 +33,12 @@ issues = [
   { n = 4, title = "Data partition for state that survives upgrades" },
   { n = 5, title = "First-boot join" },
   { n = 6, title = "Ship Felix and felixd in the image" },
-  { n = 15, title = "Design: our own PID 1, or systemd?" },
+  { n = 48, title = "init: services, cgroups, restart and ordered shutdown" },
   { n = 16, title = "Design: how a machine proves its identity on first join" },
+  { n = 49, title = "CI: check that the image stays on standard system calls" },
+  { n = 50, title = "Fault injection on a schedule" },
+  { n = 51, title = "Test against felixd's main branch nightly" },
+  { n = 52, title = "Bump images/components.toml when felixd or Felix releases" },
 ]
 
 [[milestones]]
@@ -44,6 +50,8 @@ proves = "The central claim: kill a machine and its workload carries on elsewher
 ends = "Three VMs form a cluster, run a workload, lose one VM, and the workload continues. CI runs this."
 issues = [
   { n = 7, title = "Three-VM demo: lose a machine, keep the workload" },
+  { n = 54, title = "Boot the image's root on Asterinas in CI" },
+  { n = 53, title = "Review the kernel decision once M2 passes" },
 ]
 
 [[milestones]]
@@ -83,33 +91,45 @@ issues = [
   { n = 14, title = "Raspberry Pi image" },
 ]
 
-# The big undecided choices, shown on the home page and the roadmap. Remove one when it is decided.
-[[questions]]
-title = "Linux or our own kernel?"
-proposal = "Stock Linux through the three-VM milestone, then look again. Both sides are in the discussion."
-link = "https://github.com/GetFelix/ninelives/discussions/22"
-label = "Discussion #22"
-
-[[questions]]
-title = "Our own PID 1, or systemd?"
-proposal = "systemd for the first milestones, then see how much of its job moves onto the log."
-link = "https://github.com/GetFelix/ninelives/issues/15"
-label = "Issue #15"
-
-[[questions]]
-title = "How are images built?"
-proposal = "mkosi, producing a read-only root."
-link = "https://github.com/GetFelix/ninelives/issues/1"
-label = "Issue #1"
-
+# The big choices, shown on the home page, the roadmap and the design index.
+# Open ones first. When one is decided, set decided = true, put the decision in
+# "answer" and link its record in docs/decisions/.
 [[questions]]
 title = "How does a machine upgrade?"
-proposal = "A/B root partitions that switch on reboot and fall back on a failed boot."
+answer = "A/B root partitions that switch on reboot and fall back on a failed boot."
 link = "https://github.com/GetFelix/ninelives/issues/8"
 label = "Issue #8"
 
 [[questions]]
 title = "How does a machine prove who it is?"
-proposal = "A one-time join token for the first join; TPM and cloud identity later."
+answer = "A one-time join token for the first join; TPM and cloud identity later."
 link = "https://github.com/GetFelix/ninelives/issues/16"
 label = "Issue #16"
+
+[[questions]]
+title = "Linux or our own kernel?"
+decided = true
+answer = "Upstream Linux built from source with our own hardened, network-tuned config, through the three-VM milestone, then reviewed with an Asterinas experiment in hand."
+link = "https://github.com/GetFelix/ninelives/blob/main/docs/decisions/0001-linux-kernel.md"
+label = "Decision 0001"
+
+[[questions]]
+title = "Our own PID 1, or systemd?"
+decided = true
+answer = "Our own small init in Rust: it mounts, reaps, starts and restarts the role's services, and shuts down in order so a clean reboot leaves Felix nothing to repair."
+link = "https://github.com/GetFelix/ninelives/blob/main/docs/decisions/0002-our-own-init.md"
+label = "Decision 0002"
+
+[[questions]]
+title = "How are images built?"
+decided = true
+answer = "mkosi, in CI, built twice and compared. Felix and felixd come from pinned releases, checked by hash and signature."
+link = "https://github.com/GetFelix/ninelives/blob/main/docs/decisions/0003-mkosi-image-build.md"
+label = "Decision 0003"
+
+[[questions]]
+title = "Which distribution is the root built from?"
+decided = true
+answer = "A minimal Debian 13, about a dozen packages pinned to a snapshot, under a kernel we build from upstream source."
+link = "https://github.com/GetFelix/ninelives/blob/main/docs/decisions/0006-debian-base.md"
+label = "Decision 0006"

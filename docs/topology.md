@@ -86,28 +86,26 @@ flowchart TB
 ## Services, not containers
 
 Felix ships container images for people running it on Kubernetes or Compose.
-NineLives does the job those would do, so the proposal is to run the release
-binaries as services under the init system instead. With systemd as PID 1,
-which is proposed but not decided
-([#15](https://github.com/GetFelix/ninelives/issues/15)), that looks like:
+NineLives does the job those would do, so it runs the release binaries as
+services under its own init
+([0002](decisions/0002-our-own-init.md)):
 
 ```
-systemd
-├── felix-controlplane.service   (core)
-├── felix-broker.service         (core, storage)
-└── felixd.service               (every machine)
+init (PID 1)
+├── felix-controlplane   (core)
+├── felix-broker         (core, storage)
+└── felixd               (every machine)
 ```
 
 - **Boot doesn't depend on a container runtime or a registry.** Everything
   else waits on Felix, so its start has to be the simplest step in boot.
-- **The init system does the isolation.** With systemd, each service runs as its own user, sees a
+- **The init does the isolation.** Each service runs as its own user, sees a
   read-only system, writes only to its directory on the data partition, and
   has CPU and memory reserved with cgroups. The reservation is what stops a
   busy workload from slowing the log on a shared machine.
-- **Felix upgrades separately from the OS.** One option is a
-  [systemd-sysext](https://www.freedesktop.org/software/systemd/man/latest/systemd-sysext.html)
-  extension layers a Felix version over the read-only image. Rolling back
-  means switching back to the previous extension.
+- **Felix upgrades with the image.** The image pins a Felix release
+  ([0004](decisions/0004-components-from-pinned-releases.md)), so upgrading
+  Felix is an image upgrade, with the same rollback.
 - Felix's data lives on the data partition, so an image upgrade never
   touches it, whatever the update mechanism turns out to be.
 

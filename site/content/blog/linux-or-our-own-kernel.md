@@ -1,6 +1,6 @@
 +++
 title = "Linux or our own kernel?"
-description = "The first open question, with the case for each side. Nothing is chosen yet."
+description = "The first big question, with the case for each side."
 date = 2026-10-28
 slug = "linux-or-our-own-kernel"
 aliases = ["/devlog/why-stock-linux/", "/devlog/linux-or-our-own-kernel/"]
@@ -46,3 +46,5 @@ There are middle paths. [Asterinas](https://github.com/asterinas/asterinas) aims
 - What would we give up in debugging, tooling and hardware support?
 
 If you have a view on any of these, or know a project I missed, [reply in the discussion](https://github.com/GetFelix/ninelives/discussions/22).
+
+**Update:** this is now decided for the first three milestones: stock Linux, with everything NineLives writes kept to standard system calls so another kernel stays an experiment away. The reasoning and what would reopen it are in [decision 0001](https://github.com/GetFelix/ninelives/blob/main/docs/decisions/0001-linux-kernel.md).

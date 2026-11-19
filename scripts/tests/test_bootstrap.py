@@ -28,6 +28,18 @@ for f in "$@"; do
 done
 echo "$@" >> "$FIXTURE_STATE/dpkg-calls"
 """
+PRE_DEPENDS_DPKG = """#!/bin/sh
+# like DPKG, but a package named python3 is refused until python3-minimal is installed
+rc=0
+for f in "$@"; do
+  sha=$(basename "$f" .deb)
+  name=$(grep "^$sha " "$FIXTURE_NAMES" | cut -d' ' -f2)
+  if [ "$name" = python3 ] && ! grep -q "^python3-minimal " "$FIXTURE_STATE/installed"; then rc=1; continue; fi
+  grep "^$sha " "$FIXTURE_NAMES" | cut -d' ' -f2- >> "$FIXTURE_STATE/installed"
+done
+echo "$@" >> "$FIXTURE_STATE/dpkg-calls"
+exit $rc
+"""
 QUERY = """#!/bin/sh
 # dpkg-query -W -f FMT NAME: "ii  <version>" for an installed name
 name=$4
@@ -131,6 +143,15 @@ class Bootstrap(unittest.TestCase):
         r = self.run_script()
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("is not installed", r.stderr)
+
+    def test_a_pre_depends_is_retried_in_a_later_call(self):
+        self.package("python3", "3.13.5-1")
+        self.package("python3-minimal", "3.13.5-1")
+        (self.tmp / "bin" / "dpkg").write_text(PRE_DEPENDS_DPKG)
+        r = self.run_script()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(len(self.dpkg_calls()), 2)
+        self.assertEqual(len(self.dpkg_calls()[1].split()), 1)
 
     def test_a_lock_without_bootstrap_packages_fails(self):
         r = self.run_script()

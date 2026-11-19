@@ -85,9 +85,18 @@ for line in "${entries[@]}"; do
   want+=("$name=$version")
 done
 
-if [[ ${#debs[@]} -gt 0 ]]; then
-  install_debs "${debs[@]}"
-fi
+# A Pre-Depends is checked when the dependent is unpacked, so python3 cannot go
+# in beside python3-minimal in one call. dpkg carries on past it and configures
+# the rest, so a second call with what is left finds it satisfied. What is still
+# missing after that fails the check below.
+for round in 1 2 3; do
+  todo=()
+  for i in "${!want[@]}"; do
+    [[ $(installed_version "${want[$i]%%=*}") == "${want[$i]#*=}" ]] || todo+=("${debs[$i]}")
+  done
+  [[ ${#todo[@]} -gt 0 ]] || break
+  install_debs "${todo[@]}" || echo "bootstrap: dpkg round $round did not finish, retrying what is left" >&2
+done
 for w in "${want[@]}"; do
   [[ $(installed_version "${w%%=*}") == "${w#*=}" ]] || { echo "bootstrap: $w is not installed" >&2; exit 1; }
 done

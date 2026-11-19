@@ -504,7 +504,7 @@ that cannot fail does not pass quietly.
 | Build A | Build B | What B changes |
 |---|---|---|
 | `kernel` (x86_64) | `kernel-rebuild` | the work path, one job against the runner's four, the clock 400 days ahead for the build step |
-| `init-binary` | `init-rebuild` | the checkout path, `CARGO_HOME`, one cargo job, the clock 400 days ahead for the build |
+| `init-binary` | `init-rebuild` | the checkout path, `CARGO_HOME`, one cargo job, the clock 400 days ahead for cargo and its build scripts (rustc hangs under libfaketime, so it runs at the real time) |
 | `image` | `image-rebuild` | the checkout, work and output paths, `USER`, `LOGNAME` and `HOME`, `TZ=Pacific/Kiritimati`, one CPU (`taskset`) against four, the clock 400 days ahead for the build phase |
 
 No job in the table shares a cache, a store or a runner with its partner.

@@ -356,8 +356,8 @@ jobs:
           if-no-files-found: error
 
   # Build B of the init: another checkout path, another CARGO_HOME, one cargo
-  # job, and libfaketime 400 days ahead for the build only (the crates are
-  # fetched first, at the real time). libfaketime comes from images/debian.lock,
+  # job, and cargo under libfaketime 400 days ahead for the build only (the
+  # crates are fetched first, at the real time). libfaketime comes from images/debian.lock,
   # not the runner's apt.
   init-rebuild:
     needs: kernel-changes
@@ -385,14 +385,20 @@ jobs:
       - name: Fetch the crates
         working-directory: other/checkout/init
         run: cargo fetch --locked
-      - name: Build, one job, 400 days ahead
+      # rustc hangs under libfaketime (its threads wait on condition variables
+      # with timeouts the library rewrites), so cargo and the build scripts it
+      # runs see the moved clock and rustc itself does not.
+      - name: Build, one job, cargo 400 days ahead
+        timeout-minutes: 20
         working-directory: other/checkout/init
         env:
           RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}/other/checkout=/build --remap-path-prefix=/home/runner/cargo-other=/cargo
         run: |
           . ../scripts/faketime.sh
           faketime_on "$(cat "$RUNNER_TEMP/faketime.path")" 400
-          cargo build --release --locked --offline
+          printf '#!/bin/sh\nexec env -u LD_PRELOAD -u FAKETIME "$@"\n' > "$RUNNER_TEMP/real-clock-rustc"
+          chmod +x "$RUNNER_TEMP/real-clock-rustc"
+          RUSTC_WRAPPER="$RUNNER_TEMP/real-clock-rustc" cargo build --release --locked --offline
       - id: up
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

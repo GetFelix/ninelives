@@ -1205,10 +1205,9 @@ files. The layout and the reasons are in the
 
 Felix's broker listeners and Raft peer port require mTLS, so every Felix
 client (felixd, and the Felix services toward each other) presents a
-certificate bound to its token's subject. The control-plane API is the
-exception until Felix can take a client CA there
-([felix#2811](https://github.com/GetFelix/felix/issues/2811)): it runs
-server TLS with bearer tokens. The join obtains each certificate and key
+certificate bound to its token's subject. The control-plane API takes a client CA on Felix main, after v0.7.2
+([felix#2811](https://github.com/GetFelix/felix/issues/2811)), so it runs
+mutual TLS once the pinned Felix has it. The join obtains each certificate and key
 with the token and writes them beside it: `token`, `client.pem` and
 `client.key`, plus a broker's or control plane's own server certificate and
 key. They get the token's permissions because a stolen key is as good as a

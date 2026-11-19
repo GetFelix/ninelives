@@ -82,6 +82,24 @@ visible in review.
   [felix#2796](https://github.com/GetFelix/felix/issues/2796),
   [felix#2799](https://github.com/GetFelix/felix/issues/2799)).
 
+## Amended 2026-11-19
+
+- Only a tagged release is pinned. A nightly is not a release, and Felix's
+  nightly `SHA256SUMS` carries no usable signature bundle, so pinning one
+  is not allowed.
+- On Felix main, after v0.7.2, the server `SHA256SUMS` is signed with
+  Sigstore ([felix#2845](https://github.com/GetFelix/felix/pull/2845),
+  closing [felix#2796](https://github.com/GetFelix/felix/issues/2796)). Felix
+  0.7.2 has no signature, so its hash is checked by a reviewer only. The
+  first release that contains it, expected v0.8.0-preview.1, is pinned
+  with a Sigstore signature like felixd: identity
+  `https://github.com/GetFelix/felix/.github/workflows/release.yml@refs/tags/v<version>`,
+  issuer `https://token.actions.githubusercontent.com`. The signature
+  check in the fetch ([#93](https://github.com/GetFelix/ninelives/issues/93))
+  covers Felix as well as felixd. Felix still does not check that its
+  server build is reproducible
+  ([felix#2799](https://github.com/GetFelix/felix/issues/2799)).
+
 ## Reopen when
 
 - felixd stops publishing signed, reproducible release builds, or Felix

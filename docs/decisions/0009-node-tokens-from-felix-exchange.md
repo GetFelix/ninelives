@@ -91,6 +91,37 @@ The full flow is in the [join design](../components/join.md#felix-tokens-after-t
 - felixd's token is refreshed by its renewal helper until felixd refreshes
   it itself ([felixd#276](https://github.com/GetFelix/felixd/issues/276)).
 
+## Amended 2026-11-19
+
+Felix changes on main after v0.7.2 resolve the two M1 blockers.
+
+- **Inline keys and single-use assertions**
+  ([felix#2836](https://github.com/GetFelix/felix/issues/2836), merged as
+  [felix#2843](https://github.com/GetFelix/felix/pull/2843)). The cluster
+  tenant's issuer config sets `jwks`, `single_use_jti` and
+  `max_token_lifetime_seconds: 60`. The `jti` record is in memory per
+  control-plane replica, so a replayed assertion succeeds once on each
+  replica that has not seen it: 2 extra on the 3-core cluster, within 120
+  seconds ([felix#2844](https://github.com/GetFelix/felix/issues/2844)).
+  Changing the keys needs `tenant.manage:cluster:*`, not `tenant.manage`.
+  Taking an inline key out revokes every principal in the tenant, operators
+  included ([felix#2850](https://github.com/GetFelix/felix/issues/2850)), so
+  retiring the old assertion key is a planned cluster-wide re-exchange.
+- **The internal role** ([felix#2840](https://github.com/GetFelix/felix/issues/2840),
+  merged as [felix#2841](https://github.com/GetFelix/felix/pull/2841)).
+  Core brokers run with `FELIX_NODE_ROLE=internal` and hold no shard.
+  Clearing the role needs `node.manage` on `cluster:*`; the issuer's groups
+  hold it only over `node:<id>`, so an issuer compromise cannot lift it.
+- **Releases.** M1 needs a Felix release that contains both, and pins the
+  first one, expected v0.8.0-preview.1, in `components.toml` under
+  [0004](0004-components-from-pinned-releases.md). A nightly cannot be pinned.
+  The sentence "M1 is blocked on felix#2836, with no fallback" now reads:
+  M1 needs that release, with no fallback.
+- **Operator certificates.** With the control-plane API's client CA
+  ([felix#2821](https://github.com/GetFelix/felix/pull/2821)), the operator's
+  grant writes and Felix revocation need a client certificate issued to
+  `felix:principal:<operator>`; the operator tooling design owns issuing it.
+
 ## Reopen when
 
 - Felix offers a certificate-to-token exchange, or certificate-bound

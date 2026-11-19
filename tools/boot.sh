@@ -5,9 +5,9 @@
 #   tools/boot.sh --image FILE.raw --out DIR
 #
 # FILE.raw is the image job's output. DIR gets one serial log per boot. Needs
-# docker or podman and network: qemu and the UEFI firmware come from the
-# pinned Debian snapshot inside the pinned container (images/tools.toml), not
-# from this host. KVM is used if /dev/kvm exists, otherwise qemu emulates and
+# docker or podman and network: python3 and gpgv come from the lock's bootstrap
+# set (scripts/bootstrap.sh), qemu and the UEFI firmware from its boot set,
+# inside the pinned container (images/tools.toml), not from this host. KVM is used if /dev/kvm exists, otherwise qemu emulates and
 # a boot takes minutes. Exits non-zero if any boot is not what it should be.
 set -euo pipefail
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)

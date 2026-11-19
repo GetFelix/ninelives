@@ -9,7 +9,9 @@
   image_lock.py boot       the same for the set the boot test runs on
   image_lock.py keyring F  write the pinned archive keys to F as a binary keyring
 
-The lock holds, for the root, the build tools and the boot test's tools separately, every
+The lock holds, for the root, the build tools, the boot test's tools and the
+bootstrap packages (scripts/bootstrap.sh installs those into the base
+container) separately, every
 package by name, version, SHA-256 and pool path, plus the SHA-256 of each
 suite's InRelease. Resolution follows apt's rules closely enough for a
 reviewed set; the fetch phase then fails if apt wants anything the lock does
@@ -30,7 +32,7 @@ SNAPSHOT = re.compile(r"\d{8}T\d{6}Z")
 NAME = re.compile(r"[a-z0-9][a-z0-9+.-]*")
 PRIORITY = {"required": 0, "important": 1, "standard": 2, "optional": 3, "extra": 4}
 ARCHIVE_URL = "http://snapshot.debian.org/archive"
-SETS = ("root", "tools", "boot")
+SETS = ("root", "tools", "boot", "bootstrap")
 
 
 def suites_for(release: str) -> list[tuple[str, str]]:
@@ -136,7 +138,8 @@ def q(s: str) -> str:
 def render(snapshot: str, arch: str, sets: dict) -> str:
     lines = [
         "# Every Debian package the image build uses, by name, version and SHA-256,",
-        "# for the root, the build tools and the boot test's tools separately. Written by",
+        "# for the root, the build tools, the boot test's tools and the bootstrap",
+        "# step's packages separately. Written by",
         "# scripts/image_lock.py; CI regenerates it and fails on a difference, so",
         "# a hand edit cannot add a package resolution would not. Change it only in",
         "# a reviewed pull request that touches pin files and nothing else",
@@ -163,7 +166,7 @@ def generate(output: pathlib.Path = LOCK) -> None:
     sets = {}
     with tempfile.TemporaryDirectory() as d:
         work = pathlib.Path(d)
-        for which, roots, essential in (("root", keep, True), ("tools", tools["tools"]["packages"], False), ("boot", tools["boot"]["packages"], False)):
+        for which, roots, essential in (("root", keep, True), ("tools", tools["tools"]["packages"], False), ("boot", tools["boot"]["packages"], False), ("bootstrap", tools["bootstrap"]["packages"], False)):
             release = tools[which]["release"]
             universe, inrelease = load_universe(snapshot, arch, release, work / which)
             names = closure(universe, ["base-files", *roots] if essential else roots, essential)
@@ -216,7 +219,7 @@ def check() -> list[str]:
     for p in keep:
         if p["name"] not in root:
             errors.append(f"packages.toml: {p['name']} is not in the lock's root set")
-    for which in ("tools", "boot"):
+    for which in ("tools", "boot", "bootstrap"):
         in_lock = {p["name"] for p in lock.get(which, {}).get("package", [])}
         for n in tools[which]["packages"]:
             if n not in in_lock:
@@ -224,8 +227,8 @@ def check() -> list[str]:
     # The workflow's container is the pinned bootstrap image, by the same digest.
     ci = (ic.ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     digest = tools["bootstrap"]["image"].split("@", 1)[1]
-    if f"image: debian@{digest}" not in ci or f"DEBIAN_SNAPSHOT: {snapshot}" not in ci:
-        errors.append("ci.yml: the image job's container or snapshot is not the one tools.toml pins")
+    if f"image: debian@{digest}" not in ci:
+        errors.append("ci.yml: the image job's container is not the one tools.toml pins")
     return errors
 
 

@@ -121,6 +121,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       run: ${{ steps.diff.outputs.run }}
+      epoch: ${{ steps.diff.outputs.epoch }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -132,11 +133,14 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
             # The checkout is the merge commit; its first parent is the base.
             if ! git diff --name-only HEAD^1 HEAD \
-              | grep -qE '^(kernel/|images/|rootfs/|init/|tools/(image|boot)\.sh$|scripts/(check_kernel_config\.py|fetch_kernel\.py|kernel_build\.sh|image[-_a-z]*\.(py|sh)|boot[-_a-z]*\.(py|sh)|fetch_image\.py|check_image\.py)$|\.github/workflows/ci\.yml$)'; then
+              | grep -qE '^(kernel/|images/|rootfs/|init/|tools/(image|boot)\.sh$|scripts/(bootstrap\.sh|check_kernel_config\.py|fetch_kernel\.py|kernel_build\.sh|image[-_a-z]*\.(py|sh)|boot[-_a-z]*\.(py|sh)|fetch_image\.py|check_image\.py)$|\.github/workflows/ci\.yml$)'; then
               run=false
             fi
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
+          # The image's timestamp: the commit time of the commit checked out,
+          # which is github.sha. The image container has no git to ask.
+          echo "epoch=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
 
   kernel:
     needs: kernel-changes
@@ -287,35 +291,10 @@ jobs:
     container:
       image: debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 # trixie-20261104-slim
       options: --privileged
-    env:
-      DEBIAN_SNAPSHOT: 20261118T000000Z
     steps:
-      - name: git and python3 from the pinned snapshot
-        run: |
-          # apt checks the snapshot's Release files against the image's own
-          # Debian archive keyring. This is the one unpinned step (#92): the
-          # fetch phase runs on what it installs. The build phase fails if this
-          # step upgraded a package the container had, purges what it added
-          # beyond the locked tools, and checks the installed set against the lock.
-          dpkg-query -W -f '${db:Status-Abbrev}${Package}=${Version}\n' | sed -n 's/^ii //p' | LC_ALL=C sort > /var/lib/ninelives-bootstrap-base
-          keyring=$(sed -n 's/^Signed-By: //p' /etc/apt/sources.list.d/debian.sources | head -n1)
-          test -s "$keyring"
-          rm /etc/apt/sources.list.d/debian.sources
-          cat > /etc/apt/sources.list.d/snapshot.sources <<EOF
-          Types: deb
-          URIs: http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}
-          Suites: trixie trixie-updates
-          Components: main
-          Signed-By: ${keyring}
-
-          Types: deb
-          URIs: http://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT}
-          Suites: trixie-security
-          Components: main
-          Signed-By: ${keyring}
-          EOF
-          apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Retries=5 update
-          apt-get -o Acquire::Retries=5 install -y --no-install-recommends ca-certificates git gpgv python3 xz-utils
+      # The container has no git. scripts/image-build.sh installs python3,
+      # gpgv, xz-utils and ca-certificates from images/debian.lock, each .deb
+      # checked against its SHA-256, so the checkout is the tarball of the commit.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
@@ -328,6 +307,9 @@ jobs:
           name: init-x86_64
           path: /__w/_temp/image/init
       - name: Build and check the image
+        env:
+          COMMIT: ${{ github.sha }}
+          SOURCE_DATE_EPOCH: ${{ needs.kernel-changes.outputs.epoch }}
         run: |
           chmod +x /__w/_temp/image/init/init
           scripts/image-build.sh --kernel /__w/_temp/image/kernel --init /__w/_temp/image/init/init \

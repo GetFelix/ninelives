@@ -11,8 +11,19 @@ sha256 = "33520d662e151d6c43e910c3840ac971fd6023e4488d9c10599e199a07f77d8b"
 
 # The container the fetch phase and the build run in. The runner supplies only
 # its kernel, container runtime and network. Debian 13 trixie-20261104-slim.
+# The official Debian images are built with debuerreotype, whose stated aim is
+# reproducible builds from snapshot.debian.org. We do not rebuild the image;
+# the digest is the trust root.
+#
+# What the fetch phase runs on is not in that image. scripts/bootstrap.sh
+# installs these packages into it, each .deb checked against the SHA-256 in
+# debian.lock (the closure of these roots, minus what the image already has):
+#   python3, gpgv, xz-utils   the fetch phase, InRelease and the kernel signature, xz archives
+#   ca-certificates           https downloads (mkosi, Felix, felixd)
 [bootstrap]
 image = "debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2"
+release = "trixie"
+packages = ["ca-certificates", "gpgv", "python3", "xz-utils"]
 
 # One snapshot.debian.org timestamp for everything Debian. The release of the
 # image's root and the release of the build tools are separate pins, so

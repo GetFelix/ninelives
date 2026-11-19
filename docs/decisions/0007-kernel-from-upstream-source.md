@@ -48,6 +48,10 @@ Which LTS release, and how a bump is tested, are settled in #3. Every
 kernel change runs the image's boot, durability and network tests
 ([requirements.md](../requirements.md)).
 
+### Amended by the kernel's design, 2026-11-18
+
+[kernel.md](../components/kernel.md) sets lockdown to confidentiality mode and compiles out the BPF syscall and userfaultfd, instead of integrity mode and the unprivileged switches above.
+
 ## Options considered
 
 | Option | Why not |

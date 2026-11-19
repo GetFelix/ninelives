@@ -346,7 +346,7 @@ jobs:
       # network namespace must fail, and the same download outside must work.
       - name: Fixture, a download in the build phase's namespace fails
         run: |
-          fetch='import urllib.request; urllib.request.urlopen("https://github.com", timeout=10)'
+          fetch='import socket; socket.create_connection(("github.com", 443), timeout=10)'
           python3 -I -c "$fetch"
           if unshare --net -- python3 -I -c "$fetch" 2>/dev/null; then
             echo "a download worked inside the network namespace" >&2

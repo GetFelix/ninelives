@@ -16,9 +16,17 @@ which services the image starts.
 
 | Role | Runs | How many |
 |---|---|---|
-| core | control plane, broker, felixd | 3, or 5 in larger clusters (1 for development) |
-| storage | broker, felixd | optional; as many as data and throughput need |
+| core | control plane, broker (internal only), felixd | 3, or 5 in larger clusters |
+| storage | broker, felixd | at least 1 in a cluster that serves clients; as many as data and throughput need |
 | worker | felixd | optional; the rest |
+| core-dev | control plane, broker serving clients, felixd | development and test images only: 1, the whole cluster |
+
+Decided: core machines are internal-only. Their brokers serve no tenant
+clients, so every client and every felixd connects to storage brokers
+([join design](components/join.md#core-machines-are-internal-only),
+[#77](https://github.com/GetFelix/ninelives/issues/77)). The `core-dev` role
+exists so NineLives can be tried on one machine; production issuers and
+images refuse it.
 
 - **The control plane stays at 3 or 5.** It is a Raft group and every
   metadata write waits for a majority. Three tolerates one failure and five
@@ -30,29 +38,35 @@ which services the image starts.
 
 ## Cluster sizes
 
-Storage machines and workers are optional. A cluster starts small and adds
-them when it needs capacity.
+Workers are optional. A production cluster that serves clients needs at
+least one storage machine, since core brokers serve none. A cluster starts
+small and adds machines when it needs capacity.
 
 | Cluster | Machines | What you get |
 |---|---|---|
-| Development | 1 core | Everything works; nothing survives losing the machine |
-| Smallest fault-tolerant | 3 core | Survives losing any one machine. This is the M2 demo. |
-| Growing | 3 core + workers | More compute; the core machines still hold the log |
-| Large | 3 or 5 core + storage + workers | More log capacity, and workloads kept off the log's machines |
+| Development | 1 `core-dev` machine, development or test image only | Everything works; nothing survives losing the machine |
+| Smallest production | 1 core + 1 storage | Serves clients; survives nothing |
+| Fault-tolerant production | Open. Proposal: 3 core + 2 storage | Survives losing any one machine, and serving survives losing a storage machine. The formation design and the M2 demo ([#7](https://github.com/GetFelix/ninelives/issues/7)) decide it. |
+| Growing | fault-tolerant + workers | More compute; workloads off the log's machines |
+| Large | 3 or 5 core + storage + workers | More log capacity and throughput |
 
 Three is the floor for surviving a failure: Raft needs a majority, and with
 two machines losing either one leaves no majority.
 
-The smallest fault-tolerant cluster:
+The proposed fault-tolerant production cluster (not decided):
 
 ```mermaid
 flowchart LR
-    c1["core-1<br/>control plane<br/>broker<br/>felixd"]
-    c2["core-2<br/>control plane<br/>broker<br/>felixd"]
-    c3["core-3<br/>control plane<br/>broker<br/>felixd"]
+    c1["core-1<br/>control plane<br/>internal broker<br/>felixd"]
+    c2["core-2<br/>control plane<br/>internal broker<br/>felixd"]
+    c3["core-3<br/>control plane<br/>internal broker<br/>felixd"]
+    s1["storage-1<br/>broker<br/>felixd"]
+    s2["storage-2<br/>broker<br/>felixd"]
     c1 <-->|Raft| c2
     c2 <-->|Raft| c3
     c1 <-->|Raft| c3
+    c1 --- s1
+    c2 --- s2
 ```
 
 A large cluster adds storage machines and workers around the same core:

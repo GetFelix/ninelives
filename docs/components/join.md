@@ -298,7 +298,7 @@ from its registry, never taken from the request.
 | Kind | CA | Names | EKU | Service | Files in `$DATA/credentials/<service>/` |
 |---|---|---|---|---|---|
 | felixd client | cluster | URI `felix:principal:<felixd principal>` | client | felixd (every role) | `client.pem`, `client.key` |
-| Broker client listener | cluster | DNS: the node id's name; on a storage broker also the cluster's broker name, never on a core broker ([Core machines are internal-only](#core-machines-are-internal-only)) | server | broker (core, storage) | `tls.pem`, `tls.key` |
+| Broker client listener | cluster | DNS: the node id's name; on a storage broker also the cluster's broker name, never on a core broker ([Core machines are internal-only](#core-machines-are-internal-only)) | server | broker (core, storage, core-dev) | `tls.pem`, `tls.key` |
 | Broker internal | internal | DNS = node id | server, client | broker | `internal.pem`, `internal.key` |
 | Broker control-plane client | cluster | URI `felix:principal:<broker principal>` | client | broker | `cp-client.pem`, `cp-client.key` |
 | Control-plane API | cluster | DNS: the control plane's name, the node id's name | server | control plane (core) | `api.pem`, `api.key` |
@@ -372,8 +372,27 @@ cluster. What that fixes here:
 - So a cluster that runs felixd or serves any client needs storage machines.
   The issuer refuses to issue a token for any role whose `FELIX_BROKERS`
   would be empty, which means the first storage machine joins before any
-  worker. The cluster sizes in [topology.md](../topology.md) predate this
-  and are updated with the formation design.
+  worker. The smallest production cluster is one core and one storage
+  machine ([topology.md](../topology.md#cluster-sizes)); the fault-tolerant
+  size is [open](#open-questions).
+
+**One machine for development.** Decided: development and test images may
+run a single machine that is both core and a client-serving broker, so
+NineLives can be tried on one machine. It is a separate role, `core-dev`,
+fenced by variant (`VARIANT_ID` in `os-release`,
+[image design](image.md#building-the-root), S22):
+
+- Only an issuer whose own image is the `development` or `test` variant
+  creates a `core-dev` token. A production issuer refuses it, and refuses
+  any token whose cluster values would put the cluster's broker name on a
+  core machine's certificate or a core broker in `FELIX_BROKERS`.
+- Only `development` and `test` images list `core-dev` in their init config.
+  A production image does not know the role, so its join refuses an Issued
+  answer naming it (a permanent failure, nothing written), and its init would
+  start no role service for it ([init design](init.md#programs-it-starts)).
+- A `core-dev` machine's broker certificate carries the cluster's broker
+  name, `FELIX_BROKERS` lists it, and its S7 port list includes the client
+  port. Core approval is skipped, as on every development issuer.
 
 ### The exchange with the issuer
 
@@ -874,6 +893,9 @@ Decided: both are accepted. 0008 carries a note pointing here.
   approves a token that has had two different key sets proven.
 - **J17.** No core broker certificate carries the cluster's broker name, and
   no `FELIX_BROKERS` value the issuer returns lists a core broker.
+- **J18.** A `core-dev` role, the only role that puts a client port on a
+  core machine, is issued only by a `development` or `test` issuer and
+  installed only on a `development` or `test` image.
 
 ## Failure modes
 
@@ -904,6 +926,7 @@ passed, and no role service starts without a role.
 | **Core join awaiting approval** | Pending | Fingerprint on the console; exit 75; retried with the same keys | Production core joins need an operator by design |
 | **Two key sets for one core token** (a thief raced the machine) | Issuer, at the second Proof | Token blocked, alert; neither approved; the join keeps getting `token_refused` and fails permanently | The operator issues a new token and wipes the machine |
 | **Core token expires before approval** | Issuer | Pending redemption dropped; `token_refused`; permanent failure | New token |
+| **A `core-dev` token reaches a production machine, or a production issuer is asked for one** | The join's known-role check; the issuer's variant check | The production join fails permanently with nothing written; the production issuer refuses to create the token | The combined role exists only to try NineLives on one machine (J18) |
 | **Issuer clock unsynchronized** | Issuer check 3, before Hello | Refused(`retry`) instead of Hello; the join exits 75 and retries | Joins wait for the issuer's clock instead of failing under J14 |
 | **Issuer down or unreachable** | Connect timeout | Exit 75; the init retries with backoff | Machines wait; the token may expire, then a new one is needed |
 | **Issuer rate-limits** | `retry` | Exit 75 after the stated delay | T65 |
@@ -1030,6 +1053,7 @@ step.
 | Clock: start with `STA_UNSYNC` set; with a clock before the build time; with an issuer 2 minutes off. No token sent in any of them; permanent failure in the third | unit and qemu | J1, J14 |
 | Core join on a production test issuer: the console shows the fingerprint, retries get Pending, approval leads to Issued; a second key set for the same token blocks it and alerts; expiry before approval drops it. On a development issuer the core join is issued at once | unit and qemu | J16 |
 | A core machine's broker certificate has no cluster broker name; `FELIX_BROKERS` on every role lists only storage brokers; from a worker, the core broker client port is closed (S7 scan); a token for a cluster with no storage machine is refused | unit and qemu | J17, #77 |
+| A production issuer refuses to create a `core-dev` token; a `core-dev` Issued answer from a test issuer makes a production image's join fail permanently with nothing written; on a development image the same answer gives a working one-machine cluster whose broker serves clients | unit and qemu | J18 |
 | A test issuer whose clock is unsynchronized and 5 minutes off: it answers Refused(`retry`) instead of Hello, the join exits 75 with no token sent and no `join/failed`, and it joins once the issuer's clock is synchronized | unit and qemu | Issuer clock row, J11 |
 | With the image's real chrony and the KVM clock in qemu, the join gets past the clock wait within 60 s of boot; with `rtcsync` removed from a test config, it never does and says why | qemu | Time, `rtcsync` |
 | Disks with a `ninelives-config` entry of the wrong size, one overlapping the data partition, one at LBA 0 to 2047, and two such entries: no fd reaches the join, it fails permanently, and the data partition and the primary GPT are unchanged | qemu (test images) | J15 |
@@ -1056,4 +1080,5 @@ updater ([#107](https://github.com/GetFelix/ninelives/issues/107), M3).
 | Should the init stop retrying on exit 78? | Yes, small change: `failed`, no restart. The marker file already makes retries harmless. | Init design | M1 |
 | The frame encoding with the issuer | The config's record encoding, as above | `nl-issuer` design | M1 |
 | Bare metal without a hypervisor clock: does chrony's `nocerttimecheck` count as authenticated time under S15? | Yes for at most its first update, with the issuer cross-check as the second factor | [#59](https://github.com/GetFelix/ninelives/issues/59) | M5 |
+| The fault-tolerant production cluster size | 3 core + 2 storage, so the cluster survives losing any one machine and serving survives losing a storage machine. Not decided | Formation design, with the M2 demo ([#7](https://github.com/GetFelix/ninelives/issues/7)) | M2 |
 | Egress by port, not address, for the join | Accept: the issuer address is only in the config, and the packet filter must not parse it | Threat model | M1 |

@@ -145,7 +145,7 @@ tool_names=()
 for p in "${tool_pkgs[@]}"; do tool_names+=("${p%%=*}"); done
 export LC_ALL=C
 installed_list > "$work/installed-after-bootstrap"
-upgraded=$(join -t= "$bootstrap_base" "$work/installed-after-bootstrap" | awk -F= '$2 != $3 {print $1}')
+upgraded=$(awk -F= 'NR==FNR {v[$1]=$2; next} ($1 in v) && v[$1] != $2 {print $1}' "$bootstrap_base" "$work/installed-after-bootstrap")
 if [[ -n $upgraded ]]; then
   echo "the bootstrap step upgraded packages that were in the container: $upgraded" >&2
   exit 1

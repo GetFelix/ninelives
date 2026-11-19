@@ -1,0 +1,14 @@
+config MODULES
+	bool "Modules"
+menuconfig SECURITY
+	bool "Security"
+config LSM
+	string "LSMs"
+config IO_URING
+	bool "io_uring"
+config STRICT_KERNEL_RWX
+	bool
+config STRICT_MODULE_RWX
+	bool
+config PROC_KCORE
+	bool

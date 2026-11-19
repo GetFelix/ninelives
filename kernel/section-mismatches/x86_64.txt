@@ -1,0 +1,10 @@
+# modpost section mismatches the x86_64 build may report (kernel_build.sh
+# fails on any other, and on a line here that no longer appears). With
+# modules off, 6.18's FineIBT patching code in .text calls __init helpers;
+# its only caller is alternative_instructions(), which runs at boot before
+# init memory is freed.
+__apply_fineibt (section: .text) -> text_poke_early (section: .init.text)
+cfi_enable_callers (section: .text) -> text_poke_early (section: .init.text)
+cfi_rewrite_callers (section: .text) -> text_poke_early (section: .init.text)
+cfi_rewrite_endbr (section: .text) -> poison_endbr (section: .init.text)
+cfi_rewrite_preamble (section: .text) -> text_poke_early (section: .init.text)

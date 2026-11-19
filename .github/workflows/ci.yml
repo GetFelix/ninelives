@@ -38,8 +38,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Scripts compile
         run: python3 -m compileall -q scripts site/scripts
+      - name: Unit tests
+        run: python3 -m unittest discover -s scripts/tests -v
+      - name: Kernel pin and fragments
+        run: |
+          # Against the target branch: no downgrade, and kernel/keys/ never
+          # changes in the same pull request as kernel/VERSION.
+          args=()
+          if [[ -n "${GITHUB_BASE_REF:-}" ]]; then
+            git fetch -q --depth=1 origin "$GITHUB_BASE_REF"
+            base=$RUNNER_TEMP/base
+            mkdir -p "$base"
+            if git cat-file -e FETCH_HEAD:kernel/VERSION 2>/dev/null; then
+              git archive FETCH_HEAD kernel | tar -x -C "$base"
+              args=(--base "$base/kernel")
+            fi
+          fi
+          python3 -I scripts/fetch_kernel.py --check "${args[@]}"
+          python3 -I scripts/check_kernel_config.py lint
       - name: Component manifest
         run: |
           args=()
@@ -93,12 +113,146 @@ jobs:
       - name: cargo deny
         run: cargo deny --locked check
 
-  # The one check main requires, so a job added later is covered without changing the ruleset.
+  # The kernel jobs take several minutes, so a pull request runs them only
+  # when it touches what they check. Pushes to main always run them.
+  kernel-changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      run: ${{ steps.diff.outputs.run }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - id: diff
+        run: |
+          run=true
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            # The checkout is the merge commit; its first parent is the base.
+            if ! git diff --name-only HEAD^1 HEAD \
+              | grep -qE '^(kernel/|scripts/(check_kernel_config\.py|fetch_kernel\.py|kernel_build\.sh)$|\.github/workflows/ci\.yml$)'; then
+              run=false
+            fi
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+  kernel:
+    needs: kernel-changes
+    if: needs.kernel-changes.outputs.run == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            image: arch/x86/boot/bzImage
+          - arch: aarch64
+            image: arch/arm64/boot/Image
+    runs-on: ubuntu-24.04
+    # Debian 13 by digest, with packages from one snapshot, so the compiler
+    # (and with it the resolved config) changes only in a reviewed commit.
+    # No caches anywhere: this output feeds the image (S5, S21).
+    container:
+      image: debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 # trixie-20261104-slim
+    env:
+      DEBIAN_SNAPSHOT: 20261118T000000Z
+      # kernel-hardening-checker v0.6.17.1, by commit (S21).
+      KHC_COMMIT: afc376f2a935994793343cfeb05953583cc30191
+      WORK: /__w/_temp/kernel
+    steps:
+      - name: Toolchain from the pinned snapshot
+        run: |
+          # apt checks the snapshot's Release files against the image's own
+          # Debian archive keyring, so plain http is enough.
+          keyring=$(sed -n 's/^Signed-By: //p' /etc/apt/sources.list.d/debian.sources | head -n1)
+          test -s "$keyring"
+          rm /etc/apt/sources.list.d/debian.sources
+          cat > /etc/apt/sources.list.d/snapshot.sources <<EOF
+          Types: deb
+          URIs: http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}
+          Suites: trixie trixie-updates
+          Components: main
+          Signed-By: ${keyring}
+
+          Types: deb
+          URIs: http://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT}
+          Suites: trixie-security
+          Components: main
+          Signed-By: ${keyring}
+          EOF
+          apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Retries=5 update
+          apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+            bc bison ca-certificates clang flex git gpgv libc6-dev libelf-dev lld llvm make python3 xz-utils
+          clang --version
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Verify the tarball and resolve the config
+        id: resolve
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          scripts/kernel_build.sh resolve "${{ matrix.arch }}" "$WORK"
+          cp "$WORK/out/.config" "$WORK/qemu-${{ matrix.arch }}.config"
+      - name: Upload the resolved config
+        if: always() && steps.resolve.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kernel-config-qemu-${{ matrix.arch }}
+          path: /__w/_temp/kernel/qemu-${{ matrix.arch }}.config
+          if-no-files-found: error
+      - name: "Check 1: resolved config matches kernel/resolved"
+        if: always() && steps.resolve.outcome == 'success'
+        run: diff -u "kernel/resolved/qemu-${{ matrix.arch }}.config" "$WORK/out/.config"
+      - name: "Checks 2 and 3: fragment lines landed, policy holds"
+        if: always() && steps.resolve.outcome == 'success'
+        run: |
+          python3 -I scripts/check_kernel_config.py config --arch "${{ matrix.arch }}" --target qemu \
+            --config "$WORK/out/.config" --source "$(echo "$WORK"/src/linux-*)"
+      - name: "Check 4: kernel-hardening-checker"
+        if: always() && steps.resolve.outcome == 'success'
+        run: |
+          khc=$WORK/khc
+          rm -rf "$khc"
+          git init -q "$khc"
+          git -C "$khc" fetch -q --depth=1 https://github.com/a13xp0p0v/kernel-hardening-checker "$KHC_COMMIT"
+          git -C "$khc" checkout -q FETCH_HEAD
+          python3 -I scripts/check_kernel_config.py emit --arch "${{ matrix.arch }}" cmdline > "$WORK/cmdline"
+          python3 -I scripts/check_kernel_config.py emit --arch "${{ matrix.arch }}" sysctl > "$WORK/sysctl"
+          (cd "$khc" && python3 -I bin/kernel-hardening-checker -m json \
+            -c "$WORK/out/.config" -l "$WORK/cmdline" -s "$WORK/sysctl") > "$WORK/hardening.json"
+          python3 -I scripts/check_kernel_config.py hardening --arch "${{ matrix.arch }}" --report "$WORK/hardening.json"
+      - name: Upload the hardening report
+        if: always() && steps.resolve.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kernel-hardening-qemu-${{ matrix.arch }}
+          path: /__w/_temp/kernel/hardening.json
+          if-no-files-found: ignore
+      - name: Build
+        run: scripts/kernel_build.sh build "${{ matrix.arch }}" "$WORK"
+      - name: Collect the kernel
+        run: |
+          mkdir -p "$WORK/artifact"
+          cp "$WORK/out/${{ matrix.image }}" "$WORK/out/System.map" "$WORK/out/.config" "$WORK/artifact/"
+          cd "$WORK/artifact"
+          sha256sum -- * .config
+      # The kernel the image build (#2) boots. System.map stays with it so a
+      # panic's raw addresses can be symbolised offline. Nothing inside an
+      # artifact vouches for it, so #2 takes only this run's artifact or one
+      # from a push to main, never the latest artifact with this name.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kernel-qemu-${{ matrix.arch }}
+          path: /__w/_temp/kernel/artifact/
+          include-hidden-files: true
+          if-no-files-found: error
+
+  # The one check main requires, so a job added later is covered without
+  # changing the ruleset. A job skipped by its own condition counts as passed.
   ci-ok:
     name: CI ok
     if: always()
-    needs: [lint, python, init]
+    needs: [lint, python, init, kernel-changes, kernel]
     runs-on: ubuntu-latest
     steps:
       - run: |
-          [[ "${{ join(needs.*.result, ' ') }}" =~ ^(success\ ?)+$ ]]
+          [[ "${{ join(needs.*.result, ' ') }}" =~ ^((success|skipped)\ ?)+$ ]]

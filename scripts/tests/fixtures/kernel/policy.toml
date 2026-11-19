@@ -1,0 +1,30 @@
+# A small policy for the unit tests.
+[common]
+unset = ["CONFIG_IO_URING", "CONFIG_MODULES"]
+
+[common.set]
+CONFIG_SECURITY = "y"
+CONFIG_LSM = '"landlock,lockdown,yama"'
+
+[common.upstream_not_applied]
+CONFIG_STRICT_MODULE_RWX = "needs CONFIG_MODULES"
+
+[common.sysctl]
+"kernel.kptr_restrict" = "2"
+
+[common.cmdline]
+required = ["ro", "panic=10"]
+image_keys = ["init", "console"]
+image_prefixes = ["dm-mod."]
+
+[x86_64]
+all_listed = ["CONFIG_MITIGATION_"]
+unset = ["CONFIG_IA32_EMULATION"]
+
+[x86_64.set]
+CONFIG_MITIGATION_RETPOLINE = "y"
+
+[x86_64.cmdline]
+required = ["pti=on"]
+
+[aarch64]

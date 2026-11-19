@@ -4,3 +4,4 @@
 /target/
 *.raw
 *.qcow2
+__pycache__/

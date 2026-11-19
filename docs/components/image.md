@@ -141,7 +141,7 @@ partitions only by GPT name, on the root's disk (init design, boot step 4).
 | 2 | `ninelives-root-a` | root (per architecture), erofs | The root's size, budgeted | Every file the machine runs | The build | `/`, read-only, through dm-verity |
 | 3 | `ninelives-verity-a` | root verity (per architecture) | Set by the root's size | The dm-verity hash tree over partition 2 | The build | Never; the kernel reads it |
 | 4, 5 | `ninelives-root-b`, `ninelives-verity-b` | as 2 and 3 | as 2 and 3 | Empty until M3 | The M3 updater | Proposed: reserved now so the layout does not change at M3. #8 decides. |
-| 6 | `ninelives-config` | NineLives config, no filesystem | 1 MiB, fixed | Zeros in the image. Provisioning writes the join config here before first boot; on a cloud it stays empty and the join reads cloud metadata. | Provisioning, before first boot | Never as a filesystem ([open question](#open-questions)) |
+| 6 | `ninelives-config` | NineLives config, no filesystem | 1 MiB, fixed | Zeros in the image. Provisioning writes the join config here before first boot; on a cloud it stays empty and the join reads cloud metadata. Format: [join design](join.md#the-config-partition). | Provisioning, before first boot; zeroed by the join after it succeeds | Never. The join reads it raw through an fd PID 1 opens before the drop ([join design](join.md#reading-it-without-root)). |
 | 7 | `ninelives-data` | Linux data | The image's minimum; grown on the machine | Unformatted in the image | #4's program on the machine | `data_mount`, `nosuid,nodev,noexec,prjquota`, by the init |
 
 What is mutable where, at run time:
@@ -149,7 +149,7 @@ What is mutable where, at run time:
 | Place | Mutable? | By whom |
 |---|---|---|
 | ESP, root, verity partitions | No. The root is erofs, which the kernel cannot write at all, and dm-verity refuses any changed block. | The M3 updater replaces an inactive slot |
-| Config partition | No, on the machine | Written once before first boot |
+| Config partition | Once: the join zeroes it after a successful join | Provisioning before first boot; the join, through the one fd PID 1 hands it on first boot |
 | Data partition | Yes, the one writable disk | Services, in their own directories (init design) |
 | `/run`, `/tmp` | Yes, tmpfs, `nosuid,nodev,noexec`, lost at reboot. The init mounts both: `/run` as a fixed early mount, `/tmp` from the `[[mount]]` entry in `init.toml` ([init design](init.md#boot-as-root)). The root only provides the empty mount points. | Services |
 
@@ -171,7 +171,8 @@ provisions the machine, so on a machine taken from its owner (X7) it is
 attacker input. Mounting a filesystem from it would put the kernel's vfat or
 ext4 parser on that input while the init is still root. A fixed-size,
 length-prefixed blob read by the join (an unprivileged service) keeps it out
-of the kernel and out of PID 1 (T21). The format is the join's design
+of the kernel and out of PID 1 (T21). The format is the
+[join design](join.md#the-config-partition)'s
 ([#5](https://github.com/GetFelix/ninelives/issues/5)); the image only
 provides the partition.
 
@@ -850,7 +851,7 @@ first published image.
 | Whether the image key is signed offline at the targets ceremony instead of by a CI signer | Keep a CI signer for the UKI, since the offline targets decide what is installed; revisit if the CI signer is ever misused | #9 | M3 |
 | The exact TPM policy: PolicyPCR under PolicyAuthorize combined with the PolicyNV floor, the NV index, and how an offline-signed raise reaches each machine in a cluster | Prototype at M3; the updater applies the signed raise after the new image reports healthy | #8, #60 | M3 |
 | Whether the B slot is reserved from M0 | Reserve it, so M3 does not change the layout | A/B design (#8) | M3, but cheapest now |
-| The config partition's format, and how the join reads it without root (the init could hand the join that one partition's device node before the drop) | A raw, length-prefixed, size-capped blob | Join (#5) with the init design | M1 |
+| The config partition's format, and how the join reads it without root | Answered in the join design: [format](join.md#the-config-partition), [read through an fd PID 1 opens before the drop](join.md#reading-it-without-root). The init's half is its open question. | Join (#5) with the init design | M1 |
 | Where the image key lives | 0008's custody model, as a separate key | #9, #16 | M3 |
 | Development images: unsigned, or signed with a development key production firmware never enrolls | A separate development key | #9 | M3 |
 | GitHub-hosted runners cannot be pinned to an exact image build, which S21 asks for | Record the version in provenance and accept it with the bootstrap container; the independent rebuild checks the result | NineLives maintainers | First published image |

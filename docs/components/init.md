@@ -96,7 +96,7 @@ design. Every one runs under its own non-zero uid from its first instruction
 | firewall | the packet filter loader, [open](#open-questions) | all | 0, run once, before the drop | Loads the S7 ruleset before any interface is configured, so no packet arrives unfiltered, and before the drop, so no running service needs netfilter access. |
 | time | `chronyd` (Debian `chrony`) | all | 1 | Runs in the foreground (`-d`), starts non-root with only `CAP_SYS_TIME` (`-U`), ships its own seccomp filter (`-F 1`), opens no port (`port 0`, `cmdport 0`), and supports NTS. |
 | network | a DHCP client split into a parser and an applier, [open](#open-questions) | all, except where the kernel command line configures the network | 1 | The parser handles packets from the network with no capability; the applier holds `CAP_NET_ADMIN` and can reach only routing netlink. No hook script, so no shell is needed (S1). qemu in M0 and M1 uses the kernel's `ip=` instead. |
-| renew-felixd, renew-broker, renew-controlplane | `nl-renew` ([0008](https://github.com/GetFelix/ninelives/blob/docs/ca-decision/docs/decisions/0008-ca-keys-and-machine-certificates.md), proposed) | the roles of the service it renews | 3 | Renews one service's certificate and trust bundle at that service's uid, writing only that service's credential directory. The init starts it like any other long-running service; renewal itself is `nl-renew`'s design. It starts after the join, so the first certificate is already there. |
+| renew-felixd, renew-broker, renew-controlplane | `nl-renew` ([0008](https://github.com/GetFelix/ninelives/blob/docs/ca-decision/docs/decisions/0008-ca-keys-and-machine-certificates.md), proposed) | the roles of the service it renews | 3 | Renews one service's certificate at that service's uid, writing only that service's credential directory. The init starts it like any other long-running service; renewal itself is `nl-renew`'s design. It starts after the join, so the first certificate is already there. |
 | join | the join ([#5](https://github.com/GetFelix/ninelives/issues/5)) | all | 2, first boot only | The join's uid never runs again after it succeeds (T71). PID 1 starts it only when `$DATA/join/role` does not exist; the join writes that file last, after everything else it writes is synced. A machine with a broken join state is wiped and rejoins. |
 | felix-controlplane | Felix release | core | 3 | |
 | felix-broker | Felix release | core, storage | 4 | Needs the control plane. |
@@ -160,11 +160,11 @@ exec = ["/usr/lib/felixd/felixd", "agent"]
 uid = 1105
 gid = 1105
 state_dir = "felixd"                # $DATA/felixd, 0700, owned by uid
-env = { FELIX_AUTH_TOKEN_FILE = "/var/lib/ninelives/credentials/felixd/token", FELIX_CA_FILE = "/var/lib/ninelives/credentials/felixd/ca.pem", FELIX_CLIENT_CERT_FILE = "/var/lib/ninelives/credentials/felixd/client.pem", FELIX_CLIENT_KEY_FILE = "/var/lib/ninelives/credentials/felixd/client.key" }
+env = { FELIX_AUTH_TOKEN_FILE = "/var/lib/ninelives/credentials/felixd/token", FELIX_CA_FILE = "/var/lib/ninelives/trust/cluster.pem", FELIX_CLIENT_CERT_FILE = "/var/lib/ninelives/credentials/felixd/client.pem", FELIX_CLIENT_KEY_FILE = "/var/lib/ninelives/credentials/felixd/client.key" }
 join_env = ["FELIX_BROKERS", "FELIX_AUTH_TENANT", "FELIX_CONTROLPLANE_URL", "FELIX_SERVER_NAME", "FELIXD_NODE_ID"]
 ambient = []                        # capabilities; non-empty only for firewall, time, network
 seccomp = "/usr/lib/ninelives/seccomp/felixd.bpf"
-landlock.read = ["/usr/lib", "/etc/ssl/certs", "/run/resolv", "/proc", "/var/lib/ninelives/credentials/felixd"]
+landlock.read = ["/usr/lib", "/etc/ssl/certs", "/run/resolv", "/proc", "/var/lib/ninelives/credentials/felixd", "/var/lib/ninelives/trust/cluster.pem"]
 landlock.execute = ["/usr/lib/felixd/felixd", "/usr/lib/x86_64-linux-gnu"]
 landlock.write = []                 # felixd writes nothing locally
 landlock.devices = ["/dev/null", "/dev/urandom"]
@@ -1190,24 +1190,17 @@ an ordinary phase 3 service to the init
 proposed). The group write bit on the directory is for the helper; the
 service's own Landlock ruleset lists the directory as read-only.
 
-**Trust bundles.** Each service's trust bundle lives in its own credential
-directory (`ca.pem`), not in a shared directory, because only the join
-could write a shared one and the join never runs again, so a CA rotation
-would need a wipe. The join writes the first bundle; after that the renewal
-helper writes it from the issuer's renewal response. The helper accepts a
-bundle only if it is signed by, or chains to, the pinned issuer root, and
-every bundle carries a generation number. The helper refuses a bundle whose
-generation is lower than the current one. A bundle with the same generation
-must be byte-identical to the current one. Any change, adding or removing
-roots, needs a strictly higher generation. Otherwise a replayed old signed
-bundle could bring back a root a later generation removed. Felix reads bundles at startup
-([felix#2816](https://github.com/GetFelix/felix/issues/2816)), so a new one
-takes effect when the service next restarts.
-
-`$DATA/trust/` stays, for the join only: it holds the pinned issuer root
-from the join config, written once by `nl-join` and readable by every
-helper. No service or helper can write it, so a compromised service cannot
-change which issuer its helper believes.
+**Trust bundles.** The four roots live in `$DATA/trust/`, one file per
+root, written once by the join and writable by no service or helper
+afterwards, as [0008](../decisions/0008-ca-keys-and-machine-certificates.md)
+step 5 lays out. Each service's Landlock ruleset reads only the roots it
+needs. No renewal helper can change what a service trusts. The cost is the
+one 0008 states: until a trust update path is designed, replacing the
+cluster, internal or Raft root is a cluster rebuild, and the issuer root
+rolls only by running old and new issuers side by side while every machine
+is wiped and rejoined. Yearly intermediate replacement does not touch these
+files. The layout and the reasons are in the
+[join design](join.md#certificates-per-role).
 
 Felix's broker listeners and Raft peer port require mTLS, so every Felix
 client (felixd, and the Felix services toward each other) presents a
@@ -1271,7 +1264,7 @@ not contain. Fault tests run on the schedule in
 | A first boot in qemu: `renew-felixd` is running after the join, and on the second boot it starts without the join | qemu | I24 |
 | After the join: `$DATA/join/env` has group init, and each credential file has its service's group and mode 0640; a second boot does not start the join | qemu | setgid directories, first boot only |
 | felixd connects with its client certificate. Gated on [felixd#275](https://github.com/GetFelix/felixd/issues/275); until then the test checks the files are in place | qemu | mTLS handoff |
-| A test program under the felixd renewal helper's profile replaces a file in felixd's credential directory; under felixd's profile the same write is refused, and neither can write `$DATA/trust`. The bundle acceptance rules (signed by the pinned issuer root; a lower generation is refused, the same generation only if byte-identical, any change needs a higher one; an older signed bundle replayed after a root was removed is refused) are tested with `nl-renew` | qemu (test image) | renewal, Landlock |
+| A test program under the felixd renewal helper's profile replaces a file in felixd's credential directory; under felixd's profile the same write is refused, and neither can write `$DATA/trust` | qemu (test image) | renewal, Landlock |
 | Unit traces: a launcher lost while its service runs gives `degraded` and no other action; the next start gives a record, its `fsync`, ordered shutdown and `reboot`; with record histories holding 2 such reboots in the last 24 h of summed uptime, spread over several boots, `failed` and no reboot; with 2 reboots just over 24 h of summed uptime back, a reboot; a wall clock set forward or back changes nothing; a torn record, a gap in the boot counter, or records reaching neither 24 h back nor the first boot give no reboot; a failed record write gives no reboot; launchers exiting after a stop request give `stopped` | unit | I23 |
 | A fault hook makes the broker's launcher exit: the broker keeps running and the machine reports `degraded`; then the broker exits: ordered shutdown and reboot. The same again reboots once more; a third time within the day: no reboot, `failed`, the reason reported. For the time service: `failed`, `degraded`, no reboot | qemu (test image) | I23, launcher rows |
 | A normal power-off: no `launcher lost` record | qemu | I23 |
@@ -1321,11 +1314,12 @@ not contain. Fault tests run on the schedule in
 | A readiness signal from Felix, so felixd's early exits are not counted as restarts | Live without it; revisit if boot time suffers | NineLives maintainers | M2 |
 | **Platform stop budgets.** How long each cloud waits after the power button before cutting power | Measure each target and fill the budget table; a target whose budget cannot cover Felix's deadlines is reported, not shipped silently | NineLives maintainers | Each cloud target's first M2 run |
 | **Which DHCP client, and whether it splits.** It must run non-root with no hook script, as a parser with no capability and an applier whose only capability after start is `CAP_NET_ADMIN` and whose seccomp filter allows only `AF_NETLINK` with `NETLINK_ROUTE`. dhcpcd's privilege separation expects to start as root, and whether its pieces map onto this split is unverified. | Try dhcpcd in qemu; if it cannot be split this way, a small DHCP client in Rust as two processes (not PID 1) | Network design | M1 |
-| DNS: something must write `/run/resolv/resolv.conf` without a shell hook | The DHCP client writes it directly, or the join records brokers by address | Network design, #5 | M1 |
+| DNS: something must write `/run/resolv/resolv.conf` without a shell hook | The DHCP client writes it directly. The join needs no DNS and records brokers and the control plane by address ([join design](join.md#the-config-partition)), so only the time client may still need names | Network design | M1 |
 | Which program loads the packet filter (S7) | A static nftables ruleset from the image, loaded by a minimal loader in phase 0, before the drop | Network design | M1 |
 | How the seccomp and Landlock profiles are produced and reviewed | Recorded from qemu runs, minimised by hand, compiled at image build, reviewed on each component bump; the image build fails when a call in the recorded trace is outside its profile | Image design | M1 |
 | **Authenticated time.** Clouds' metadata NTP servers do not offer NTS. Without it an on-path attacker can step the clock: certificates then fail (forward) or expired ones pass (back). chronyd is limited to stepping during its first three updates (`makestep 1 3`) and refuses offsets over 1000 s after that (`maxchange`). Whether Felix and felixd leases depend on wall time is not documented. | NTS where the servers support it; otherwise the limits above, and the threat model decides | Threat model (#56) | M1 |
-| Whether Felix waits for time sync, since certificate checks need a sane clock | No wait; qemu and clouds have an RTC | Threat model (#56) | M1 |
+| Whether Felix waits for time sync, since certificate checks need a sane clock | No wait for Felix: the join already waits for a synchronized clock before any service that holds a certificate exists ([join design](join.md#time)); later boots have an RTC or the hypervisor clock | Threat model (#56) | M1 |
+| **The join's config partition fd.** The join reads the raw config partition without root through an fd PID 1 opens before the drop, on first boot only, and the join's launcher passes it as fd 3 ([join design](join.md#reading-it-without-root)). That needs boot step 4 to open `ninelives-config` read-write when `$DATA/join/role` is absent, only after checking that its sysfs size is exactly 2048 sectors and that its range overlaps no other partition on the disk; the launcher to close the fd once the join exits 0; and I11 and I20 to name this one exception | Adopt as written there; optionally treat the join's exit 78 as `failed`, no restart | Init design, with #5 | M1 |
 | **Data partition integrity.** Anyone who can rewrite the disk offline reaches the kernel's ext4 parser while the init is still root, and can plant or alter Felix's data and credentials. Integrity or encryption sealed to a TPM or vTPM would close that. | Treat it as a likely requirement; #56 decides, with M3's verified boot | Threat model (#56) | M3 at the latest |
 | **Threat model assumptions** this page makes: the image is trusted once built and, from M3, verified; the data partition is not trusted for what runs but is trusted against offline tampering until the question above is settled; physical access is out of scope until M3; a compromised service is the main attacker. | Confirm or correct in #56 | Threat model (#56) | M1 |
 | Whether `emergency` should reboot so M3's boot counting can fall back to the other image (a failed drop already powers off) | Stay up and report until M3; M3 decides | A/B design (#8) | M3 |

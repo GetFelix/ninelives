@@ -271,7 +271,10 @@ costs and when it is reviewed again.
 
 Every decision is measured against the
 [security and networking requirements](requirements.md), which say how each
-property is checked and from which milestone.
+property is checked and from which milestone. The
+[threat model](threat-model.md) says who the attacker is, what one
+compromised machine can do to the rest of the cluster, and which requirement
+stops each threat.
 
 Everything NineLives writes uses standard system calls only, so that after
 M2 the same root can boot on another kernel as an experiment. The first one

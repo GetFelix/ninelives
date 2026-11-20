@@ -63,6 +63,7 @@ mounts=(-v "$repo:$repo:ro" -v "$kernel:$kernel:ro" -v "$(dirname "$init"):$(dir
 args=("$repo/scripts/image-build.sh" --kernel "$kernel" --init "$init" --out "$work/out" --work "$work")
 tag=ninelives-build-$$
 cid=""
+# shellcheck disable=SC2329  # run by the EXIT trap
 cleanup() {
   [[ -z $cid ]] || "$engine" rm -f "$cid" >/dev/null 2>&1 || true
   "$engine" rmi -f "$tag" >/dev/null 2>&1 || true

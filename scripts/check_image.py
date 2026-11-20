@@ -277,6 +277,12 @@ def check_origins(entries, origins: dict):
     return out
 
 
+def check_faketime(entries):
+    """The rebuild's clock library is a build tool, not part of the root."""
+    return [f"faketime: {e.path} is in the sealed root" for e in entries
+            if posixpath.basename(e.path).startswith("libfaketime") or "ninelives-faketime" in e.path]
+
+
 def check_secrets(entries):
     out = []
     for e in entries:
@@ -549,7 +555,7 @@ def main() -> int:
         errors += check_setuid(entries) + check_times(entries, args.source_date_epoch) + check_xattrs(entries) + check_ownership(entries)
         errors += check_special(entries, links) + check_users(entries, users)
         errors += check_executables(entries, execs) + check_elf(entries) + check_needed(entries, execs) + check_needed_resolve(entries)
-        errors += check_packages(stage, keep, removals, lock) + check_origins(entries, origins) + check_secrets(entries)
+        errors += check_packages(stage, keep, removals, lock) + check_origins(entries, origins) + check_faketime(entries) + check_secrets(entries)
         files = [{"path": e.path, "type": e.kind, "mode": e.mode, "uid": e.uid, "gid": e.gid, "size": e.size,
                   **({"sha256": e.sha256()} if e.kind == "file" else {}), **({"link": e.link} if e.link else {})}
                  for e in entries]

@@ -577,7 +577,7 @@ that cannot fail does not pass quietly.
 |---|---|---|
 | `kernel` (x86_64) | `kernel-rebuild` | the work path, one job against the runner's four, the clock 400 days ahead for the build step |
 | `init-binary` | `init-rebuild` | the checkout path, `CARGO_HOME`, one cargo job, the clock 400 days ahead for cargo and its build scripts (rustc hangs under libfaketime, so it runs at the real time) |
-| `image` | `image-rebuild` | the checkout, work and output paths, `USER`, `LOGNAME` and `HOME`, `TZ=Pacific/Kiritimati`, one CPU (`taskset`) against four, the clock 400 days ahead for mkosi and the tools it runs directly (not its package install, see below) |
+| `image` | `image-rebuild` | the checkout, work and output paths, `USER`, `LOGNAME` and `HOME`, `TZ=Pacific/Kiritimati`, one CPU (`taskset`) against four, the clock 400 days ahead for mkosi, the tools it runs and the root's package install |
 
 No job in the table shares a cache, a store or a runner with its partner.
 `image-rebuild` takes only the `kernel-qemu-x86_64-rebuild` and
@@ -598,11 +598,17 @@ after the fetch phase (TLS certificates and signatures are checked at the real
 time), and `scripts/faketime.sh` stops the build unless a direct child that
 loads the library sees the offset. Only processes that load it are moved: a
 static binary, or a program run in a chroot that lacks the library, still sees
-the real time. mkosi 27.1 rebuilds the environment of every command it starts
-and runs apt, dpkg and the packages' maintainer scripts inside its sandbox and
-the image root, so the package install of the root runs at the real clock.
-Moving it needs the library inside the image root and removed again before the
-root is sealed ([#110](https://github.com/GetFelix/ninelives/issues/113)). SOURCE_DATE_EPOCH and the commit time, not the clock, give every
+the real time. mkosi 27.1 rebuilds the environment of every command it starts,
+so the rebuild passes `LD_PRELOAD` and `FAKETIME` to it with `--environment`,
+and puts the library at `/usr/lib/ninelives-faketime/` in mkosi's sandbox (the
+sandbox tree) and in the root (a skeleton tree, copied in before the install).
+apt, dpkg and the maintainer scripts then run at the moved clock. The first
+build gets none of this. `rootfs/probe-clock.chroot` runs inside the root after
+the install, compares its clock with the real one and fails the build unless
+it is the asked-for number of days ahead (0 in the first build).
+`image_stage.py` deletes the library directory before anything else and stops
+if a `libfaketime` is left anywhere; `check_image.py` fails a sealed root that
+holds one, on top of I3's origin check. SOURCE_DATE_EPOCH and the commit time, not the clock, give every
 timestamp, so an output that depended on the clock would differ.
 
 The build runs as an unprivileged user, so the second build varies that user's

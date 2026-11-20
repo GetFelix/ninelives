@@ -17,8 +17,8 @@ images/debian-aarch64.lock for aarch64. NL_ARCH picks the one a command reads
 or writes (x86_64 if unset); `check` covers all of them.
 
 The lock holds, for the root, the build tools, the boot test's tools, the
-comparison's tools, libfaketime and the bootstrap packages (scripts/bootstrap.sh installs
-those into the base container) separately, every
+comparison's tools, libfaketime, the bootstrap packages and the init's build tools
+(scripts/bootstrap.sh installs the last two into the base container) separately, every
 package by name, version, SHA-256 and pool path, plus the SHA-256 of each
 suite's InRelease. Resolution follows apt's rules closely enough for a
 reviewed set; the fetch phase then fails if apt wants anything the lock does
@@ -38,7 +38,7 @@ SNAPSHOT = re.compile(r"\d{8}T\d{6}Z")
 NAME = re.compile(r"[a-z0-9][a-z0-9+.-]*")
 PRIORITY = {"required": 0, "important": 1, "standard": 2, "optional": 3, "extra": 4}
 ARCHIVE_URL = "http://snapshot.debian.org/archive"
-SETS = ("root", "tools", "boot", "compare", "faketime", "bootstrap")
+SETS = ("root", "tools", "boot", "compare", "faketime", "bootstrap", "build")
 
 
 def suites_for(release: str) -> list[tuple[str, str]]:
@@ -144,8 +144,8 @@ def q(s: str) -> str:
 def render(snapshot: str, arch: str, sets: dict) -> str:
     lines = [
         "# Every Debian package the image build uses, by name, version and SHA-256,",
-        "# for the root, the build tools, the boot test's tools, the comparison's tools, libfaketime and the bootstrap",
-        "# step's packages separately. Written by",
+        "# for the root, the build tools, the boot test's tools, the comparison's tools, libfaketime, the bootstrap",
+        "# step's packages and the init's build tools separately. Written by",
         "# scripts/image_lock.py; CI regenerates it and fails on a difference, so",
         "# a hand edit cannot add a package resolution would not. Change it only in",
         "# a reviewed pull request that touches pin files and nothing else",

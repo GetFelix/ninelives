@@ -51,7 +51,7 @@ exit 1
 QUERY = """#!/bin/sh
 # dpkg-query -W -f FMT NAME: "ii  <version>" for an installed name
 name=$4
-line=$(grep "^$name " "$FIXTURE_STATE/installed" 2>/dev/null | head -n1) || true
+line=$(grep "^$name " "$FIXTURE_STATE/installed" 2>/dev/null | tail -n1) || true
 [ -n "$line" ] && echo "ii  ${line#* }"
 exit 0
 """
@@ -84,13 +84,13 @@ class Bootstrap(unittest.TestCase):
         self.entries.append((name, version, lock_sha or sha, sha))
         return sha
 
-    def run_script(self, installed=()) -> subprocess.CompletedProcess:
+    def run_script(self, installed=(), set_name="bootstrap", **extra_env) -> subprocess.CompletedProcess:
         lock = ['snapshot = "20261118T000000Z"', 'architecture = "amd64"', "", "[tools]", 'release = "trixie"', "",
                 "[[tools.package]]", 'name = "not-bootstrap"', 'version = "9"', f'sha256 = "{"0" * 64}"', 'archive = "debian"',
-                'filename = "pool/main/n/not-bootstrap/not-bootstrap_9_amd64.deb"', "", "[bootstrap]", 'release = "trixie"']
+                'filename = "pool/main/n/not-bootstrap/not-bootstrap_9_amd64.deb"', "", f"[{set_name}]", 'release = "trixie"']
         names = []
         for name, version, lock_sha, real_sha in self.entries:
-            lock += ["", "[[bootstrap.package]]", f'name = "{name}"', f'version = "{version}"', f'sha256 = "{lock_sha}"',
+            lock += ["", f"[[{set_name}.package]]", f'name = "{name}"', f'version = "{version}"', f'sha256 = "{lock_sha}"',
                      'archive = "debian"', f'filename = "pool/main/{name[0]}/{name}/{name}_{version}_amd64.deb"',
                      'architecture = "amd64"', f'source = "{name}"']
             names.append(f"{lock_sha} {name} {version}")
@@ -99,8 +99,9 @@ class Bootstrap(unittest.TestCase):
         (self.tmp / "state" / "installed").write_text("".join(f"{n} {v}\n" for n, v in installed))
         env = dict(os.environ, NL_BOOTSTRAP_GET=str(self.tmp / "bin/get"), NL_BOOTSTRAP_DPKG=str(self.tmp / "bin/dpkg"),
                    NL_BOOTSTRAP_DPKG_QUERY=str(self.tmp / "bin/query"), NL_BOOTSTRAP_DIR=str(self.tmp / "debs"),
-                   FIXTURE_MIRROR=str(self.tmp / "mirror"), FIXTURE_STATE=str(self.tmp / "state"), FIXTURE_NAMES=str(self.tmp / "names"))
-        return subprocess.run([BASH, str(SCRIPT), str(self.tmp / "lock")], env=env, capture_output=True, text=True)
+                   FIXTURE_MIRROR=str(self.tmp / "mirror"), FIXTURE_STATE=str(self.tmp / "state"), FIXTURE_NAMES=str(self.tmp / "names"), **extra_env)
+        args = [str(self.tmp / "lock")] + ([set_name] if set_name != "bootstrap" else [])
+        return subprocess.run([BASH, str(SCRIPT), *args], env=env, capture_output=True, text=True)
 
     def dpkg_calls(self) -> list[str]:
         f = self.tmp / "state" / "dpkg-calls"
@@ -144,6 +145,27 @@ class Bootstrap(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(len(self.dpkg_calls()[0].split()), 1)
         self.assertNotIn("libc6", (self.tmp / "state" / "gets").read_text())
+
+    def test_another_set_is_installed_by_name(self):
+        self.package("gcc", "14.2.0-1")
+        r = self.run_script(set_name="build")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("1 build packages installed", r.stdout)
+
+    def test_upgrade_replaces_another_version_only_when_asked(self):
+        self.package("libc6", "2.41-12")
+        r = self.run_script(installed=[("libc6", "2.41-11")], set_name="build")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.dpkg_calls(), [])
+        r = self.run_script(installed=[("libc6", "2.41-11")], set_name="build", NL_BOOTSTRAP_UPGRADE="1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(len(self.dpkg_calls()), 1)
+
+    def test_upgrade_leaves_the_locked_version_alone(self):
+        self.package("libc6", "2.41-12")
+        r = self.run_script(installed=[("libc6", "2.41-12")], set_name="build", NL_BOOTSTRAP_UPGRADE="1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.dpkg_calls(), [])
 
     def test_a_package_dpkg_did_not_install_fails(self):
         self.package("python3", "3.13.5-1")

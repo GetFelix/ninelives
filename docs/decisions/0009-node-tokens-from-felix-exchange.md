@@ -113,7 +113,7 @@ Felix changes on main after v0.7.2 resolve the two M1 blockers.
   Clearing the role needs `node.manage` on `cluster:*`; the issuer's groups
   hold it only over `node:<id>`, so an issuer compromise cannot lift it.
 - **Releases.** M1 needs a Felix release that contains both, and pins the
-  first one, expected v0.8.0-preview.1, in `components.toml` under
+  first one, v0.8.0-preview.1, in `components.toml` under
   [0004](0004-components-from-pinned-releases.md). A nightly cannot be pinned.
   The sentence "M1 is blocked on felix#2836, with no fallback" now reads:
   M1 needs that release, with no fallback.

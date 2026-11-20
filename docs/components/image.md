@@ -50,7 +50,7 @@ release publishes the image with its SBOM, provenance and source.
 The `image` job in `.github/workflows/ci.yml`, x86_64 qemu, `production` only:
 the fetch phase and the offline build described below, the root as erofs with
 dm-verity, the UKI with its command line, the GPT disk, and every check in
-[Checks](#checks) except the three it names there. The outputs are the `.raw`,
+[Checks](#checks) except the two it names there. The outputs are the `.raw`,
 `.root.erofs`, `.root.verity`, `.roothash`, `.efi`, `.inventory.json`,
 `.files.json` and `SHA256SUMS`, plus `.origins.json`. The `boot` job then
 boots the `.raw` (see [Boot test](#boot-test)). The `image-rebuild` and

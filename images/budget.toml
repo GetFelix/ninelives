@@ -7,10 +7,11 @@ uki = 6189466
 esp_files = 6189466
 raw = 782681702
 
-# aarch64's limits are provisional until its first build is measured: the
-# kernel image is not compressed, so the UKI is several times x86_64's.
+# The first aarch64 build's sizes (erofs 40906752, UKI and ESP files 10970624,
+# raw 490754048) plus 20 percent. The UKI is larger than x86_64's because the
+# arm64 kernel image is not compressed.
 [aarch64]
-root_erofs = 200000000
-uki = 60000000
-esp_files = 60000000
-raw = 1000000000
+root_erofs = 49088102
+uki = 13164748
+esp_files = 13164748
+raw = 588904857

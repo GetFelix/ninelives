@@ -93,12 +93,13 @@ that runs them.
   architecture. An aarch64 machine cannot take a core or storage role until
   that changes.
 - **Boot.** `qemu-system-aarch64` with the `virt` machine and Debian's AAVMF
-  firmware (`qemu-efi-aarch64`), from the lock's boot set. It uses KVM if the
-  runner has `/dev/kvm` (180 s) and emulation otherwise (1500 s); the three
+  firmware (`qemu-efi-aarch64`), from the lock's boot set. GitHub's arm runners
+  have no `/dev/kvm`, so the CI boot test runs under emulation (1500 s limit);
+  KVM (180 s) is used where the host has it, and has not been tested. The three
   boots, pass and fail rules and corruption cases are the x86_64 ones. The logs
   are `boot-serial-logs-aarch64`.
-- **Size budget.** `images/budget.toml` has an `[aarch64]` table. The kernel
-  image is not compressed, so the UKI is several times x86_64's.
+- **Size budget.** `images/budget.toml` has an `[aarch64]` table. Its limits are the first build's sizes plus 20%. The kernel
+  image is not compressed, so the UKI is larger than x86_64's.
 
 ### Boot test
 

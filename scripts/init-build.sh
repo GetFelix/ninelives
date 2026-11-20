@@ -41,7 +41,8 @@ case $cmd in
     export PATH=$work/rust/bin:$PATH
     export CARGO_HOME=$work/cargo-home
     # Not rustup's: a rustc that is not exactly the pinned one stops the build.
-    [[ $(command -v rustc) == "$work/rust/bin/rustc" && $(rustc -V) == "rustc $version "* ]] \
+    # rustc hangs under libfaketime, so it is asked with the preload removed.
+    [[ $(command -v rustc) == "$work/rust/bin/rustc" && $(env -u LD_PRELOAD -u FAKETIME rustc -V) == "rustc $version "* ]] \
       || { echo "init-build: rustc is not the pinned $version at $work/rust" >&2; exit 1; }
     export RUSTFLAGS="--remap-path-prefix=$repo=/build --remap-path-prefix=$store/vendor=/vendor --remap-path-prefix=$work/rust=/rust"
     cd "$repo/init"

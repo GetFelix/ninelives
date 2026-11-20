@@ -10,7 +10,6 @@ import sys
 import tarfile
 import tempfile
 import unittest
-from unittest import mock
 
 SCRIPTS = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
@@ -27,7 +26,7 @@ def make_tarball(path: pathlib.Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-class FetchChecker(unittest.TestCase):
+class UnpackChecker(unittest.TestCase):
     def fetch(self, pinned_sha):
         tmp = pathlib.Path(tempfile.mkdtemp())
         src = tmp / "src.tar.gz"
@@ -35,12 +34,8 @@ class FetchChecker(unittest.TestCase):
         work = tmp / "work"
         work.mkdir()
 
-        def fake_download(url, dest):
-            dest.write_bytes(src.read_bytes())
-
-        pin = {"url": "https://example.invalid/k.tgz", "sha256": pinned_sha or real}
-        with mock.patch.object(ic, "download", fake_download):
-            return ih.fetch_checker(pin, work)
+        pin = {"sha256": pinned_sha or real}
+        return ih.unpack_checker(src, pin, work)
 
     def test_matching_hash_returns_the_script(self):
         self.assertEqual(self.fetch(None).name, "kernel-hardening-checker")

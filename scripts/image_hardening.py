@@ -6,7 +6,7 @@ again from the image job, on the .config of the kernel artifact the image was
 built from (the one the UKI's kernel came from, see check_image.py), with the
 same policy and exceptions, so a config that changed on the way fails here.
 
-  image_hardening.py --kernel DIR --work DIR [--arch x86_64]
+  image_hardening.py --kernel DIR --store DIR --work DIR [--arch x86_64]
 """
 import argparse
 import json
@@ -21,10 +21,8 @@ import check_kernel_config as kc  # noqa: E402
 import image_common as ic  # noqa: E402
 
 
-def fetch_checker(pin: dict, work: pathlib.Path) -> pathlib.Path:
-    """Download the pinned source tarball, check its SHA-256, unpack, return the script."""
-    tarball = work / "khc.tar.gz"
-    ic.download(pin["url"], tarball)
+def unpack_checker(tarball: pathlib.Path, pin: dict, work: pathlib.Path) -> pathlib.Path:
+    """Check the fetched tarball's SHA-256, unpack it, return the script."""
     digest = ic.sha256_file(tarball)
     if digest != pin["sha256"]:
         raise SystemExit(f"kernel-hardening-checker tarball is {digest}, tools.toml pins {pin['sha256']}")
@@ -47,6 +45,7 @@ def module_errors(config_text: str) -> list[str]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--kernel", type=pathlib.Path, required=True, help="the kernel artifact directory")
+    ap.add_argument("--store", type=pathlib.Path, required=True, help="the fetch phase's output directory")
     ap.add_argument("--work", type=pathlib.Path, required=True)
     ap.add_argument("--arch", choices=kc.SRCARCH, default="x86_64")
     ap.add_argument("--policy", type=pathlib.Path, default=kc.KERNEL / "policy.toml")
@@ -56,7 +55,8 @@ def main() -> int:
     config = args.kernel / ".config"
     args.work.mkdir(parents=True, exist_ok=True)
     pin = ic.load_toml(ic.IMAGES / "tools.toml")["kernel_hardening_checker"]
-    checker = fetch_checker(pin, args.work)
+    tarball = args.store / "khc" / f"kernel-hardening-checker-{pin['version']}.tar.gz"
+    checker = unpack_checker(tarball, pin, args.work)
 
     policy = kc.load_policy(args.policy, args.arch)
     cmdline, sysctl = args.work / "cmdline", args.work / "sysctl"

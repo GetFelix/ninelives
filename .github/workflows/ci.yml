@@ -142,7 +142,7 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
             # The checkout is the merge commit; its first parent is the base.
             if ! git diff --name-only HEAD^1 HEAD \
-              | grep -qE '^(kernel/|images/|rootfs/|init/|tools/(image|boot)\.sh$|scripts/(bootstrap\.sh|check_kernel_config\.py|fetch_kernel\.py|kernel_build\.sh|image[-_a-z]*\.(py|sh)|boot[-_a-z]*\.(py|sh)|fetch_image\.py|sigstore_verify\.py|check_image\.py|faketime(_lib\.py|\.sh))$|\.github/workflows/ci\.yml$)'; then
+              | grep -qE '^(kernel/|images/|rootfs/|init/|tools/(image|boot)\.sh$|scripts/(bootstrap\.sh|check_kernel_config\.py|fetch_kernel\.py|kernel_build\.sh|image[-_a-z]*\.(py|sh)|boot[-_a-z]*\.(py|sh)|fetch_image\.py|sigstore_verify\.py|check_image\.py|image_hardening\.py|faketime(_lib\.py|\.sh))$|\.github/workflows/ci\.yml$)'; then
               run=false
             fi
           fi
@@ -453,6 +453,12 @@ jobs:
           chmod +x /__w/_temp/image/init/init
           scripts/image-build.sh --kernel /__w/_temp/image/kernel --init /__w/_temp/image/init/init \
             --out /__w/_temp/image/out --work /__w/_temp/image/work
+      # The same pinned checker and exceptions as the kernel job, on the
+      # .config of the kernel artifact this image was built from (the UKI's
+      # kernel is checked against that artifact's bzImage). The init half of
+      # the checks table waits on the init's config (#48).
+      - name: Kernel config of the image, kernel-hardening-checker
+        run: python3 -I scripts/image_hardening.py --kernel /__w/_temp/image/kernel --work /__w/_temp/image/hardening
       - name: Sizes against the budget
         if: always()
         run: |

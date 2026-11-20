@@ -43,15 +43,27 @@ SECRET_PATTERNS = [
     re.compile(rb"\bAKIA[0-9A-Z]{16}\b"),
     re.compile(rb"\bxox[abprs]-[A-Za-z0-9-]{10,}\b"),
 ]
-GPT_PARTITIONS = [  # name, type GUID
-    ("esp", "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"),
-    ("ninelives-root-a", "4f68bce3-e8cd-4db1-96e7-fbcaf984b709"),
-    ("ninelives-verity-a", "2c7357ed-ebd2-46d9-aec1-23d437ec2bf5"),
-    ("ninelives-root-b", "4f68bce3-e8cd-4db1-96e7-fbcaf984b709"),
-    ("ninelives-verity-b", "2c7357ed-ebd2-46d9-aec1-23d437ec2bf5"),
-    ("ninelives-config", asm.CONFIG_TYPE),
-    ("ninelives-data", "0fc63daf-8483-4772-8e79-3d69d8477de4"),
-]
+# Discoverable Partitions Specification types of the root and its hash tree, by architecture.
+ROOT_TYPES = {
+    "x86_64": ("4f68bce3-e8cd-4db1-96e7-fbcaf984b709", "2c7357ed-ebd2-46d9-aec1-23d437ec2bf5"),
+    "aarch64": ("b921b045-1df0-41c3-af44-4c6f280d3fae", "df3300ce-d69f-4c92-978c-9bfb0f38d820"),
+}
+
+
+def gpt_partitions(arch: str) -> list[tuple[str, str]]:  # name, type GUID
+    root, verity = ROOT_TYPES[arch]
+    return [
+        ("esp", "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"),
+        ("ninelives-root-a", root),
+        ("ninelives-verity-a", verity),
+        ("ninelives-root-b", root),
+        ("ninelives-verity-b", verity),
+        ("ninelives-config", asm.CONFIG_TYPE),
+        ("ninelives-data", "0fc63daf-8483-4772-8e79-3d69d8477de4"),
+    ]
+
+
+GPT_PARTITIONS = gpt_partitions("x86_64")
 
 
 class Entry:
@@ -373,14 +385,15 @@ def cut(path: pathlib.Path, part: dict, dest: pathlib.Path, limit: int | None = 
             left -= len(chunk)
 
 
-def check_gpt(parts: list[dict], sizes: dict, config_is_zero: bool):
+def check_gpt(parts: list[dict], sizes: dict, config_is_zero: bool, arch: str = "x86_64"):
     """Names, types and the sizes the design fixes: ESP 256 MiB, config 1 MiB, A and B slots alike."""
     names = [p["name"] for p in parts]
-    want = [n for n, _ in GPT_PARTITIONS]
+    layout = gpt_partitions(arch)
+    want = [n for n, _ in layout]
     if names != want:
         return [f"GPT: partitions are {names}, expected {want}"]
     out = []
-    for p, (n, t) in zip(parts, GPT_PARTITIONS):
+    for p, (n, t) in zip(parts, layout):
         if p["type"] != t:
             out.append(f"GPT: {n} has type {p['type']}, expected {t}")
     by = {p["name"]: p for p in parts}
@@ -505,7 +518,7 @@ def main() -> int:
         d = pathlib.Path(d)
         erofs, verity, esp = d / "root.erofs", d / "root.verity", d / "esp.img"
         uki_path = pathlib.Path(base + ".efi")
-        errors += check_gpt(parts, sizes_cfg, set(config_bytes(args.image, by_name["ninelives-config"])) <= {0})
+        errors += check_gpt(parts, sizes_cfg, set(config_bytes(args.image, by_name["ninelives-config"])) <= {0}, arch)
         try:
             sections = pe_sections(uki_path.read_bytes())
         except ValueError as e:

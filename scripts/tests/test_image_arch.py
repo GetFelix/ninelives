@@ -129,6 +129,16 @@ class PerArchitectureChecks(unittest.TestCase):
         self.assertEqual(check_image.check_esp(good, b"u", b"u", "BOOTAA64.EFI"), [])
         self.assertTrue(check_image.check_esp(good, b"u", b"u"), "x86_64's name must not accept aarch64's file")
 
+    def test_the_root_partition_types_are_the_architectures(self):
+        import check_image
+        for arch in ARCHES:
+            parts = [{"name": n, "type": ty, "size": 1 << 20} for n, ty in check_image.gpt_partitions(arch)]
+            sizes = {"esp_mib": 1, "config_mib": 1, "data_mib": 1}
+            self.assertEqual(check_image.check_gpt(parts, sizes, True, arch), [], arch)
+            other = "aarch64" if arch == "x86_64" else "x86_64"
+            self.assertTrue(check_image.check_gpt(parts, sizes, True, other), arch)
+        self.assertEqual(target("aarch64")["root_type"], "root-arm64")
+
     def test_the_kernel_artifact_names_the_architectures_image(self):
         import image_compare
         for arch, name in (("x86_64", "bzImage"), ("aarch64", "Image")):

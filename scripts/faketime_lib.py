@@ -4,7 +4,7 @@
   faketime_lib.py --store DIR --out DIR
 
 DIR for --store is what fetch_image.py wrote. The .deb is checked against the
-SHA-256 in images/debian.lock again before dpkg-deb unpacks it. Nothing is
+SHA-256 in the lock of NL_ARCH again before dpkg-deb unpacks it. Nothing is
 installed: the rebuilds preload the library (scripts/faketime.sh).
 """
 import argparse
@@ -15,7 +15,6 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import fetch_image  # noqa: E402
 import image_common as ic  # noqa: E402
-import image_lock  # noqa: E402
 
 
 def main() -> int:
@@ -23,7 +22,7 @@ def main() -> int:
     ap.add_argument("--store", type=pathlib.Path, required=True)
     ap.add_argument("--out", type=pathlib.Path, required=True)
     args = ap.parse_args()
-    lock = ic.load_toml(image_lock.LOCK)
+    lock = ic.load_toml(ic.lock_path())
     debs = [p for p in lock["faketime"]["package"] if p["name"] == "libfaketime"]
     if len(debs) != 1:
         raise SystemExit("the lock's faketime set does not hold exactly one libfaketime")

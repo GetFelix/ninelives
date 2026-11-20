@@ -2,13 +2,19 @@
 """Generate or check images/debian.lock (docs/components/image.md, "Inputs").
 
   image_lock.py generate   resolve the package sets against the pinned snapshot
-                           and rewrite images/debian.lock
-  image_lock.py check      check the lock's shape and its consistency with
-                           images/tools.toml and images/packages.toml, offline
+                           and rewrite the lock of NL_ARCH
+  image_lock.py check      check every architecture's lock: its shape and its
+                           consistency with images/tools.toml and
+                           images/packages.toml, offline
   image_lock.py tools      print the tools set as name=version, one per line
   image_lock.py boot       the same for the set the boot test runs on
   image_lock.py compare    the same for the set the build comparison runs on
+  image_lock.py boot-pin K print one key of the boot test's pins for NL_ARCH (qemu, firmware_code, firmware_vars)
   image_lock.py keyring F  write the pinned archive keys to F as a binary keyring
+
+There is one lock per architecture: images/debian.lock for x86_64 and
+images/debian-aarch64.lock for aarch64. NL_ARCH picks the one a command reads
+or writes (x86_64 if unset); `check` covers all of them.
 
 The lock holds, for the root, the build tools, the boot test's tools, the
 comparison's tools, libfaketime and the bootstrap packages (scripts/bootstrap.sh installs
@@ -28,7 +34,6 @@ import tempfile
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import image_common as ic  # noqa: E402
 
-LOCK = ic.IMAGES / "debian.lock"
 SNAPSHOT = re.compile(r"\d{8}T\d{6}Z")
 NAME = re.compile(r"[a-z0-9][a-z0-9+.-]*")
 PRIORITY = {"required": 0, "important": 1, "standard": 2, "optional": 3, "extra": 4}
@@ -159,15 +164,21 @@ def render(snapshot: str, arch: str, sets: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def generate(output: pathlib.Path = LOCK) -> None:
+def set_packages(tools: dict, which: str, target: str) -> list[str]:
+    return ic.arch_section(tools[which], target)["packages"]
+
+
+def generate(output: pathlib.Path | None = None) -> None:
+    target = ic.target_arch()
+    output = output or ic.lock_path(target)
     pins = load_pins()
     tools = pins["tools"]
-    snapshot, arch = tools["debian"]["snapshot"], tools["debian"]["architecture"]
+    snapshot, arch = tools["debian"]["snapshot"], ic.DEB_ARCH[target]
     keep = [p["name"] for p in pins["packages"]["package"]]
     sets = {}
     with tempfile.TemporaryDirectory() as d:
         work = pathlib.Path(d)
-        for which, roots, essential in (("root", keep, True), ("tools", tools["tools"]["packages"], False), ("boot", tools["boot"]["packages"], False), ("compare", tools["compare"]["packages"], False), ("faketime", tools["faketime"]["packages"], False), ("bootstrap", tools["bootstrap"]["packages"], False)):
+        for which, roots, essential in (("root", keep, True), *((w, set_packages(tools, w, target), False) for w in SETS[1:])):
             release = tools[which]["release"]
             universe, inrelease = load_universe(snapshot, arch, release, work / which)
             names = closure(universe, ["base-files", *roots] if essential else roots, essential)
@@ -175,31 +186,30 @@ def generate(output: pathlib.Path = LOCK) -> None:
     output.write_text(render(snapshot, arch, sets), encoding="utf-8")
 
 
-def check() -> list[str]:
+def check_lock(target: str, tools: dict, keep: list[dict]) -> list[str]:
     errors = []
-    tools = ic.load_toml(ic.IMAGES / "tools.toml")
-    lock = ic.load_toml(LOCK)
-    keep = ic.load_toml(ic.IMAGES / "packages.toml").get("package", [])
+    path = ic.lock_path(target)
+    lock = ic.load_toml(path)
+    name = path.name
+    deb_arch = ic.DEB_ARCH[target]
     snapshot = tools["debian"]["snapshot"]
-    if not SNAPSHOT.fullmatch(snapshot):
-        errors.append(f"tools.toml: snapshot {snapshot!r} is not a snapshot.debian.org timestamp")
     if lock.get("snapshot") != snapshot:
-        errors.append(f"debian.lock: snapshot is not tools.toml's {snapshot}")
-    if lock.get("architecture") != tools["debian"]["architecture"]:
-        errors.append("debian.lock: architecture differs from tools.toml")
+        errors.append(f"{name}: snapshot is not tools.toml's {snapshot}")
+    if lock.get("architecture") != deb_arch:
+        errors.append(f"{name}: architecture is not {deb_arch}, the one for {target}")
     for which in SETS:
         part = lock.get(which, {})
         if part.get("release") != tools[which]["release"]:
-            errors.append(f"debian.lock: {which} release is not tools.toml's {tools[which]['release']}")
+            errors.append(f"{name}: {which} release is not tools.toml's {tools[which]['release']}")
         suites = {(s["archive"], s["name"]) for s in part.get("suite", [])}
         if suites != set(suites_for(tools[which]["release"])):
-            errors.append(f"debian.lock: {which} suites are not those of release {tools[which]['release']}")
+            errors.append(f"{name}: {which} suites are not those of release {tools[which]['release']}")
         for s in part.get("suite", []):
             if not ic.SHA256.fullmatch(s.get("inrelease_sha256", "")):
-                errors.append(f"debian.lock: {which} suite {s.get('name')} has a bad inrelease_sha256")
+                errors.append(f"{name}: {which} suite {s.get('name')} has a bad inrelease_sha256")
         names = []
         for p in part.get("package", []):
-            where = f"debian.lock: {which} package {p.get('name')!r}"
+            where = f"{name}: {which} package {p.get('name')!r}"
             names.append(p.get("name"))
             if not NAME.fullmatch(p.get("name", "")):
                 errors.append(f"{where}: bad name")
@@ -208,23 +218,35 @@ def check() -> list[str]:
             fn = p.get("filename", "")
             if not re.fullmatch(r"pool/(?:updates/)?main/[a-z0-9+.-]+/[a-z0-9+.-]+/[A-Za-z0-9+._~%-]+\.deb", fn):
                 errors.append(f"{where}: bad pool path {fn!r}")
-            if p.get("architecture") not in ("amd64", "all"):
+            if p.get("architecture") not in (deb_arch, "all"):
                 errors.append(f"{where}: bad architecture")
             if p.get("archive") not in ("debian", "debian-security"):
                 errors.append(f"{where}: bad archive")
         if names != sorted(names) or len(names) != len(set(names)):
-            errors.append(f"debian.lock: {which} packages are not sorted and unique")
+            errors.append(f"{name}: {which} packages are not sorted and unique")
         if not names:
-            errors.append(f"debian.lock: {which} has no packages")
+            errors.append(f"{name}: {which} has no packages")
     root = {p["name"] for p in lock.get("root", {}).get("package", [])}
     for p in keep:
         if p["name"] not in root:
-            errors.append(f"packages.toml: {p['name']} is not in the lock's root set")
-    for which in ("tools", "boot", "compare", "faketime", "bootstrap"):
+            errors.append(f"packages.toml: {p['name']} is not in {name}'s root set")
+    for which in SETS[1:]:
         in_lock = {p["name"] for p in lock.get(which, {}).get("package", [])}
-        for n in tools[which]["packages"]:
+        for n in set_packages(tools, which, target):
             if n not in in_lock:
-                errors.append(f"tools.toml: {which} package {n} is not in the lock's {which} set")
+                errors.append(f"tools.toml: {which} package {n} is not in {name}'s {which} set")
+    return errors
+
+
+def check() -> list[str]:
+    tools = ic.load_toml(ic.IMAGES / "tools.toml")
+    keep = ic.load_toml(ic.IMAGES / "packages.toml").get("package", [])
+    errors = []
+    snapshot = tools["debian"]["snapshot"]
+    if not SNAPSHOT.fullmatch(snapshot):
+        errors.append(f"tools.toml: snapshot {snapshot!r} is not a snapshot.debian.org timestamp")
+    for target in ic.DEB_ARCH:
+        errors += check_lock(target, tools, keep)
     # The workflow's container is the pinned bootstrap image, by the same digest.
     ci = (ic.ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     digest = tools["bootstrap"]["image"].split("@", 1)[1]
@@ -235,15 +257,19 @@ def check() -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=["generate", "check", "tools", "boot", "compare", "keyring"])
-    parser.add_argument("target", nargs="?", type=pathlib.Path, help="generate: the file to write; keyring: the keyring file")
+    parser.add_argument("command", choices=["generate", "check", "tools", "boot", "compare", "keyring", "boot-pin"])
+    parser.add_argument("target", nargs="?", type=pathlib.Path, help="generate: the file to write; keyring: the keyring file; boot-pin: the key")
     args = parser.parse_args()
     if args.command == "generate":
-        generate(args.target or LOCK)
+        generate(args.target)
         return 0
     if args.command in ("tools", "boot", "compare"):
-        lock = ic.load_toml(LOCK)
+        lock = ic.load_toml(ic.lock_path())
         print("\n".join(f"{p['name']}={p['version']}" for p in lock[args.command]["package"]))
+        return 0
+    if args.command == "boot-pin":
+        pins = ic.arch_section(ic.load_toml(ic.IMAGES / "tools.toml")["boot"], ic.target_arch())
+        print(pins[str(args.target)])
         return 0
     if args.command == "keyring":
         keys = ic.IMAGES / "keys" / "debian"

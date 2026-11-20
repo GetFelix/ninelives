@@ -8,7 +8,9 @@
   raw             systemd-repart: the GPT disk with the design's partition table
 
   image_assemble.py --root DIR --kernel FILE --kernel-version V --commit SHA \
-      --source-date-epoch N --target images/qemu-x86_64/target.toml --out DIR --name NAME
+      --source-date-epoch N [--target images/qemu-ARCH/target.toml] --out DIR --name NAME
+
+The target is the one of NL_ARCH (x86_64 if unset) unless --target names another.
 """
 import argparse
 import hashlib
@@ -28,7 +30,6 @@ BLOCK = 4096
 MIB = 1 << 20
 # No Discoverable Partitions Specification type exists for the config blob.
 CONFIG_TYPE = "9b0f2a6e-5d3c-4c0e-8d6a-7a1e5f4c2b90"
-STUB = "/usr/lib/systemd/boot/efi/linuxx64.efi.stub"
 SBAT = (
     "sbat,1,SBAT Version,sbat,1,https://github.com/rhboot/shim/blob/main/SBAT.md\n"
     "ninelives,1,NineLives,ninelives,1,https://github.com/GetFelix/ninelives\n"
@@ -81,10 +82,10 @@ def repart_definitions(d: pathlib.Path, target: dict, root_size: int, verity_siz
     fixed = lambda n: {"SizeMinBytes": n, "SizeMaxBytes": n}  # noqa: E731
     conf("00-esp.conf", Type="esp", Label="esp", Format="vfat", CopyFiles=f"{esp_dir}:/",
          **fixed(sizes["esp_mib"] * MIB))
-    conf("10-root-a.conf", Type="root-x86-64", Label="ninelives-root-a", CopyBlocks=erofs, ReadOnly="yes", **fixed(root_size))
-    conf("20-verity-a.conf", Type="root-x86-64-verity", Label="ninelives-verity-a", CopyBlocks=verity, ReadOnly="yes", **fixed(verity_size))
-    conf("30-root-b.conf", Type="root-x86-64", Label="ninelives-root-b", **fixed(root_size))
-    conf("40-verity-b.conf", Type="root-x86-64-verity", Label="ninelives-verity-b", **fixed(verity_size))
+    conf("10-root-a.conf", Type=target["root_type"], Label="ninelives-root-a", CopyBlocks=erofs, ReadOnly="yes", **fixed(root_size))
+    conf("20-verity-a.conf", Type=f"{target['root_type']}-verity", Label="ninelives-verity-a", CopyBlocks=verity, ReadOnly="yes", **fixed(verity_size))
+    conf("30-root-b.conf", Type=target["root_type"], Label="ninelives-root-b", **fixed(root_size))
+    conf("40-verity-b.conf", Type=f"{target['root_type']}-verity", Label="ninelives-verity-b", **fixed(verity_size))
     conf("50-config.conf", Type=CONFIG_TYPE, Label="ninelives-config", **fixed(sizes["config_mib"] * MIB))
     conf("60-data.conf", Type="linux-generic", Label="ninelives-data", SizeMinBytes=sizes["data_mib"] * MIB)
 
@@ -96,12 +97,12 @@ def main() -> int:
     ap.add_argument("--kernel-version", required=True)
     ap.add_argument("--commit", required=True)
     ap.add_argument("--source-date-epoch", type=int, required=True)
-    ap.add_argument("--target", type=pathlib.Path, default=ic.IMAGES / "qemu-x86_64" / "target.toml")
+    ap.add_argument("--target", type=pathlib.Path, default=None)
     ap.add_argument("--out", type=pathlib.Path, required=True)
     ap.add_argument("--name", required=True)
     args = ap.parse_args()
 
-    target = ic.load_toml(args.target)
+    target = ic.load_toml(args.target or ic.target_path())
     arch = target["architecture"]
     out, name = args.out, args.name
     out.mkdir(parents=True, exist_ok=True)
@@ -135,8 +136,8 @@ def main() -> int:
     (work / "sbat").write_text(SBAT, encoding="ascii")
     uki = out / f"{name}.efi"
     run(["ukify", "build", f"--linux={args.kernel}", f"--cmdline=@{work / 'cmdline'}", f"--os-release=@{work / 'os-release'}",
-         f"--sbat=@{work / 'sbat'}", f"--uname={args.kernel_version}", f"--stub={STUB}", f"--output={uki}"], env=env)
-    esp_uki = work / "esp" / "EFI" / "BOOT" / "BOOTX64.EFI"
+         f"--sbat=@{work / 'sbat'}", f"--uname={args.kernel_version}", f"--stub={target['uki_stub']}", f"--output={uki}"], env=env)
+    esp_uki = work / "esp" / "EFI" / "BOOT" / target["efi_boot"]
     shutil.copyfile(uki, esp_uki)
     for p in (esp_uki, esp_uki.parent, esp_uki.parent.parent):
         os.utime(p, (args.source_date_epoch, args.source_date_epoch))

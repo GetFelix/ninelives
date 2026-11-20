@@ -7,7 +7,7 @@ The tool and the base are fixed by [0003](../decisions/0003-mkosi-image-build.md
 [0007](../decisions/0007-kernel-from-upstream-source.md) (the kernel from
 verified upstream source). This page says how the build meets them. The first
 slice of the image, [#1](https://github.com/GetFelix/ninelives/issues/1), is
-built: the x86_64 qemu `production` image, fetched, built offline, checked and
+built: the x86_64 and aarch64 qemu `production` images, fetched, built offline, checked and
 booted in CI (see [What the first slice builds](#what-the-first-slice-builds)). This
 page is the design, and much of it is later: parts for M3 and later (signing,
 rollback, updates), cloud images (M5) and the first published image say so
@@ -47,23 +47,64 @@ release publishes the image with its SBOM, provenance and source.
 
 ## What the first slice builds
 
-The `image` job in `.github/workflows/ci.yml`, x86_64 qemu, `production` only:
+The `image` job in `.github/workflows/ci.yml`, x86_64 qemu, and `image-aarch64`, its aarch64 twin ([aarch64](#aarch64)), `production` only:
 the fetch phase and the offline build described below, the root as erofs with
 dm-verity, the UKI with its command line, the GPT disk, and every check in
 [Checks](#checks) except the two it names there. The outputs are the `.raw`,
 `.root.erofs`, `.root.verity`, `.roothash`, `.efi`, `.inventory.json`,
 `.files.json` and `SHA256SUMS`, plus `.origins.json`. The `boot` job then
 boots the `.raw` (see [Boot test](#boot-test)). The `image-rebuild` and
-`image-compare` jobs build it a second time and compare ([Reproducibility](#reproducibility)). The slice does not build
-aarch64, so nothing boots it either
-([#99](https://github.com/GetFelix/ninelives/issues/99)), or the
-SBOM, source or provenance outputs
+`image-compare` jobs build it a second time and compare ([Reproducibility](#reproducibility)). The slice does not
+build the SBOM, source or provenance outputs
 ([#100](https://github.com/GetFelix/ninelives/issues/100)).
+
+### aarch64
+
+The same pipeline builds the aarch64 qemu image from the same pins, with jobs
+named `*-aarch64` (`image-aarch64`, `image-rebuild-aarch64`,
+`image-compare-aarch64`, `boot-aarch64`, `init-binary-aarch64`,
+`init-rebuild-aarch64`, `kernel-rebuild-aarch64`), so the x86_64 check names
+stay what they were. `NL_ARCH` (`x86_64` unless set) picks the architecture in
+every script; builds are native, so it is also the architecture of the machine
+that runs them.
+
+- **Native builds.** The image, its rebuild, the init, the init's rebuild, the
+  comparison and the boot test run on GitHub's `ubuntu-24.04-arm` runners, in
+  the same Debian container, whose digest is the multi-architecture index. The
+  root's maintainer scripts then run on the machine they are for, with no
+  emulation, and both builds use the same method. The kernel is the exception
+  and is unchanged: it is cross-built with Clang on an x86_64 runner, in the
+  `kernel` job and again in `kernel-rebuild-aarch64`, which resolves the same
+  config and has to produce the same bytes.
+- **One lock per architecture.** `images/debian.lock` is x86_64's and
+  `images/debian-aarch64.lock` aarch64's, from the same snapshot, so every
+  tool and the root are arm64 packages on an arm runner. `image_lock.py check`
+  checks both. In `tools.toml` the keys directly in a table are x86_64's and a
+  sub-table (`[boot.aarch64]`, `[cosign.aarch64]`) overrides them.
+- **The target.** `images/qemu-aarch64/target.toml` sets `console=ttyAMA0,115200`,
+  the `root-arm64` partition types, `BOOTAA64.EFI`, the `linuxaa64.efi.stub`
+  stub and the kernel's `Image`. The allowlists (`executables.toml`,
+  `rootfs/prune.toml`) take `{triplet}` and `{ld_so}` from it, and an entry can
+  carry `arches`.
+- **No Felix server.** Felix publishes its server for x86_64 only
+  ([felix#2797](https://github.com/GetFelix/felix/issues/2797)), so the aarch64
+  root holds felixd and the init and not `felix-broker` or `felix-controlplane`:
+  the fetch and the staging leave out a component with no build for the
+  architecture. An aarch64 machine cannot take a core or storage role until
+  that changes.
+- **Boot.** `qemu-system-aarch64` with the `virt` machine and Debian's AAVMF
+  firmware (`qemu-efi-aarch64`), from the lock's boot set. GitHub's arm runners
+  have no `/dev/kvm`, so the CI boot test runs under emulation (1500 s limit);
+  KVM (180 s) is used where the host has it, and has not been tested. The three
+  boots, pass and fail rules and corruption cases are the x86_64 ones. The logs
+  are `boot-serial-logs-aarch64`.
+- **Size budget.** `images/budget.toml` has an `[aarch64]` table. Its limits are the first build's sizes plus 20%. The kernel
+  image is not compressed, so the UKI is larger than x86_64's.
 
 ### Boot test
 
 The `boot` job runs after `image` in the same workflow run and boots the
-`image-qemu-x86_64` artifact of that run. A failed build uploads under another
+`image-qemu-x86_64` artifact of that run (`boot-aarch64` boots `image-qemu-aarch64`). A failed build uploads under another
 name, so a failed image is never booted. `tools/boot.sh` runs
 `scripts/boot-run.sh` in the bootstrap container, which gets `/dev/kvm` when the
 runner has it and no other privilege. The script starts `qemu-system-x86_64` with UEFI firmware,
@@ -501,7 +542,7 @@ comparison the job changes one byte in a copy of build A's root filesystem
 and requires that to be reported with a diffoscope report, so a comparison
 that cannot fail does not pass quietly.
 
-*What the slice does:* three builds run twice, each on its own runner.
+*What the slice does:* three builds run twice, each on its own runner, for each architecture (the aarch64 jobs are the same with `-aarch64` added and run on arm runners, except the kernel, which both architectures build on x86_64).
 
 | Build A | Build B | What B changes |
 |---|---|---|
@@ -515,7 +556,7 @@ No job in the table shares a cache, a store or a runner with its partner.
 init runner reaches only one of the two image builds. `image-compare` takes the
 image, kernel and init of both, checks that the two image uploads and the two
 init uploads have different artifact IDs so that a build is never compared with
-itself, and requires identical `SHA256SUMS` plus identical `bzImage`,
+itself, and requires identical `SHA256SUMS` plus identical kernel image (`bzImage`, aarch64 `Image`),
 `System.map`, `.config` and init binary. Both `SHA256SUMS` must name each of the
 eight outputs (`.raw`, `.root.erofs`, `.root.verity`, `.roothash`, `.efi`,
 `.inventory.json`, `.files.json`, `.origins.json`), so two empty files cannot
@@ -933,7 +974,7 @@ first published image.
 | The build phase run with a step that tries to download: it fails | CI fixture. The slice checks that a download fails inside a fresh network namespace, and the build itself fails if the network is reachable in its phase; a fixture that runs a whole build step that downloads is not built | I2 |
 | One fixture image per check, each seeded with one violation (a setuid file, a setgid directory, a `security.capability` attribute, a write bit, a file owned by uid 1, a FIFO, a link into `/var/lib`, an extra passwd entry, a `#!` script, a `dash` binary, an unlisted package, an orphan file, a planted test token, an oversized root, a changed command line): each check fails, and the clean fixture passes | *Built as unit tests on in-memory trees, one per check, not as fixture images; the clean tree passes.* CI, every pull request | I3 to I9 |
 | `veritysetup verify` on the built image | CI | I8 |
-| Boot the image in qemu, x86_64 and aarch64: the init reports ready on the serial console | x86_64 is the `boot` job ([Boot test](#boot-test)). *Not built yet:* aarch64 ([#99](https://github.com/GetFelix/ninelives/issues/99)). CI, every pull request | the image boots |
+| Boot the image in qemu, x86_64 and aarch64: the init reports ready on the serial console | The `boot` and `boot-aarch64` jobs ([Boot test](#boot-test), [aarch64](#aarch64)). CI, every pull request | the image boots |
 | In qemu: a write to the root fails with `EROFS`; a binary copied to the data partition does not run; `ld.so` on it fails | *Not built yet,* [#98](https://github.com/GetFelix/ninelives/issues/98). CI (test variant) | S3 |
 | Flip one byte in a copy's root partition, in a block a boot reads, and boot: the kernel panics on that read and the VM reboots; the same for the hash tree | The `boot` job does both ([Boot test](#boot-test)); each must show a dm-verity error and a panic, then a reboot. CI | dm-verity |
 | From M3, the same with two slots: the machine falls back to the other slot and does not loop | CI, from M3 (#8) | slot fallback |
@@ -961,5 +1002,10 @@ first published image.
 | Development images: unsigned, or signed with a development key production firmware never enrolls | A separate development key | #9 | M3 |
 | GitHub-hosted runners cannot be pinned to an exact image build, which S21 asks for | Record the version in provenance and accept it with the bootstrap container; the independent rebuild checks the result | NineLives maintainers | First published image |
 | Who runs the independent rebuild (T39) | The maintainer, on their own hardware, before signing targets, fetching every input from the pins; a second rebuilder later | Threat model | First published image |
-| aarch64: native arm runners or cross-compiled on x86_64, given both builds must match | Native runners for both builds where available; one method per architecture, never mixed | #1 | M0 |
 | Felix's AGPL source for S12: `components.toml` pins no source archive | Add a source archive and its SHA-256 per component | NineLives maintainers | First published image |
+
+### Decided
+
+| Question | Decision |
+|---|---|
+| aarch64: native arm runners or cross-compiled on x86_64, given both builds must match | Native `ubuntu-24.04-arm` runners for the image and init builds and their rebuilds, so one method builds both A and B and the root's maintainer scripts run for real. The kernel stays cross-built on x86_64 in both builds, as before. See [aarch64](#aarch64). |

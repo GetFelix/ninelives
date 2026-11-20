@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Build the qemu x86_64 production image on a Linux host, the way CI does.
+# Build the qemu production image on a Linux host, the way CI does.
 # Nothing built here is signed or published (docs/components/image.md).
 #
-#   tools/image.sh --kernel DIR --init FILE --out DIR
+#   NL_ARCH=x86_64|aarch64 tools/image.sh --kernel DIR --init FILE --out DIR
 #
-# DIR for --kernel holds the bzImage and .config of the kernel job's
-# kernel-qemu-x86_64 artifact; FILE is the init binary
+# The build is native: NL_ARCH (x86_64 if unset) must be the host's own
+# architecture, and the kernel and init must be of it too. DIR for --kernel
+# holds the bzImage (aarch64: Image) and .config of the kernel job's
+# kernel-qemu-ARCH artifact; FILE is the init binary
 # (cargo build --release --locked in init/). Needs docker or podman, and
 # network for the fetch phase. The container has no git: the commit and its
 # time are read here and passed in. The container is privileged because the build
@@ -27,6 +29,6 @@ image=$(sed -n 's/^image = "\(.*\)"/\1/p' "$repo/images/tools.toml")
 commit=$(git -C "$repo" rev-parse HEAD)
 epoch=$(git -C "$repo" log -1 --format=%ct)
 exec "$engine" run --rm --privileged \
-  -e COMMIT="$commit" -e SOURCE_DATE_EPOCH="$epoch" \
+  -e COMMIT="$commit" -e SOURCE_DATE_EPOCH="$epoch" -e NL_ARCH="${NL_ARCH:-x86_64}" \
   -v "$repo":/src:ro -v "$kernel":/in/kernel:ro -v "$init":/in/init:ro -v "$out":/out \
   "$image" /src/scripts/image-build.sh --kernel /in/kernel --init /in/init --out /out --work /tmp/work

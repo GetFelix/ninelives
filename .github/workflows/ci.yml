@@ -142,7 +142,7 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
             # The checkout is the merge commit; its first parent is the base.
             if ! git diff --name-only HEAD^1 HEAD \
-              | grep -qE '^(kernel/|images/|rootfs/|init/|tools/(image|boot)\.sh$|scripts/(bootstrap\.sh|check_kernel_config\.py|fetch_kernel\.py|kernel_build\.sh|image[-_a-z]*\.(py|sh)|boot[-_a-z]*\.(py|sh)|fetch_image\.py|sigstore_verify\.py|check_image\.py|faketime(_lib\.py|\.sh))$|\.github/workflows/ci\.yml$)'; then
+              | grep -qE '^(kernel/|images/|rootfs/|init/|tools/(image|boot)\.sh$|scripts/(arch\.sh|bootstrap\.sh|check_kernel_config\.py|fetch_kernel\.py|kernel_build\.sh|image[-_a-z]*\.(py|sh)|boot[-_a-z]*\.(py|sh)|fetch_image\.py|sigstore_verify\.py|check_image\.py|faketime(_lib\.py|\.sh))$|\.github/workflows/ci\.yml$)'; then
               run=false
             fi
           fi
@@ -681,12 +681,412 @@ jobs:
           path: ${{ runner.temp }}/boot/out/
           if-no-files-found: warn
 
+  # The aarch64 image, built and booted the way the x86_64 one is. Image and
+  # init builds run natively on GitHub's arm64 runners, in the same pinned
+  # container, so the root's maintainer scripts run on the machine they are
+  # for and A and B are built the same way (image.md, "Reproducibility"). The
+  # kernel is cross-built on x86_64 runners, as the kernel job already does,
+  # and so is its rebuild. NL_ARCH selects the lock, target and file names in
+  # the scripts. The job names keep a -aarch64 suffix so the x86_64 checks
+  # keep theirs.
+
+  init-binary-aarch64:
+    needs: kernel-changes
+    if: needs.kernel-changes.outputs.run == 'true'
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      artifact: ${{ steps.up.outputs.artifact-id }}
+    defaults:
+      run:
+        working-directory: init
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: rustup toolchain install
+      - name: Build
+        env:
+          RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=/build --remap-path-prefix=/home/runner/.cargo=/cargo
+        run: cargo build --release --locked
+      - id: up
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: init-aarch64
+          path: init/target/release/init
+          if-no-files-found: error
+
+  kernel-rebuild-aarch64:
+    needs: kernel-changes
+    if: needs.kernel-changes.outputs.run == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    container:
+      image: debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 # trixie-20261104-slim
+    outputs:
+      artifact: ${{ steps.up.outputs.artifact-id }}
+    env:
+      DEBIAN_SNAPSHOT: 20261118T000000Z
+      WORK: /__w/_temp/kernel-other
+    steps:
+      - name: Toolchain from the pinned snapshot
+        run: |
+          keyring=$(sed -n 's/^Signed-By: //p' /etc/apt/sources.list.d/debian.sources | head -n1)
+          test -s "$keyring"
+          rm /etc/apt/sources.list.d/debian.sources
+          cat > /etc/apt/sources.list.d/snapshot.sources <<EOF
+          Types: deb
+          URIs: http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}
+          Suites: trixie trixie-updates
+          Components: main
+          Signed-By: ${keyring}
+
+          Types: deb
+          URIs: http://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT}
+          Suites: trixie-security
+          Components: main
+          Signed-By: ${keyring}
+          EOF
+          apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Retries=5 update
+          apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+            bc bison ca-certificates clang flex git gpgv libc6-dev libelf-dev lld llvm make python3 xz-utils
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Verify the tarball and resolve the config
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          scripts/kernel_build.sh resolve aarch64 "$WORK"
+          diff -u kernel/resolved/qemu-aarch64.config "$WORK/out/.config"
+      # libfaketime from images/debian.lock (this runs on x86_64), checked against its SHA-256 and
+      # unpacked, not installed.
+      - name: libfaketime from the lock
+        run: |
+          python3 -I scripts/fetch_image.py --out "$WORK/faketime-store" --faketime
+          python3 -I scripts/faketime_lib.py --store "$WORK/faketime-store" --out "$WORK/faketime" > "$WORK/faketime.path"
+      - name: Build, one job, 400 days ahead
+        run: |
+          echo "the first build used $(nproc) jobs"
+          NL_FAKETIME_LIB=$(cat "$WORK/faketime.path") NL_FAKETIME_DAYS=400 KERNEL_JOBS=1 \
+            scripts/kernel_build.sh build aarch64 "$WORK"
+      - name: Collect the kernel
+        run: |
+          mkdir -p "$WORK/artifact"
+          cp "$WORK/out/arch/arm64/boot/Image" "$WORK/out/System.map" "$WORK/out/.config" "$WORK/artifact/"
+          cd "$WORK/artifact"
+          sha256sum -- * .config
+      - id: up
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kernel-qemu-aarch64-rebuild
+          path: /__w/_temp/kernel-other/artifact/
+          include-hidden-files: true
+          if-no-files-found: error
+
+  init-rebuild-aarch64:
+    needs: kernel-changes
+    if: needs.kernel-changes.outputs.run == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    outputs:
+      artifact: ${{ steps.up.outputs.artifact-id }}
+    env:
+      NL_ARCH: aarch64
+      CARGO_HOME: /home/runner/cargo-other
+      CARGO_BUILD_JOBS: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          path: other/checkout
+      - name: libfaketime from the lock
+        working-directory: other/checkout
+        run: |
+          python3 -I scripts/fetch_image.py --out "$RUNNER_TEMP/faketime-store" --faketime
+          python3 -I scripts/faketime_lib.py --store "$RUNNER_TEMP/faketime-store" --out "$RUNNER_TEMP/faketime" > "$RUNNER_TEMP/faketime.path"
+      - name: Toolchain
+        working-directory: other/checkout/init
+        run: rustup toolchain install
+      - name: Fetch the crates
+        working-directory: other/checkout/init
+        run: cargo fetch --locked
+      # rustc hangs under libfaketime (its threads wait on condition variables
+      # with timeouts the library rewrites), so cargo and the build scripts it
+      # runs see the moved clock and rustc itself does not.
+      - name: Build, one job, cargo 400 days ahead
+        timeout-minutes: 20
+        working-directory: other/checkout/init
+        env:
+          RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}/other/checkout=/build --remap-path-prefix=/home/runner/cargo-other=/cargo
+        run: |
+          . ../scripts/faketime.sh
+          faketime_on "$(cat "$RUNNER_TEMP/faketime.path")" 400
+          printf '#!/bin/sh\nexec env -u LD_PRELOAD -u FAKETIME "$@"\n' > "$RUNNER_TEMP/real-clock-rustc"
+          chmod +x "$RUNNER_TEMP/real-clock-rustc"
+          RUSTC_WRAPPER="$RUNNER_TEMP/real-clock-rustc" cargo build --release --locked --offline
+      - id: up
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: init-aarch64-rebuild
+          path: other/checkout/init/target/release/init
+          if-no-files-found: error
+
+  image-aarch64:
+    needs: [kernel-changes, kernel, init-binary-aarch64]
+    if: needs.kernel-changes.outputs.run == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    outputs:
+      artifact: ${{ steps.up.outputs.artifact-id }}
+    # The same Debian 13 container as images/tools.toml names, by digest.
+    # The build mounts the filesystem it makes, so it needs privileges.
+    container:
+      image: debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 # trixie-20261104-slim
+      options: --privileged
+    env:
+      NL_ARCH: aarch64
+    steps:
+      # The container has no git. scripts/image-build.sh installs python3,
+      # gpgv, xz-utils and ca-certificates from images/debian-aarch64.lock, each .deb
+      # checked against its SHA-256, so the checkout is the tarball of the commit.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kernel-qemu-aarch64
+          path: /__w/_temp/image/kernel
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: init-aarch64
+          path: /__w/_temp/image/init
+      - name: Build and check the image
+        env:
+          COMMIT: ${{ github.sha }}
+          SOURCE_DATE_EPOCH: ${{ needs.kernel-changes.outputs.epoch }}
+        run: |
+          chmod +x /__w/_temp/image/init/init
+          scripts/image-build.sh --kernel /__w/_temp/image/kernel --init /__w/_temp/image/init/init \
+            --out /__w/_temp/image/out --work /__w/_temp/image/work
+      # The same pinned checker and exceptions as the kernel job, on the
+      # .config of the kernel artifact this image was built from (the UKI's
+      # kernel is checked against that artifact's kernel image). The init half of
+      # the checks table waits on the init's config (#48).
+      - name: Kernel config of the image, kernel-hardening-checker
+        run: python3 -I scripts/image_hardening.py --arch aarch64 --kernel /__w/_temp/image/kernel --store /__w/_temp/image/work/store --work /__w/_temp/image/hardening
+      - name: Sizes against the budget
+        if: always()
+        run: |
+          {
+            echo '### Image sizes'
+            echo '```'
+            ls -l /__w/_temp/image/out || true
+            echo '```'
+            echo "Budget: images/budget.toml. The check fails above it and warns at 90%."
+          } >> "$GITHUB_STEP_SUMMARY"
+      # The build phase has no network (I2): a download from inside a fresh
+      # network namespace must fail, and the same download outside must work.
+      - name: Fixture, a download in the build phase's namespace fails
+        run: |
+          fetch='import socket; socket.create_connection(("github.com", 443), timeout=10)'
+          python3 -I -c "$fetch"
+          if unshare --net -- python3 -I -c "$fetch" 2>/dev/null; then
+            echo "a download worked inside the network namespace" >&2
+            exit 1
+          fi
+      - id: up
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: success()
+        with:
+          name: image-qemu-aarch64
+          path: /__w/_temp/image/out/
+          if-no-files-found: error
+      # A failed build never uploads under the name a good one has.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: image-qemu-aarch64-FAILED-checks
+          path: /__w/_temp/image/out/
+          if-no-files-found: ignore
+
+  image-rebuild-aarch64:
+    needs: [kernel-changes, kernel-rebuild-aarch64, init-rebuild-aarch64]
+    if: needs.kernel-changes.outputs.run == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    outputs:
+      artifact: ${{ steps.up.outputs.artifact-id }}
+    container:
+      image: debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 # trixie-20261104-slim
+      options: --privileged
+    env:
+      NL_ARCH: aarch64
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          path: rebuild/src/other-checkout
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kernel-qemu-aarch64-rebuild
+          path: /__w/_temp/rebuild-in/kernel
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: init-aarch64-rebuild
+          path: /__w/_temp/rebuild-in/init
+      - name: Build the image again, changed
+        env:
+          COMMIT: ${{ github.sha }}
+          SOURCE_DATE_EPOCH: ${{ needs.kernel-changes.outputs.epoch }}
+          NL_FAKETIME_DAYS: "400"
+        run: |
+          export TZ=Pacific/Kiritimati USER=builder LOGNAME=builder HOME=/home/builder
+          mkdir -p "$HOME"
+          chmod +x /__w/_temp/rebuild-in/init/init
+          # One CPU where the first build had every one the runner has.
+          echo "cpus: $(taskset -c 0 nproc), the first build: $(nproc)"
+          taskset -c 0 rebuild/src/other-checkout/scripts/image-build.sh \
+            --kernel /__w/_temp/rebuild-in/kernel --init /__w/_temp/rebuild-in/init/init \
+            --out /__w/_temp/rebuild-out/b --work /__w/_temp/rebuild-work/elsewhere
+      - id: up
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: success()
+        with:
+          name: image-qemu-aarch64-rebuild
+          path: /__w/_temp/rebuild-out/b/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: image-qemu-aarch64-rebuild-FAILED-checks
+          path: /__w/_temp/rebuild-out/b/
+          if-no-files-found: ignore
+
+  image-compare-aarch64:
+    needs: [kernel-changes, kernel, init-binary-aarch64, image-aarch64, kernel-rebuild-aarch64, init-rebuild-aarch64, image-rebuild-aarch64]
+    if: needs.kernel-changes.outputs.run == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    container:
+      image: debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 # trixie-20261104-slim
+    env:
+      NL_ARCH: aarch64
+    steps:
+      - name: The two builds are two different uploads
+        env:
+          IMAGE_A: ${{ needs.image-aarch64.outputs.artifact }}
+          IMAGE_B: ${{ needs.image-rebuild-aarch64.outputs.artifact }}
+          INIT_A: ${{ needs.init-binary-aarch64.outputs.artifact }}
+          INIT_B: ${{ needs.init-rebuild-aarch64.outputs.artifact }}
+        run: |
+          for v in IMAGE_A IMAGE_B INIT_A INIT_B; do
+            [[ ${!v} =~ ^[0-9]+$ ]] || { echo "$v: no artifact id" >&2; exit 1; }
+          done
+          [[ $IMAGE_A != "$IMAGE_B" && $INIT_A != "$INIT_B" ]] || { echo "a build would be compared with itself" >&2; exit 1; }
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ needs.image-aarch64.outputs.artifact }}
+          merge-multiple: true
+          path: /__w/_temp/compare/a
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ needs.image-rebuild-aarch64.outputs.artifact }}
+          merge-multiple: true
+          path: /__w/_temp/compare/b
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kernel-qemu-aarch64
+          path: /__w/_temp/compare/kernel-a
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kernel-qemu-aarch64-rebuild
+          path: /__w/_temp/compare/kernel-b
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ needs.init-binary-aarch64.outputs.artifact }}
+          merge-multiple: true
+          path: /__w/_temp/compare/init-a
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ needs.init-rebuild-aarch64.outputs.artifact }}
+          merge-multiple: true
+          path: /__w/_temp/compare/init-b
+      - name: Compare the two builds
+        run: |
+          scripts/image-compare.sh --a /__w/_temp/compare/a --b /__w/_temp/compare/b \
+            --kernel-a /__w/_temp/compare/kernel-a --kernel-b /__w/_temp/compare/kernel-b \
+            --init-a /__w/_temp/compare/init-a --init-b /__w/_temp/compare/init-b \
+            --report /__w/_temp/compare/report --work /__w/_temp/compare/work
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '### Two builds'
+            echo '```'
+            cat /__w/_temp/compare/a/SHA256SUMS || true
+            echo '---'
+            cat /__w/_temp/compare/b/SHA256SUMS || true
+            ( cd /__w/_temp/compare && sha256sum kernel-a/* kernel-a/.config kernel-b/* kernel-b/.config init-a/* init-b/* ) 2>/dev/null || true
+            [[ -f /__w/_temp/compare/report/summary.txt ]] && { echo '---'; cat /__w/_temp/compare/report/summary.txt; }
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: image-reproducibility-report-aarch64
+          path: /__w/_temp/compare/report/
+          if-no-files-found: warn
+
+  boot-aarch64:
+    needs: [kernel-changes, image-aarch64]
+    if: needs.kernel-changes.outputs.run == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      NL_ARCH: aarch64
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: image-qemu-aarch64
+          path: ${{ runner.temp }}/boot/image
+      - name: Accelerator
+        run: |
+          if [[ -e /dev/kvm ]]; then echo "/dev/kvm is there: the container gets it, KVM"; else echo "no /dev/kvm: TCG, with the longer timeout"; fi
+      - name: Boot the image, then two corrupted copies
+        run: |
+          tools/boot.sh --out "$RUNNER_TEMP/boot/out" \
+            --image "$(ls "$RUNNER_TEMP"/boot/image/*-production-aarch64.raw)"
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '### Boot'
+            echo '```'
+            grep -h '^boot-result' "$RUNNER_TEMP"/boot/out/boot-*.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: boot-serial-logs-aarch64
+          path: ${{ runner.temp }}/boot/out/
+          if-no-files-found: warn
+
   # The one check main requires, so a job added later is covered without
   # changing the ruleset. A job skipped by its own condition counts as passed.
   ci-ok:
     name: CI ok
     if: always()
-    needs: [lint, python, init, kernel-changes, kernel, init-binary, kernel-rebuild, init-rebuild, image, image-rebuild, image-compare, boot]
+    needs: [lint, python, init, kernel-changes, kernel, init-binary, kernel-rebuild, init-rebuild, image, image-rebuild, image-compare, boot, init-binary-aarch64, kernel-rebuild-aarch64, init-rebuild-aarch64, image-aarch64, image-rebuild-aarch64, image-compare-aarch64, boot-aarch64]
     runs-on: ubuntu-latest
     steps:
       - run: |

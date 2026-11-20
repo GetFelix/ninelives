@@ -3,7 +3,7 @@
 #
 # Runs as root inside the pinned bootstrap container (images/tools.toml): CI's
 # boot job and tools/boot.sh both start it there. qemu and the UEFI firmware
-# are the boot set of images/debian.lock, fetched and verified the way the
+# are the boot set of the architecture's lock (images/debian.lock, NL_ARCH), fetched and verified the way the
 # image's tools are, so the machine that boots the image is pinned too.
 #
 #   boot-run.sh prepare --work DIR
@@ -18,6 +18,8 @@ set -euo pipefail
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 export PYTHONDONTWRITEBYTECODE=1
+# shellcheck source=scripts/arch.sh
+. "$repo/scripts/arch.sh"
 cmd=${1:-}
 [[ -n $cmd ]] && shift
 work="" image="" out="" corrupt=""
@@ -41,16 +43,20 @@ for k in sys.argv[2:]: d=d[k]
 print(d)' "$@"
 }
 
+boot_pin() { # boot_pin KEY: one of the boot test's pins for this architecture (tools.toml)
+  python3 -I "$repo/scripts/image_lock.py" boot-pin "$1"
+}
+
 prepare() {
   if ! command -v python3 >/dev/null; then
     # python3, gpgv, xz-utils and ca-certificates, each .deb checked against
     # debian.lock before dpkg unpacks it.
-    "$repo/scripts/bootstrap.sh" "$repo/images/debian.lock"
+    "$repo/scripts/bootstrap.sh" "$lock"
   fi
   python3 -I "$repo/scripts/image_lock.py" check
   # The lock must be what resolution gives for the pins, so a hand edit cannot add a package.
   python3 -I "$repo/scripts/image_lock.py" generate "$work/debian.lock.regenerated"
-  diff -u "$repo/images/debian.lock" "$work/debian.lock.regenerated"
+  diff -u "$lock" "$work/debian.lock.regenerated"
   python3 -I "$repo/scripts/fetch_image.py" --out "$store" --boot
 
   # qemu and the firmware, from the verified store, at exactly the locked versions.
@@ -71,14 +77,14 @@ Types: deb
 URIs: file://$mirror/archive/debian/$snapshot
 Suites: $release $release-updates
 Components: main
-Architectures: amd64
+Architectures: $deb_arch
 Signed-By: $keyring
 
 Types: deb
 URIs: file://$mirror/archive/debian-security/$snapshot
 Suites: $release-security
 Components: main
-Architectures: amd64
+Architectures: $deb_arch
 Signed-By: $keyring
 SRC
   apt-get update
@@ -91,9 +97,9 @@ SRC
   installed=$(dpkg-query -W -f '${db:Status-Abbrev}${Package}=${Version}\n' | sed -n 's/^ii //p' | LC_ALL=C sort)
   comm -23 <(printf '%s\n' "${pkgs[@]}" | LC_ALL=C sort) <(echo "$installed") | grep . \
     && { echo "the packages above are not installed at the locked version" >&2; exit 1; }
-  qemu-system-x86_64 --version | head -n1
-  test -s /usr/share/OVMF/OVMF_CODE_4M.fd
-  test -s /usr/share/OVMF/OVMF_VARS_4M.fd
+  "$(boot_pin qemu)" --version | head -n1
+  test -s "$(boot_pin firmware_code)"
+  test -s "$(boot_pin firmware_vars)"
   return 0
 }
 
@@ -103,7 +109,8 @@ run_case() { # run_case NAME [root|hash]
   mkdir -p "$out"
   trap 'chmod -R a+rX "$out"' RETURN  # the container runs as root; the host reads the logs
   python3 -I "$repo/scripts/boot_image.py" --image "$image" \
-    --ovmf-code /usr/share/OVMF/OVMF_CODE_4M.fd --ovmf-vars /usr/share/OVMF/OVMF_VARS_4M.fd \
+    --arch "$NL_ARCH" --qemu "$(boot_pin qemu)" \
+    --ovmf-code "$(boot_pin firmware_code)" --ovmf-vars "$(boot_pin firmware_vars)" \
     --log "$out/serial-$name.log" "${args[@]}" 2>&1 | tee "$out/boot-$name.txt"
 }
 

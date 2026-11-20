@@ -3,6 +3,15 @@
 
 architecture = "x86_64"
 console = "ttyS0,115200"
+# What differs by architecture: the kernel artifact's image, the UKI stub and
+# the file name firmware looks for, the Discoverable Partitions type of the
+# root, and the multiarch directory and loader the allowlists name.
+kernel_file = "bzImage"
+uki_stub = "/usr/lib/systemd/boot/efi/linuxx64.efi.stub"
+efi_boot = "BOOTX64.EFI"
+root_type = "root-x86-64"
+triplet = "x86_64-linux-gnu"
+ld_so = "ld-linux-x86-64.so.2"
 # The root's disk is the first virtio disk in qemu. Cloud targets name theirs
 # in their own file.
 root_device = "/dev/vda2"

@@ -3,6 +3,10 @@
 # use * for one directory's worth of one kind of file. No shell or
 # interpreter may appear here. `needed` pins the shared libraries a
 # network-facing binary links against.
+#
+# {triplet} and {ld_so} are filled in from the target's target.toml, so one
+# list serves every architecture. An entry with `arches` applies only to
+# those; Felix's server is published for x86_64 only (felix#2797).
 
 # NineLives' own program: PID 1.
 [[executable]]
@@ -14,12 +18,14 @@ requirement = "S1"
 [[executable]]
 path = "/usr/lib/felix/felix-broker"
 origin = "felix (components.toml)"
+arches = ["x86_64"]
 requirement = "S1, S4"
 needed = ["libgcc_s.so.1", "libm.so.6", "libc.so.6"]
 
 [[executable]]
 path = "/usr/lib/felix/felix-controlplane"
 origin = "felix (components.toml)"
+arches = ["x86_64"]
 requirement = "S1, S4"
 needed = ["libgcc_s.so.1", "libm.so.6", "libc.so.6"]
 
@@ -27,57 +33,57 @@ needed = ["libgcc_s.so.1", "libm.so.6", "libc.so.6"]
 path = "/usr/lib/felixd/felixd"
 origin = "felixd (components.toml)"
 requirement = "S1, S4"
-needed = ["libgcc_s.so.1", "libm.so.6", "libc.so.6", "ld-linux-x86-64.so.2"]
+needed = ["libgcc_s.so.1", "libm.so.6", "libc.so.6", "{ld_so}"]
 
 # The C library and its loader. The loader is listed because it has to run; the kernel
 # refuses executable mappings of files on the noexec data partition.
 [[executable]]
-path = "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2"
+path = "/usr/lib/{triplet}/{ld_so}"
 origin = "libc6"
 requirement = "S1"
 
 [[executable]]
-path = "/usr/lib/x86_64-linux-gnu/libc.so.6"
+path = "/usr/lib/{triplet}/libc.so.6"
 origin = "libc6"
 requirement = "S1"
 
 [[executable]]
-path = "/usr/lib/x86_64-linux-gnu/libdl.so.2"
+path = "/usr/lib/{triplet}/libdl.so.2"
 origin = "libc6"
 requirement = "S1"
 
 [[executable]]
-path = "/usr/lib/x86_64-linux-gnu/libm.so.6"
+path = "/usr/lib/{triplet}/libm.so.6"
 origin = "libc6"
 requirement = "S1"
 
 [[executable]]
-path = "/usr/lib/x86_64-linux-gnu/libnss_dns.so.2"
+path = "/usr/lib/{triplet}/libnss_dns.so.2"
 origin = "libc6"
 requirement = "S1"
 
 [[executable]]
-path = "/usr/lib/x86_64-linux-gnu/libnss_files.so.2"
+path = "/usr/lib/{triplet}/libnss_files.so.2"
 origin = "libc6"
 requirement = "S1"
 
 [[executable]]
-path = "/usr/lib/x86_64-linux-gnu/libpthread.so.0"
+path = "/usr/lib/{triplet}/libpthread.so.0"
 origin = "libc6"
 requirement = "S1"
 
 [[executable]]
-path = "/usr/lib/x86_64-linux-gnu/libresolv.so.2"
+path = "/usr/lib/{triplet}/libresolv.so.2"
 origin = "libc6"
 requirement = "S1"
 
 [[executable]]
-path = "/usr/lib/x86_64-linux-gnu/librt.so.1"
+path = "/usr/lib/{triplet}/librt.so.1"
 origin = "libc6"
 requirement = "S1"
 
 [[executable]]
-path = "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1"
+path = "/usr/lib/{triplet}/libgcc_s.so.1"
 origin = "libgcc-s1"
 requirement = "S1"
 

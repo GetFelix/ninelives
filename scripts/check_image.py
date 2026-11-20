@@ -43,15 +43,27 @@ SECRET_PATTERNS = [
     re.compile(rb"\bAKIA[0-9A-Z]{16}\b"),
     re.compile(rb"\bxox[abprs]-[A-Za-z0-9-]{10,}\b"),
 ]
-GPT_PARTITIONS = [  # name, type GUID
-    ("esp", "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"),
-    ("ninelives-root-a", "4f68bce3-e8cd-4db1-96e7-fbcaf984b709"),
-    ("ninelives-verity-a", "2c7357ed-ebd2-46d9-aec1-23d437ec2bf5"),
-    ("ninelives-root-b", "4f68bce3-e8cd-4db1-96e7-fbcaf984b709"),
-    ("ninelives-verity-b", "2c7357ed-ebd2-46d9-aec1-23d437ec2bf5"),
-    ("ninelives-config", asm.CONFIG_TYPE),
-    ("ninelives-data", "0fc63daf-8483-4772-8e79-3d69d8477de4"),
-]
+# Discoverable Partitions Specification types of the root and its hash tree, by architecture.
+ROOT_TYPES = {
+    "x86_64": ("4f68bce3-e8cd-4db1-96e7-fbcaf984b709", "2c7357ed-ebd2-46d9-aec1-23d437ec2bf5"),
+    "aarch64": ("b921b045-1df0-41c3-af44-4c6f280d3fae", "df3300ce-d69f-4c92-978c-9bfb0f38d820"),
+}
+
+
+def gpt_partitions(arch: str) -> list[tuple[str, str]]:  # name, type GUID
+    root, verity = ROOT_TYPES[arch]
+    return [
+        ("esp", "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"),
+        ("ninelives-root-a", root),
+        ("ninelives-verity-a", verity),
+        ("ninelives-root-b", root),
+        ("ninelives-verity-b", verity),
+        ("ninelives-config", asm.CONFIG_TYPE),
+        ("ninelives-data", "0fc63daf-8483-4772-8e79-3d69d8477de4"),
+    ]
+
+
+GPT_PARTITIONS = gpt_partitions("x86_64")
 
 
 class Entry:
@@ -300,14 +312,14 @@ def check_cmdline(line: str, expected: str, policy) -> list[str]:
     return out
 
 
-def check_esp(files: list[str], uki: bytes, expected_uki: bytes):
+def check_esp(files: list[str], uki: bytes, expected_uki: bytes, efi_boot: str = "BOOTX64.EFI"):
     out = []
-    want = {"EFI", "EFI/BOOT", "EFI/BOOT/BOOTX64.EFI"}
+    want = {"EFI", "EFI/BOOT", f"EFI/BOOT/{efi_boot}"}
     got = {f.strip("/") for f in files}
     if {g.upper() for g in got} != {w.upper() for w in want}:
         out.append(f"ESP: holds {sorted(got)}, expected exactly {sorted(want)}")
     if uki != expected_uki:
-        out.append("ESP: BOOTX64.EFI is not the built UKI")
+        out.append(f"ESP: {efi_boot} is not the built UKI")
     return out
 
 
@@ -373,14 +385,15 @@ def cut(path: pathlib.Path, part: dict, dest: pathlib.Path, limit: int | None = 
             left -= len(chunk)
 
 
-def check_gpt(parts: list[dict], sizes: dict, config_is_zero: bool):
+def check_gpt(parts: list[dict], sizes: dict, config_is_zero: bool, arch: str = "x86_64"):
     """Names, types and the sizes the design fixes: ESP 256 MiB, config 1 MiB, A and B slots alike."""
     names = [p["name"] for p in parts]
-    want = [n for n, _ in GPT_PARTITIONS]
+    layout = gpt_partitions(arch)
+    want = [n for n, _ in layout]
     if names != want:
         return [f"GPT: partitions are {names}, expected {want}"]
     out = []
-    for p, (n, t) in zip(parts, GPT_PARTITIONS):
+    for p, (n, t) in zip(parts, layout):
         if p["type"] != t:
             out.append(f"GPT: {n} has type {p['type']}, expected {t}")
     by = {p["name"]: p for p in parts}
@@ -476,7 +489,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--image", type=pathlib.Path, required=True)
     ap.add_argument("--meta", type=pathlib.Path, required=True)
-    ap.add_argument("--target", type=pathlib.Path, default=ic.IMAGES / "qemu-x86_64" / "target.toml")
+    ap.add_argument("--target", type=pathlib.Path, default=None)
     ap.add_argument("--commit", required=True)
     ap.add_argument("--kernel", type=pathlib.Path, required=True, help="the kernel artifact directory")
     ap.add_argument("--source-date-epoch", type=int, required=True)
@@ -484,15 +497,15 @@ def main() -> int:
     args = ap.parse_args()
 
     base = str(args.image)[:-len(".raw")]
-    target = ic.load_toml(args.target)
+    target = ic.load_toml(args.target or ic.target_path())
     arch = target["architecture"]
     origins = json.loads((args.meta / "origins.json").read_text())
     stage = json.loads((args.meta / "stage.json").read_text())
-    lock = ic.load_toml(ic.IMAGES / "debian.lock")
+    lock = ic.load_toml(ic.lock_path(arch))
     keep = ic.load_toml(ic.IMAGES / "packages.toml")["package"]
     users = ic.load_toml(ic.IMAGES / "users.toml")
     removals = ic.load_removals(ic.ROOT / "rootfs" / "removals.toml")
-    execs = ic.load_toml(ic.IMAGES / "executables.toml").get("executable", []) if (ic.IMAGES / "executables.toml").exists() else []
+    execs = ic.for_arch(ic.load_for_target(ic.IMAGES / "executables.toml", target).get("executable", []), arch) if (ic.IMAGES / "executables.toml").exists() else []
     links = {l["path"]: l["target"] for l in (ic.load_toml(ic.IMAGES / "symlinks.toml").get("symlink", [])
                                               if (ic.IMAGES / "symlinks.toml").exists() else [])}
     budget = ic.load_toml(ic.IMAGES / "budget.toml")[arch]
@@ -505,14 +518,14 @@ def main() -> int:
         d = pathlib.Path(d)
         erofs, verity, esp = d / "root.erofs", d / "root.verity", d / "esp.img"
         uki_path = pathlib.Path(base + ".efi")
-        errors += check_gpt(parts, sizes_cfg, set(config_bytes(args.image, by_name["ninelives-config"])) <= {0})
+        errors += check_gpt(parts, sizes_cfg, set(config_bytes(args.image, by_name["ninelives-config"])) <= {0}, arch)
         try:
             sections = pe_sections(uki_path.read_bytes())
         except ValueError as e:
             print(e, file=sys.stderr)
             print("1 violations")
             return 1
-        errors += check_uki_sections(sections, ic.sha256_file(args.kernel / "bzImage"))
+        errors += check_uki_sections(sections, ic.sha256_file(args.kernel / target["kernel_file"]))
         line = sections[".cmdline"].rstrip(b"\0").decode("ascii")
         dm = dm_create(line)
         sizes = dm["sectors"] * 512
@@ -529,9 +542,9 @@ def main() -> int:
         espdir.mkdir()
         subprocess.run(["mcopy", "-s", "-n", "-i", str(esp), "::", str(espdir)], check=False)
         esp_files = sorted(os.path.relpath(os.path.join(dp, n), espdir) for dp, dn, fn in os.walk(espdir) for n in dn + fn)
-        esp_uki = next((espdir / f for f in esp_files if f.upper() == "EFI/BOOT/BOOTX64.EFI"), None)
+        esp_uki = next((espdir / f for f in esp_files if f.upper() == f"EFI/BOOT/{target['efi_boot']}".upper()), None)
         errors += check_esp_sector(esp.read_bytes()[:512])
-        errors += check_esp(esp_files, esp_uki.read_bytes() if esp_uki else b"", uki_path.read_bytes())
+        errors += check_esp(esp_files, esp_uki.read_bytes() if esp_uki else b"", uki_path.read_bytes(), target["efi_boot"])
 
         policy = kc.load_policy(kc.KERNEL / "policy.toml", arch)
         expected = asm.cmdline(target, policy, dm["sectors"], dm["blocks"], dm["roothash"], dm["salt"])

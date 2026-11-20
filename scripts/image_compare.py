@@ -23,11 +23,20 @@ import struct
 import subprocess
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import image_common as ic  # noqa: E402
+
 SUM_LINE = re.compile(r"([0-9a-f]{64})  (\S[^/]*)")
 DIFFOSCOPE_TIMEOUT = 1500
 # What every build writes (docs/components/image.md, "What the first slice builds").
 REQUIRED = (".raw", ".root.erofs", ".root.verity", ".roothash", ".efi", ".inventory.json", ".files.json", ".origins.json")
-KERNEL_FILES = ("bzImage", "System.map", ".config")
+
+
+def kernel_files() -> tuple[str, ...]:
+    """What a kernel artifact holds: the image's name depends on the architecture (NL_ARCH)."""
+    return (ic.load_toml(ic.target_path())["kernel_file"], "System.map", ".config")
+
+
 INIT_FILES = ("init",)
 
 
@@ -130,7 +139,7 @@ def main() -> int:
     pairs = [(n, args.a / n, args.b / n) for n in sorted(sums["a"].keys() & sums["b"].keys())]
     for name in sorted(sums["a"].keys() ^ sums["b"].keys()):
         problems.append(f"{name} is an output of only one build")
-    for label, da, db, names in (("kernel", args.kernel_a, args.kernel_b, KERNEL_FILES), ("init", args.init_a, args.init_b, INIT_FILES)):
+    for label, da, db, names in (("kernel", args.kernel_a, args.kernel_b, kernel_files()), ("init", args.init_a, args.init_b, INIT_FILES)):
         for n in names if da else ():
             if not (da / n).is_file() or not (db / n).is_file():
                 problems.append(f"{label}: {n} is missing from one of the two builds")

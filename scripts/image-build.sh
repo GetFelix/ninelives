@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the x86_64 qemu production image (docs/components/image.md).
+# Build the qemu production image for NL_ARCH, x86_64 or aarch64 (docs/components/image.md).
 #
 # Runs as root inside the pinned bootstrap container (images/tools.toml);
 # tools/image.sh starts it there, and CI runs it in the same container. The
@@ -11,7 +11,8 @@
 #
 #   image-build.sh --kernel DIR --init FILE --out DIR [--work DIR]
 #
-# DIR for --kernel is the kernel-qemu-x86_64 artifact (bzImage, .config).
+# DIR for --kernel is the kernel-qemu-ARCH artifact (bzImage or Image, .config).
+# NL_ARCH picks the architecture (x86_64 if unset); the machine running this must be of it.
 # COMMIT and SOURCE_DATE_EPOCH come from the environment (the container has no git).
 # NL_FAKETIME_DAYS=N runs the build phase N days ahead of the real clock.
 set -euo pipefail
@@ -21,6 +22,8 @@ set -euo pipefail
 umask 022
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 export PYTHONDONTWRITEBYTECODE=1
+# shellcheck source=scripts/arch.sh
+. "$repo/scripts/arch.sh"
 args=("$@")
 kernel_dir="" init_bin="" out="" work=/work
 while [[ $# -gt 0 ]]; do
@@ -62,13 +65,13 @@ if [[ ${NL_IMAGE_PHASE:-fetch} == fetch ]]; then
     installed_list > "$bootstrap_base"
     # python3, gpgv, xz-utils and ca-certificates, each .deb checked against
     # debian.lock before dpkg unpacks it. No apt resolution, no keyring.
-    "$repo/scripts/bootstrap.sh" "$repo/images/debian.lock"
+    "$repo/scripts/bootstrap.sh" "$lock"
   fi
 
   python3 -I "$repo/scripts/image_lock.py" check
   # The lock must be what resolution gives for the pins, so a hand edit cannot add a package.
   python3 -I "$repo/scripts/image_lock.py" generate "$work/debian.lock.regenerated"
-  diff -u "$repo/images/debian.lock" "$work/debian.lock.regenerated"
+  diff -u "$lock" "$work/debian.lock.regenerated"
   python3 -I "$repo/scripts/fetch_image.py" --out "$store"
 
   export NL_IMAGE_PHASE=build
@@ -103,14 +106,14 @@ Types: deb
 URIs: file://$mirror/archive/debian/$snapshot
 Suites: $1 $1-updates
 Components: main
-Architectures: amd64
+Architectures: $deb_arch
 Signed-By: $keyring
 
 Types: deb
 URIs: file://$mirror/archive/debian-security/$snapshot
 Suites: $1-security
 Components: main
-Architectures: amd64
+Architectures: $deb_arch
 Signed-By: $keyring
 SRC
 }
@@ -185,7 +188,7 @@ if [[ -n ${NL_FAKETIME_DAYS:-} ]]; then
   faketime_on "$(python3 -I "$repo/scripts/faketime_lib.py" --store "$store" --out "$work/faketime")" "$NL_FAKETIME_DAYS"
 fi
 PYTHONPATH=$mkosi_dir python3 -B -m mkosi \
-  --directory "$repo/images/qemu-x86_64" --force \
+  --directory "$repo/images/qemu-$NL_ARCH" --force \
   --release "$release_root" \
   --output-directory "$work/mkosi-out" \
   --workspace-directory "$work/mkosi-ws" \
@@ -200,9 +203,9 @@ root=$work/mkosi-out/ninelives
 python3 -I "$repo/scripts/image_stage.py" --root "$root" --store "$store" --init "$init_bin" \
   --commit "$COMMIT" --source-date-epoch "$SOURCE_DATE_EPOCH" --meta "$meta"
 
-name=ninelives-dev-${COMMIT:0:12}-production-x86_64
+name=ninelives-dev-${COMMIT:0:12}-production-$NL_ARCH
 kernel_version=$(toml "$repo/kernel/VERSION" version)
-python3 -I "$repo/scripts/image_assemble.py" --root "$root" --kernel "$kernel_dir/bzImage" --kernel-version "$kernel_version" \
+python3 -I "$repo/scripts/image_assemble.py" --root "$root" --kernel "$kernel_dir/$(toml "$repo/images/qemu-$NL_ARCH/target.toml" kernel_file)" --kernel-version "$kernel_version" \
   --commit "$COMMIT" --source-date-epoch "$SOURCE_DATE_EPOCH" --out "$out" --name "$name"
 
 python3 -I "$repo/scripts/image_inventory.py" --meta "$meta" --store "$store" --kernel-dir "$kernel_dir" \

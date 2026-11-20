@@ -73,7 +73,7 @@ trap cleanup EXIT
 # Phase one: fetch, verify, install the tools, prepare the user.
 cid=$("$engine" create "${cpu_args[@]}" "${env_args[@]}" "${mounts[@]}" "$image" "${args[@]}")
 "$engine" start -a "$cid"
-"$engine" commit -q "$cid" "$tag" >/dev/null
+"$engine" commit "$cid" "$tag" >/dev/null
 "$engine" rm -f "$cid" >/dev/null
 cid=""
 

@@ -10,7 +10,8 @@ install (docs/components/image.md, "Building the root", steps 2 to 5):
      but regular files, and install them 0:0 mode 0555
   3. add the init, /etc/passwd and /etc/group from images/users.toml, and
      os-release with the variant
-  4. normalise: owner 0:0, no write bits, no setuid or setgid, no extended
+  4. normalise: owner 0:0 when run as root (an unprivileged build leaves it to
+     mkfs.erofs --all-root), no write bits, no setuid or setgid, no extended
      attributes, timestamps at SOURCE_DATE_EPOCH
   5. write origins.json, which says where every path in the root came from;
      check_image.py holds the finished image to it
@@ -170,7 +171,8 @@ def normalise(root: pathlib.Path, sde: int) -> None:
         paths += [pathlib.Path(dirpath) / n for n in dirnames + filenames]
     for p in paths:
         st = os.lstat(p)
-        os.lchown(p, 0, 0)
+        if os.geteuid() == 0:
+            os.lchown(p, 0, 0)  # unprivileged, mkfs.erofs --all-root makes the owners 0:0
         if not stat.S_ISLNK(st.st_mode):
             # No write bit for anyone. setuid and setgid stay: the checks must see them.
             os.chmod(p, stat.S_IMODE(st.st_mode) & ~0o222)

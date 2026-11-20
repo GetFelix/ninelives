@@ -108,7 +108,7 @@ class Generated(unittest.TestCase):
         self.assertIn("VARIANT_ID=production", text)
         self.assertIn("BUILD_ID=" + "a" * 12, text)
 
-    @unittest.skipIf(os.geteuid() != 0, "needs root to chown")
+    @unittest.skipUnless(hasattr(os, "listxattr"), "needs Linux xattrs")
     def test_normalise_strips_write_bits_and_sets_time(self):
         d = pathlib.Path(tempfile.mkdtemp())
         (d / "f").write_text("x")

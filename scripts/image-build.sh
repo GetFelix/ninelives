@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 # Build the qemu production image for NL_ARCH, x86_64 or aarch64 (docs/components/image.md).
 #
-# Runs as root inside the pinned bootstrap container (images/tools.toml);
-# tools/image.sh starts it there, and CI runs it in the same container. The
-# fetch phase's own tools are installed first by scripts/bootstrap.sh, each
-# .deb checked against images/debian.lock.
-# Two phases: fetch downloads and verifies every input and has the network,
-# then the build re-runs itself in a network namespace with only loopback and
-# reads nothing but the verified store.
+# tools/image.sh runs it twice in the pinned bootstrap container
+# (images/tools.toml), CI through the same script. The fetch phase's own tools
+# are installed first by scripts/bootstrap.sh, each .deb checked against
+# images/debian.lock.
+# Fetch (NL_IMAGE_PHASE unset): root, in a container with the engine's default
+# seccomp and /proc masking. It downloads and verifies every input, has the
+# network, installs the locked build tools and prepares the build user.
+# Build (NL_IMAGE_PHASE=build): started by tools/image.sh as that user, never
+# root, in the committed result of the first phase, inside a user namespace
+# and a network namespace holding only loopback. mkosi, the staging, the
+# sealing and every check run there and read nothing but the verified store.
 #
 #   image-build.sh --kernel DIR --init FILE --out DIR [--work DIR]
 #
@@ -15,6 +19,7 @@
 # NL_ARCH picks the architecture (x86_64 if unset); the machine running this must be of it.
 # COMMIT and SOURCE_DATE_EPOCH come from the environment (the container has no git).
 # NL_FAKETIME_DAYS=N runs the build phase N days ahead of the real clock.
+# NL_BUILD_UID=N is the unprivileged user's id (default 1000).
 set -euo pipefail
 
 # The caller's umask must not reach the build: apt reads the keyring and the store
@@ -24,7 +29,6 @@ repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 export PYTHONDONTWRITEBYTECODE=1
 # shellcheck source=scripts/arch.sh
 . "$repo/scripts/arch.sh"
-args=("$@")
 kernel_dir="" init_bin="" out="" work=/work
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -55,41 +59,6 @@ for k in sys.argv[2:]: d=d[k]
 print(d)' "$@"
 }
 
-if [[ ${NL_IMAGE_PHASE:-fetch} == fetch ]]; then
-  # The container has no git, so these come from the caller. Both end up in the image.
-  [[ ${COMMIT:-} =~ ^[0-9a-f]{40}$ ]] || { echo "COMMIT must be a 40-digit lowercase hex commit id (the container has no git)" >&2; exit 2; }
-  [[ ${SOURCE_DATE_EPOCH:-} =~ ^[0-9]+$ ]] || { echo "SOURCE_DATE_EPOCH must be a number of seconds (the container has no git)" >&2; exit 2; }
-  if ! command -v python3 >/dev/null; then
-    # What the container holds before the bootstrap touches it, so the build
-    # phase can tell what the bootstrap added or changed.
-    installed_list > "$bootstrap_base"
-    # python3, gpgv, xz-utils and ca-certificates, each .deb checked against
-    # debian.lock before dpkg unpacks it. No apt resolution, no keyring.
-    "$repo/scripts/bootstrap.sh" "$lock"
-  fi
-
-  python3 -I "$repo/scripts/image_lock.py" check
-  # The lock must be what resolution gives for the pins, so a hand edit cannot add a package.
-  python3 -I "$repo/scripts/image_lock.py" generate "$work/debian.lock.regenerated"
-  diff -u "$lock" "$work/debian.lock.regenerated"
-  python3 -I "$repo/scripts/fetch_image.py" --out "$store"
-
-  export NL_IMAGE_PHASE=build
-  exec unshare --net -- "$0" "${args[@]}"
-fi
-
-# ---- build phase: no network from here on --------------------------------
-# A build step that reaches the network means the namespace is not doing its job (I2).
-if python3 -I -c 'import socket,sys; socket.create_connection(("1.1.1.1", 53), timeout=3)' 2>/dev/null; then
-  echo "the network is reachable in the build phase" >&2
-  exit 1
-fi
-snapshot=$(toml "$repo/images/tools.toml" debian snapshot)
-release_root=$(toml "$repo/images/tools.toml" root release)
-mirror=$store/mirror
-keyring=/usr/share/keyrings/ninelives-debian.gpg
-
-python3 -I "$repo/scripts/image_lock.py" keyring "$keyring"
 write_apt_config() { # write_apt_config ETC_APT_DIR
   mkdir -p "$1/sources.list.d" "$1/apt.conf.d"
   cat > "$1/apt.conf.d/99ninelives" <<'CONF'
@@ -118,50 +87,103 @@ Signed-By: $keyring
 SRC
 }
 
-# The bootstrap step installs only what the lock names, but it runs before the
-# lock is verified against the signed archive. Fail if it upgraded a package
-# the container had, purge what it added beyond the locked tools, then install
-# the tools from the verified store.
-[[ -s $bootstrap_base ]] || { echo "the bootstrap step did not record the container's packages" >&2; exit 1; }
-mapfile -t tool_pkgs < <(python3 -I "$repo/scripts/image_lock.py" tools)
-tool_names=()
-for p in "${tool_pkgs[@]}"; do tool_names+=("${p%%=*}"); done
-export LC_ALL=C
-installed_list > "$work/installed-after-bootstrap"
-upgraded=$(awk -F= 'NR==FNR {v[$1]=$2; next} ($1 in v) && v[$1] != $2 {print $1}' "$bootstrap_base" "$work/installed-after-bootstrap")
-if [[ -n $upgraded ]]; then
-  echo "the bootstrap step upgraded packages that were in the container: $upgraded" >&2
-  exit 1
-fi
-added=$(comm -13 <(cut -d= -f1 "$bootstrap_base" | sort) <(cut -d= -f1 "$work/installed-after-bootstrap" | sort) \
-  | comm -23 - <(printf '%s\n' "${tool_names[@]}" | sort))
-if [[ -n $added ]]; then
-  echo "purging what the bootstrap step added and the tools lock does not name: $added"
-  # shellcheck disable=SC2086  # one word per package
-  apt-get purge -y $added
+load_pins() { # needs python3, so after the bootstrap
+  snapshot=$(toml "$repo/images/tools.toml" debian snapshot)
+  release_root=$(toml "$repo/images/tools.toml" root release)
+  mirror=$store/mirror
+  keyring=/usr/share/keyrings/ninelives-debian.gpg
+}
+
+if [[ ${NL_IMAGE_PHASE:-fetch} == fetch ]]; then
+  # The container has no git, so these come from the caller. Both end up in the image.
+  [[ ${COMMIT:-} =~ ^[0-9a-f]{40}$ ]] || { echo "COMMIT must be a 40-digit lowercase hex commit id (the container has no git)" >&2; exit 2; }
+  [[ ${SOURCE_DATE_EPOCH:-} =~ ^[0-9]+$ ]] || { echo "SOURCE_DATE_EPOCH must be a number of seconds (the container has no git)" >&2; exit 2; }
+  if ! command -v python3 >/dev/null; then
+    # What the container holds before the bootstrap touches it, so the build
+    # phase can tell what the bootstrap added or changed.
+    installed_list > "$bootstrap_base"
+    # python3, gpgv, xz-utils and ca-certificates, each .deb checked against
+    # debian.lock before dpkg unpacks it. No apt resolution, no keyring.
+    "$repo/scripts/bootstrap.sh" "$lock"
+  fi
+
+  python3 -I "$repo/scripts/image_lock.py" check
+  # The lock must be what resolution gives for the pins, so a hand edit cannot add a package.
+  python3 -I "$repo/scripts/image_lock.py" generate "$work/debian.lock.regenerated"
+  diff -u "$lock" "$work/debian.lock.regenerated"
+  python3 -I "$repo/scripts/fetch_image.py" --out "$store"
+
+  load_pins
+  python3 -I "$repo/scripts/image_lock.py" keyring "$keyring"
+
+  # The bootstrap step installs only what the lock names, but it runs before the
+  # lock is verified against the signed archive. Fail if it upgraded a package
+  # the container had, purge what it added beyond the locked tools, then install
+  # the tools from the verified store.
+  [[ -s $bootstrap_base ]] || { echo "the bootstrap step did not record the container's packages" >&2; exit 1; }
+  mapfile -t tool_pkgs < <(python3 -I "$repo/scripts/image_lock.py" tools)
+  tool_names=()
+  for p in "${tool_pkgs[@]}"; do tool_names+=("${p%%=*}"); done
+  export LC_ALL=C
+  installed_list > "$work/installed-after-bootstrap"
+  upgraded=$(awk -F= 'NR==FNR {v[$1]=$2; next} ($1 in v) && v[$1] != $2 {print $1}' "$bootstrap_base" "$work/installed-after-bootstrap")
+  if [[ -n $upgraded ]]; then
+    echo "the bootstrap step upgraded packages that were in the container: $upgraded" >&2
+    exit 1
+  fi
+  added=$(comm -13 <(cut -d= -f1 "$bootstrap_base" | sort) <(cut -d= -f1 "$work/installed-after-bootstrap" | sort) \
+    | comm -23 - <(printf '%s\n' "${tool_names[@]}" | sort))
+  if [[ -n $added ]]; then
+    echo "purging what the bootstrap step added and the tools lock does not name: $added"
+    # shellcheck disable=SC2086  # one word per package
+    apt-get purge -y $added
+  fi
+
+  # The build tools, from the verified store, at exactly the locked versions.
+  rm -f /etc/apt/sources.list.d/*.sources /etc/apt/sources.list
+  write_apt_config /etc/apt
+  sources "$(toml "$repo/images/tools.toml" tools release)" > /etc/apt/sources.list.d/ninelives.sources
+  apt-get update
+  # --reinstall, because the bootstrap already put some of these on the machine
+  # and a plain install of the same version would leave them as they are. The
+  # verified store, not the bootstrap download, is what the image build uses.
+  apt-get install -y --no-install-recommends --allow-downgrades --reinstall "${tool_pkgs[@]}"
+  diff <(printf '%s\n' "${tool_pkgs[@]}" | sort) \
+    <(installed_list | awk -F= 'NR==FNR {t[$1]=1; next} $1 in t' <(printf '%s\n' "${tool_names[@]}") -) \
+    || { echo "an installed tool is not the locked version" >&2; exit 1; }
+  # Nothing else is on the machine: the container's own packages, unchanged, and the locked tools.
+  expected=$( { awk -F= 'NR==FNR {t[$1]=1; next} !($1 in t)' <(printf '%s\n' "${tool_names[@]}") "$bootstrap_base"; printf '%s\n' "${tool_pkgs[@]}"; } | sort)
+  installed=$(installed_list)
+  if [[ $expected != "$installed" ]]; then
+    echo "the installed packages are not the container's plus the locked tools:" >&2
+    diff <(echo "$expected") <(echo "$installed") >&2 || true
+    exit 1
+  fi
+
+  # The build runs as this user, in the phase tools/image.sh starts next
+  # in another container, with no root in it. The user owns the work directory,
+  # the output directory and its home; nothing else.
+  build_uid=${NL_BUILD_UID:-1000}
+  [[ $build_uid =~ ^[1-9][0-9]{3,8}$ ]] || { echo "NL_BUILD_UID must be a number of 1000 or more" >&2; exit 2; }
+  getent passwd "$build_uid" >/dev/null || { groupadd --gid "$build_uid" nlbuild && useradd --uid "$build_uid" --gid "$build_uid" --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin nlbuild; }
+  # The caller's HOME is kept when it is not root's (the rebuild varies it).
+  child_home=${HOME:-}
+  if [[ -z $child_home || $child_home == / || $child_home == /root ]]; then child_home=$work/home; fi
+  mkdir -p "$child_home" "$out"
+  chown "$build_uid:$build_uid" "$work" "$out" "$child_home"
+  exit 0
 fi
 
-# The build tools, from the verified store, at exactly the locked versions.
-rm -f /etc/apt/sources.list.d/*.sources /etc/apt/sources.list
-write_apt_config /etc/apt
-sources "$(toml "$repo/images/tools.toml" tools release)" > /etc/apt/sources.list.d/ninelives.sources
-apt-get update
-# --reinstall, because the bootstrap already put some of these on the machine
-# and a plain install of the same version would leave them as they are. The
-# verified store, not the bootstrap download, is what the image build uses.
-apt-get install -y --no-install-recommends --allow-downgrades --reinstall "${tool_pkgs[@]}"
-diff <(printf '%s\n' "${tool_pkgs[@]}" | sort) \
-  <(installed_list | awk -F= 'NR==FNR {t[$1]=1; next} $1 in t' <(printf '%s\n' "${tool_names[@]}") -) \
-  || { echo "an installed tool is not the locked version" >&2; exit 1; }
-# Nothing else is on the machine: the container's own packages, unchanged, and the locked tools.
-expected=$( { awk -F= 'NR==FNR {t[$1]=1; next} !($1 in t)' <(printf '%s\n' "${tool_names[@]}") "$bootstrap_base"; printf '%s\n' "${tool_pkgs[@]}"; } | sort)
-installed=$(installed_list)
-if [[ $expected != "$installed" ]]; then
-  echo "the installed packages are not the container's plus the locked tools:" >&2
-  diff <(echo "$expected") <(echo "$installed") >&2 || true
+# ---- build phase: an unprivileged user, no network from here on -----------
+# A build step that reaches the network means the namespace is not doing its job (I2).
+if python3 -I -c 'import socket,sys; socket.create_connection(("1.1.1.1", 53), timeout=3)' 2>/dev/null; then
+  echo "the network is reachable in the build phase" >&2
   exit 1
 fi
-
+load_pins
+# The outputs are read by whoever copies them out, a user other than this one
+# (veritysetup writes its hash tree 0600).
+trap 'chmod -R a+rX "$out"' EXIT
 # mkosi, from the verified archive.
 mkosi_ver=$(toml "$repo/images/tools.toml" mkosi version)
 mkdir -p "$work/mkosi"
@@ -169,6 +191,8 @@ tar -xzf "$store/mkosi/mkosi-$mkosi_ver.tar.gz" -C "$work/mkosi"
 mkosi_dir=$work/mkosi/mkosi-$mkosi_ver
 
 sandbox=$work/sandbox
+# A sealed tree has no write bits, and an owner cannot remove files from it as root could.
+chmod -R u+w "$sandbox" "$work/mkosi-out" 2>/dev/null || true
 rm -rf "$sandbox" "$work/mkosi-out"
 write_apt_config "$sandbox/etc/apt"
 sources "$release_root" > "$sandbox/etc/apt/sources.list.d/mkosi.sources"

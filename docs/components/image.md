@@ -488,9 +488,7 @@ need.
 ### Building the root
 
 1. mkosi installs exactly the packages in `images/packages.toml` from the
-   mirror, unprivileged, in a user namespace. *Not built yet:* the first slice
-   runs mkosi as root inside a privileged container, because the checks also
-   mount the root ([#96](https://github.com/GetFelix/ninelives/issues/96)).
+   mirror, unprivileged, in a user namespace ([Build environment](#build-environment)).
    Debian's maintainer scripts run here, inside the build sandbox. That is code from Debian running on the
    runner, accepted with Debian (T36); the checks below catch what it leaves
    behind.
@@ -607,8 +605,8 @@ Moving it needs the library inside the image root and removed again before the
 root is sealed ([#110](https://github.com/GetFelix/ninelives/issues/113)). SOURCE_DATE_EPOCH and the commit time, not the clock, give every
 timestamp, so an output that depended on the clock would differ.
 
-The container runs as root because the build mounts the filesystem it makes, so
-the user varies by name, not uid. The umask (`022`) and locale (`LC_ALL=C`) are
+The build runs as an unprivileged user, so the second build varies that user's
+uid (2345, not 1000) as well as its name. The umask (`022`) and locale (`LC_ALL=C`) are
 pinned by the build scripts, not varied: the caller's values do not reach the
 build, and nothing proves more than that. The kernel and init jobs run in
 the pinned container, so the runner supplies only its kernel and container
@@ -667,10 +665,60 @@ uses. slsa-github-generator is not used: it has been unmaintained since
 February 2025. Provenance says where bytes came from. It is not why a machine
 trusts them.
 
+### Build environment
+
+The container image is the digest-pinned Debian one. Nothing runs with
+`--privileged`, extra capabilities or devices. `tools/image.sh`, which CI runs
+too, starts two containers from it:
+
+1. **Fetch**, as the container's root, with the engine's default seccomp
+   profile and masked `/proc`. It downloads and verifies the inputs (with the
+   network), installs the locked bootstrap and build tools, whose maintainer
+   scripts run here, and prepares the build user. Its result is committed.
+2. **Build**, from that result, as an unprivileged user (`nlbuild`, uid 1000,
+   or `NL_BUILD_UID`), never root. mkosi and Debian's maintainer scripts for
+   the root, staging, `mkfs.erofs`, `veritysetup`, `ukify`, `systemd-repart` and
+   every check run here, in a user namespace of its own and a network
+   namespace holding only loopback.
+
+mkosi sees an ordinary user and uses its single-user mode (since v25): files in
+the tree are owned by that user, and a `chown` to another owner by a
+maintainer script is suppressed. This costs nothing in the image, because
+`mkfs.erofs --all-root` sets every owner to 0:0 and the checks read the owners
+back from the erofs.
+
+Only the second container gets relaxed settings, because a container engine's
+default seccomp profile blocks creating a user namespace and its masked
+`/proc` paths block mounting a fresh `/proc` in one, which mkosi's sandbox does:
+seccomp and AppArmor off and `/proc` unmasked (`--security-opt
+seccomp=unconfined`, `apparmor=unconfined`, `systempaths=unconfined`; podman's
+`unmask=ALL`). Its user is not root and has no capabilities in the container;
+it gets them only inside the user namespace it makes, over that namespace. A
+root process with a writable `/proc/sys` could set `kernel.core_pattern` and
+reach the host, which is why the root phase does not get these settings. The
+Ubuntu 24.04 runner also restricts user namespaces with AppArmor, a setting of
+the host that a container cannot change, so the image jobs run on the runner
+itself, set `kernel.apparmor_restrict_unprivileged_userns=0` and start the
+containers through `tools/image.sh` instead of as the job's container.
+
+Nothing in the build or the checks needs root or a mount. The checks read the
+root through `scripts/erofs_read.py`, which parses the erofs format (the
+superblock, compact and extended inodes, plain and inline data, directories
+and extended attributes), so a setuid bit, an owner, a timestamp or an
+extended attribute is seen as the image stores it. The number of distinct inodes
+it walks must equal the superblock's count, so an inode it missed fails the
+build, and an incompatible feature bit it does not implement is refused. An extraction by
+`fsck.erofs --extract` as an unprivileged user would lose the owners and the
+attributes, and a mount needs root. The reader refuses compressed or
+chunk-based inodes, which the build never writes. `fsck.erofs` also runs on the
+image as an independent structural check, and `veritysetup verify` works on
+files, with no device-mapper.
+
 ### Checks
 
 Each check runs on what boots: the erofs image hashed into dm-verity and the
 UKI, read back by the checker, not the staging directory they were made from.
+The checker reads the erofs itself, without mounting it.
 A tool between the two that changed an owner or a mode would otherwise pass.
 Each check fails the build on any violation. Each allowlist lives in
 `images/`, and every entry gives the requirement or component it serves.
@@ -692,6 +740,7 @@ Each check fails the build on any violation. Each allowlist lives in
 | Kernel command line | The UKI's command line equals the expected string for its target, its root hash is the root partition's in this image, it holds every word the kernel's `policy.toml` requires, and none it forbids. | S13, S17 |
 | ESP contents | The ESP holds exactly the expected UKI files and nothing else, and its FAT has 512-byte sectors like the disk. Firmware ignores a FAT with other sectors, so the machine would boot nothing. | S13 |
 | Shared libraries of network daemons | Each network-facing binary's `DT_NEEDED` set equals its entry in `images/executables.toml`. | S4 |
+| erofs structure | `fsck.erofs` passes on the root image, and `scripts/erofs_read.py` can read every inode. | S13 |
 | Verity | `veritysetup verify` passes for the root against its hash tree and the root hash in the UKI. | S13 |
 | Kernel config | kernel-hardening-checker passes with the listed exceptions, and `CONFIG_MODULES` is off (0007). The image job fetches the tarball pinned in `images/tools.toml` with the build inputs and runs it on the `.config` of the kernel artifact the image was built from, with the kernel job's policy and exceptions (`scripts/image_hardening.py`). The artifact's `bzImage` is what the UKI holds, and its `.config` hash is in the inventory. | S2 |
 | Init config | `init check` passes on the image's `init.toml`. *Not built yet:* the init has no `check` command and the image has no `init.toml` until [#48](https://github.com/GetFelix/ninelives/issues/48); the job runs this check once they exist. | init design |
@@ -962,9 +1011,8 @@ Each is written so a test can check it.
 ## Security
 
 **What it runs as.** CI jobs on GitHub-hosted runners. mkosi builds
-unprivileged, in user namespaces (*not built yet:* the slice runs it as root in
-a privileged container, [#96](https://github.com/GetFelix/ninelives/issues/96)),
-and the build phase has no network. Build
+unprivileged, in a user namespace, in a container that is not privileged
+([Build environment](#build-environment)), and the build phase has no network. Build
 jobs hold a read-only token and no secrets. Only the pinned signing workflow
 can reach the signer.
 

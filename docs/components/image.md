@@ -683,14 +683,18 @@ the erofs.
 
 A container engine's default seccomp profile blocks creating a user namespace,
 and its masked `/proc` paths block mounting a fresh `/proc` in one, which
-mkosi's sandbox does. The job therefore turns off the seccomp and AppArmor
-profiles and unmasks `/proc` (`--security-opt seccomp=unconfined`,
-`apparmor=unconfined`, `systempaths=unconfined`; podman's `unmask=ALL`). That
-is a smaller grant than `--privileged`: the container still has no
-`CAP_SYS_ADMIN`, no device access and the engine's default capability set, and
-only a process that made its own user namespace gets capabilities, over that
-namespace alone. The root phase has the network, as the fetch phase needs it,
-and installs the tools from the file mirror of the verified store.
+mkosi's sandbox does. `tools/image.sh`, which CI runs too, therefore turns off
+the seccomp and AppArmor profiles and unmasks `/proc` (`--security-opt
+seccomp=unconfined`, `apparmor=unconfined`, `systempaths=unconfined`; podman's
+`unmask=ALL`). That is a smaller grant than `--privileged`: the container
+still has no `CAP_SYS_ADMIN` and no device access, and only a process that made
+its own user namespace gets capabilities, over that namespace alone. The
+Ubuntu 24.04 runner also restricts user namespaces with AppArmor, a setting of
+the host that a container cannot change, so the image jobs run on the runner
+itself, set `kernel.apparmor_restrict_unprivileged_userns=0` and start the
+container through `tools/image.sh` instead of as the job's container. The root
+phase has the network, as the fetch phase needs it, and installs the tools from
+the file mirror of the verified store.
 
 Nothing in the build or the checks needs root or a mount. The checks read the
 root through `scripts/erofs_read.py`, which parses the erofs format (the

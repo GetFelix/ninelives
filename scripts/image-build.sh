@@ -166,7 +166,11 @@ if [[ ${NL_IMAGE_PHASE:-fetch} == fetch ]]; then
   getent passwd "$build_uid" >/dev/null || useradd --uid "$build_uid" --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin nlbuild
   build_user=$(id -nu "$build_uid")
   chown "$build_uid" "$work"
-  [[ ! -d ${HOME:-/nonexistent} || $HOME == / ]] || chown "$build_uid" "$HOME"
+  # The caller's HOME is kept when it is not root's (the rebuild varies it); the user owns it.
+  child_home=${HOME:-}
+  if [[ -z $child_home || $child_home == / || $child_home == /root ]]; then child_home=$work/home; fi
+  mkdir -p "$child_home"
+  chown "$build_uid" "$child_home"
   rm -rf "$work/out"
   mkdir "$work/out"
   chown "$build_uid" "$work/out"
@@ -175,7 +179,7 @@ if [[ ${NL_IMAGE_PHASE:-fetch} == fetch ]]; then
   # namespace with nothing but loopback. unshare maps the user to itself, so
   # mkosi sees an ordinary user and takes its unprivileged path.
   rc=0
-  NL_IMAGE_PHASE=build setpriv --reuid="$build_uid" --regid="$(id -g "$build_user")" --clear-groups -- \
+  NL_IMAGE_PHASE=build HOME="$child_home" setpriv --reuid="$build_uid" --regid="$(id -g "$build_user")" --clear-groups -- \
     unshare --user --map-current-user --net -- \
     "$0" --kernel "$kernel_dir" --init "$init_bin" --out "$work/out" --work "$work" || rc=$?
   # Whatever was written is copied, so a failed run still hands over what it found.

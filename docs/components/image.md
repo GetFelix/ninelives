@@ -343,12 +343,43 @@ repository; changing one is a reviewed pull request
 | **Kernel source** | `kernel/VERSION`: the version, the `.tar.xz` URL on cdn.kernel.org and its SHA-256 | The SHA-256 first, then the `.tar.sign` signature over the decompressed tarball with `gpgv` against `kernel/keys/`. The signing key's fingerprint must be in the pinned list (0007). Both checks, because a hash alone trusts the reviewer and a signature alone accepts any release the maintainers signed. The bump job also compares the tarball with `git archive` of the signed stable tag ([Tarballs against tags](#tarballs-against-tags)). The kernel job does this; the image job takes its artifact. | Build fails |
 | **Microcode** (x86_64) | Debian's `intel-microcode` and `amd64-microcode`, in the lock | As Debian packages. Built into the kernel with `CONFIG_EXTRA_FIRMWARE`, never installed in the root ([kernel design](kernel.md)). *Not built yet:* the qemu kernel is built without microcode; it arrives with the real-hardware targets. | Build fails |
 | **Felix and felixd** | `images/components.toml` | As 0004: SHA-256, and for felixd the Sigstore bundle on `SHA256SUMS` against the identity and issuer in the manifest, verified offline against a Sigstore trusted root pinned in `images/keys/sigstore/`. Felix 0.7.2 has no signature and is checked by hash only. On main, after v0.7.2, the server `SHA256SUMS` is signed with Sigstore ([felix#2845](https://github.com/GetFelix/felix/pull/2845)); once M1 pins a release that has the bundle, the manifest records it like felixd's and the fetch verifies it. A nightly is never pinned. The fetch downloads `SHA256SUMS` and its bundle, verifies the bundle offline with the pinned cosign, checks that the certificate carries exactly the manifest's identity and issuer, and then requires the artifact's hash to match the manifest and the signed line for its file name. *Not built yet:* Felix is checked by hash only until a pinned release carries a bundle ([#93](https://github.com/GetFelix/ninelives/issues/93)). | Build fails |
-| **NineLives' own programs** (init, join, the firewall loader) | This commit, `Cargo.lock`, and the Rust toolchain by exact version in `rust-toolchain.toml` | Cargo checks each crate's checksum against `Cargo.lock`. The toolchain archives are checked against SHA-256s committed in `images/tools.toml`, because rustup does not enforce its signatures. *Not built yet:* the toolchain archives are not checked against SHA-256s; CI runs `rustup toolchain install` ([#95](https://github.com/GetFelix/ninelives/issues/95)). | Build fails |
+| **NineLives' own programs** (init, join, the firewall loader) | This commit, `Cargo.lock`, and the Rust toolchain by exact version in `rust-toolchain.toml`. `images/tools.toml` pins the `rustc`, `cargo` and `rust-std` archives of that version by URL and SHA-256, for each architecture, and the `build` set of the lock pins gcc and the C library the linker needs | Cargo checks each crate's checksum against `Cargo.lock`. The toolchain archives are checked against the SHA-256s in `images/tools.toml`, because rustup does not enforce its signatures. The build runs in the bootstrap container, installs the archives offline and builds with `--locked --offline` ([Building the init](#building-the-init)). A bump checks the published signature once. *Not built yet:* join and the firewall loader do not exist yet; they build the same way. | Build fails |
 | **mkosi** | `images/tools.toml`: an exact release, its source archive URL and SHA-256 | SHA-256. mkosi needs only Python's standard library, so it runs from the archive with nothing resolved from PyPI. The version is chosen in #1. | Build fails |
 | **Bootstrap container** | `images/tools.toml`: the official Debian 13 slim container image by digest, plus the `bootstrap` set of `images/debian.lock` (python3, `gpgv`, xz-utils, ca-certificates and their dependencies) | The container runtime checks the digest. `scripts/bootstrap.sh` checks each bootstrap `.deb` against the lock's SHA-256 with `sha256sum` before `dpkg` unpacks it, and the lock is then regenerated against the signed archive, which catches drift but not a tampered lock ([Bootstrap](#bootstrap)). | Build fails |
 | **Build tools** (`mkfs.erofs`, `veritysetup`, `ukify`, `sbsign`, Clang (the kernel's compiler, [kernel design](kernel.md)), the Sigstore verifier, diffoscope) | mkosi's tools tree, built from the same Debian snapshot and listed in the lock; the Sigstore verifier (cosign, a static binary not in Debian 13), by version and SHA-256 in `images/tools.toml` | As Debian packages *Built so far:* `mkfs.erofs`, `veritysetup`, `ukify`, `systemd-repart` and their dependencies from Debian, in the lock, and diffoscope as the lock's `compare` set. cosign is fetched and hash-checked before it runs. *Not built yet:* `sbsign` and Clang in the image job; the tools are installed straight from the verified store, not through mkosi's tools tree. | Build fails |
 | **CI runner** | The `ubuntu-24.04` label, never `ubuntu-latest`. The image version GitHub reports is recorded in the provenance. | Nothing can verify a hosted runner. The bootstrap container and tools tree keep it to its kernel, its container runtime and the network. *Not built yet:* the runner image version is not recorded in provenance (no provenance yet, [#100](https://github.com/GetFelix/ninelives/issues/100)). | See [Open questions](#open-questions) |
 | **GitHub Actions** | Each by full commit SHA, with the tag in a comment | The workflow checks in [Actions hygiene](#actions-hygiene) (S21, #65) | PR fails |
+
+#### Building the init
+
+The init is built in the bootstrap container, never with rustup on the runner
+(`scripts/init-build.sh`, the `init-binary` and `init-rebuild` jobs and their
+aarch64 twins). `prepare` installs the `build` set of the lock (gcc and
+`libc6-dev`, each `.deb` checked against its SHA-256; rustc links through
+`cc`), then `scripts/init_toolchain.py` downloads the three Rust archives and
+checks each against its SHA-256 in `images/tools.toml`. It downloads every crate
+in `init/Cargo.lock` and checks each against the checksum there, so a registry
+that served other bytes fails the build. `build` unpacks the archives with their own
+installer, lays the crates out as a cargo directory source and runs
+`cargo build --release --locked --offline`. It stops unless `rustc` is the
+pinned version at the path it installed.
+
+Builds are native, so each architecture pins its own host archives and builds
+for its own target. The two builds of the reproducibility check differ in
+checkout path, work directory, job count and clock as before; path prefixes of
+the checkout, the crates and the toolchain are remapped to fixed names.
+
+A bump of the toolchain is a pull request that changes the version in
+`init/rust-toolchain.toml` and the pins in `images/tools.toml` together:
+`scripts/pin_toolchain.py VERSION --work DIR --write` downloads each archive,
+requires the published `.sha256` to match, requires the `.asc` signature to
+verify against the Rust release key in `images/keys/rust/` (by fingerprint,
+as for the Debian keys), and writes both files. The signature is checked only
+there; the build checks the hashes the bump wrote. CI fails if the two files
+name different versions (`scripts/init_toolchain.py check`).
+
+The `init` job (rustfmt, clippy, tests, cargo-deny) still uses rustup. It
+produces nothing that ships.
 
 #### Two phases: fetch, then build offline
 
@@ -501,7 +532,7 @@ yet:* the slice builds `production` only
 
 ### Reproducibility
 
-*Built so far:* `SOURCE_DATE_EPOCH` from the commit, fixed UUID and verity seeds, a salt derived from the commit, a check that every file's time is `SOURCE_DATE_EPOCH`, and the two-build comparison below: the `image-rebuild` and `image-compare` jobs, part of `CI ok`. *Not built yet:* the independent rebuild on other hardware (first published image); the SBOM and provenance in the comparison ([#100](https://github.com/GetFelix/ninelives/issues/100)); the init is built with `--locked` and a path remap but not `--offline`, and its toolchain is not pinned by hash ([#95](https://github.com/GetFelix/ninelives/issues/95)).
+*Built so far:* `SOURCE_DATE_EPOCH` from the commit, fixed UUID and verity seeds, a salt derived from the commit, a check that every file's time is `SOURCE_DATE_EPOCH`, and the two-build comparison below: the `image-rebuild` and `image-compare` jobs, part of `CI ok`. *Not built yet:* the independent rebuild on other hardware (first published image); the SBOM and provenance in the comparison ([#100](https://github.com/GetFelix/ninelives/issues/100)).
 
 S5 asks for the same bytes from the same commit, on a clean runner, with a
 different build path and time.
@@ -579,10 +610,9 @@ timestamp, so an output that depended on the clock would differ.
 The container runs as root because the build mounts the filesystem it makes, so
 the user varies by name, not uid. The umask (`022`) and locale (`LC_ALL=C`) are
 pinned by the build scripts, not varied: the caller's values do not reach the
-build, and nothing proves more than that. The kernel and init jobs are on the
-runner, whose operating system, toolchain installer and Rust toolchain are not
-pinned by hash ([#65](https://github.com/GetFelix/ninelives/issues/65),
-[#95](https://github.com/GetFelix/ninelives/issues/95)).
+build, and nothing proves more than that. The kernel and init jobs run in
+the pinned container, so the runner supplies only its kernel and container
+runtime.
 
 A red `image-compare` must not be cleared by running it again: a retry would hide
 the nondeterminism it found, so a mismatch is fixed in a commit.

@@ -22,6 +22,7 @@ def main() -> int:
     stage = json.loads((args.meta / "stage.json").read_text())
     kernel = ic.load_toml(ic.ROOT / "kernel" / "VERSION")
     tools = ic.load_toml(ic.IMAGES / "tools.toml")
+    rust = ic.arch_section(tools["rust"], ic.target_arch())
     inv = {
         "commit": args.commit,
         "source_date_epoch": args.source_date_epoch,
@@ -35,9 +36,9 @@ def main() -> int:
             "config_sha256": ic.sha256_file(args.kernel_dir / ".config"),
         },
         "init": {"sha256": ic.sha256_file(args.init)},
-        # NineLives' own programs are built with this toolchain (init/rust-toolchain.toml).
-        "toolchain": {"rust": ic.load_toml(ic.ROOT / "init" / "rust-toolchain.toml")["toolchain"]["channel"],
-                      "pinned_by_hash": False},
+        # NineLives' own programs are built with this toolchain (images/tools.toml, [rust]).
+        "toolchain": {"rust": rust["version"], "pinned_by_hash": True,
+                      "archives": {c["name"]: c["sha256"] for c in rust["component"]}},
         "mkosi": {"version": tools["mkosi"]["version"], "sha256": tools["mkosi"]["sha256"]},
         "bootstrap_image": tools["bootstrap"]["image"],
     }

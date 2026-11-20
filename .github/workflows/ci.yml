@@ -81,6 +81,8 @@ jobs:
           python3 scripts/check_components.py "${args[@]}"
       - name: Image pins
         run: python3 -I scripts/image_lock.py check
+      - name: Rust toolchain pins
+        run: python3 -I scripts/init_toolchain.py check
 
   init:
     runs-on: ubuntu-latest
@@ -142,7 +144,7 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
             # The checkout is the merge commit; its first parent is the base.
             if ! git diff --name-only HEAD^1 HEAD \
-              | grep -qE '^(kernel/|images/|rootfs/|init/|tools/(image|boot)\.sh$|scripts/(arch\.sh|bootstrap\.sh|check_kernel_config\.py|fetch_kernel\.py|kernel_build\.sh|image[-_a-z]*\.(py|sh)|boot[-_a-z]*\.(py|sh)|fetch_image\.py|sigstore_verify\.py|check_image\.py|faketime(_lib\.py|\.sh))$|\.github/workflows/ci\.yml$)'; then
+              | grep -qE '^(kernel/|images/|rootfs/|init/|tools/(image|boot)\.sh$|scripts/(arch\.sh|bootstrap\.sh|check_kernel_config\.py|fetch_kernel\.py|kernel_build\.sh|image[-_a-z]*\.(py|sh)|init[-_a-z]*\.(py|sh)|pin_toolchain\.py|boot[-_a-z]*\.(py|sh)|fetch_image\.py|sigstore_verify\.py|check_image\.py|faketime(_lib\.py|\.sh))$|\.github/workflows/ci\.yml$)'; then
               run=false
             fi
           fi
@@ -261,33 +263,37 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
-  # The init the image installs at /usr/lib/ninelives/init. Built on the
-  # runner with the toolchain rust-toolchain.toml pins; pinning the toolchain
-  # archives by hash is tracked with the build pipeline pins (#65).
+  # The init the image installs at /usr/lib/ninelives/init. Built in the
+  # bootstrap container with the Rust toolchain archives pinned by SHA-256 in
+  # images/tools.toml and the crates of Cargo.lock, offline (scripts/init-build.sh).
   init-binary:
     needs: kernel-changes
     if: needs.kernel-changes.outputs.run == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     outputs:
       artifact: ${{ steps.up.outputs.artifact-id }}
+    # The same Debian 13 container as the image job, by digest. gcc comes from
+    # the lock and the Rust toolchain from the pins in images/tools.toml,
+    # checked by SHA-256 (scripts/init-build.sh); nothing from the runner.
+    container:
+      image: debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 # trixie-20261104-slim
     defaults:
       run:
-        working-directory: init
+        shell: bash
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - name: Toolchain
-        run: rustup toolchain install
+      - name: Build tools, toolchain and crates from the pins
+        run: scripts/init-build.sh prepare --work /__w/_temp/init
       - name: Build
-        env:
-          RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=/build --remap-path-prefix=/home/runner/.cargo=/cargo
-        run: cargo build --release --locked
+        run: scripts/init-build.sh build --work /__w/_temp/init
       - id: up
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: init-x86_64
-          path: init/target/release/init
+          path: /__w/_temp/init/out/init
           if-no-files-found: error
 
   # Build B of the kernel (image.md, "Reproducibility"): the x86_64 kernel again
@@ -364,10 +370,10 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
-  # Build B of the init: another checkout path, another CARGO_HOME, one cargo
+  # Build B of the init: another checkout path and work directory, one cargo
   # job, and cargo under libfaketime 400 days ahead for the build only (the
-  # crates are fetched first, at the real time). libfaketime comes from images/debian.lock,
-  # not the runner's apt.
+  # toolchain and crates are fetched first, at the real time). libfaketime comes
+  # from images/debian.lock, not the runner's apt.
   init-rebuild:
     needs: kernel-changes
     if: needs.kernel-changes.outputs.run == 'true'
@@ -375,44 +381,43 @@ jobs:
     timeout-minutes: 60
     outputs:
       artifact: ${{ steps.up.outputs.artifact-id }}
+    container:
+      image: debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 # trixie-20261104-slim
     env:
-      CARGO_HOME: /home/runner/cargo-other
       CARGO_BUILD_JOBS: "1"
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
           path: other/checkout
+      - name: Build tools, toolchain and crates from the pins
+        working-directory: other/checkout
+        run: scripts/init-build.sh prepare --work /__w/_temp/init-other
       - name: libfaketime from the lock
         working-directory: other/checkout
         run: |
           python3 -I scripts/fetch_image.py --out "$RUNNER_TEMP/faketime-store" --faketime
           python3 -I scripts/faketime_lib.py --store "$RUNNER_TEMP/faketime-store" --out "$RUNNER_TEMP/faketime" > "$RUNNER_TEMP/faketime.path"
-      - name: Toolchain
-        working-directory: other/checkout/init
-        run: rustup toolchain install
-      - name: Fetch the crates
-        working-directory: other/checkout/init
-        run: cargo fetch --locked
       # rustc hangs under libfaketime (its threads wait on condition variables
       # with timeouts the library rewrites), so cargo and the build scripts it
       # runs see the moved clock and rustc itself does not.
       - name: Build, one job, cargo 400 days ahead
         timeout-minutes: 20
-        working-directory: other/checkout/init
-        env:
-          RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}/other/checkout=/build --remap-path-prefix=/home/runner/cargo-other=/cargo
+        working-directory: other/checkout
         run: |
-          . ../scripts/faketime.sh
+          . scripts/faketime.sh
           faketime_on "$(cat "$RUNNER_TEMP/faketime.path")" 400
           printf '#!/bin/sh\nexec env -u LD_PRELOAD -u FAKETIME "$@"\n' > "$RUNNER_TEMP/real-clock-rustc"
           chmod +x "$RUNNER_TEMP/real-clock-rustc"
-          RUSTC_WRAPPER="$RUNNER_TEMP/real-clock-rustc" cargo build --release --locked --offline
+          RUSTC_WRAPPER="$RUNNER_TEMP/real-clock-rustc" scripts/init-build.sh build --work /__w/_temp/init-other
       - id: up
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: init-x86_64-rebuild
-          path: other/checkout/init/target/release/init
+          path: /__w/_temp/init-other/out/init
           if-no-files-found: error
 
   # Builds the x86_64 qemu production image from this commit: fetch and
@@ -694,26 +699,32 @@ jobs:
     needs: kernel-changes
     if: needs.kernel-changes.outputs.run == 'true'
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
     outputs:
       artifact: ${{ steps.up.outputs.artifact-id }}
+    # The same Debian 13 container as the image job, by digest. gcc comes from
+    # the lock and the Rust toolchain from the pins in images/tools.toml,
+    # checked by SHA-256 (scripts/init-build.sh); nothing from the runner.
+    container:
+      image: debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 # trixie-20261104-slim
+    env:
+      NL_ARCH: aarch64
     defaults:
       run:
-        working-directory: init
+        shell: bash
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - name: Toolchain
-        run: rustup toolchain install
+      - name: Build tools, toolchain and crates from the pins
+        run: scripts/init-build.sh prepare --work /__w/_temp/init
       - name: Build
-        env:
-          RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=/build --remap-path-prefix=/home/runner/.cargo=/cargo
-        run: cargo build --release --locked
+        run: scripts/init-build.sh build --work /__w/_temp/init
       - id: up
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: init-aarch64
-          path: init/target/release/init
+          path: /__w/_temp/init/out/init
           if-no-files-found: error
 
   kernel-rebuild-aarch64:
@@ -790,45 +801,44 @@ jobs:
     timeout-minutes: 60
     outputs:
       artifact: ${{ steps.up.outputs.artifact-id }}
+    container:
+      image: debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 # trixie-20261104-slim
     env:
       NL_ARCH: aarch64
-      CARGO_HOME: /home/runner/cargo-other
       CARGO_BUILD_JOBS: "1"
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
           path: other/checkout
+      - name: Build tools, toolchain and crates from the pins
+        working-directory: other/checkout
+        run: scripts/init-build.sh prepare --work /__w/_temp/init-other
       - name: libfaketime from the lock
         working-directory: other/checkout
         run: |
           python3 -I scripts/fetch_image.py --out "$RUNNER_TEMP/faketime-store" --faketime
           python3 -I scripts/faketime_lib.py --store "$RUNNER_TEMP/faketime-store" --out "$RUNNER_TEMP/faketime" > "$RUNNER_TEMP/faketime.path"
-      - name: Toolchain
-        working-directory: other/checkout/init
-        run: rustup toolchain install
-      - name: Fetch the crates
-        working-directory: other/checkout/init
-        run: cargo fetch --locked
       # rustc hangs under libfaketime (its threads wait on condition variables
       # with timeouts the library rewrites), so cargo and the build scripts it
       # runs see the moved clock and rustc itself does not.
       - name: Build, one job, cargo 400 days ahead
         timeout-minutes: 20
-        working-directory: other/checkout/init
-        env:
-          RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}/other/checkout=/build --remap-path-prefix=/home/runner/cargo-other=/cargo
+        working-directory: other/checkout
         run: |
-          . ../scripts/faketime.sh
+          . scripts/faketime.sh
           faketime_on "$(cat "$RUNNER_TEMP/faketime.path")" 400
           printf '#!/bin/sh\nexec env -u LD_PRELOAD -u FAKETIME "$@"\n' > "$RUNNER_TEMP/real-clock-rustc"
           chmod +x "$RUNNER_TEMP/real-clock-rustc"
-          RUSTC_WRAPPER="$RUNNER_TEMP/real-clock-rustc" cargo build --release --locked --offline
+          RUSTC_WRAPPER="$RUNNER_TEMP/real-clock-rustc" scripts/init-build.sh build --work /__w/_temp/init-other
       - id: up
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: init-aarch64-rebuild
-          path: other/checkout/init/target/release/init
+          path: /__w/_temp/init-other/out/init
           if-no-files-found: error
 
   image-aarch64:

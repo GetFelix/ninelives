@@ -1,6 +1,6 @@
 # Every Debian package the image build uses, by name, version and SHA-256,
-# for the root, the build tools, the boot test's tools, the comparison's tools, libfaketime and the bootstrap
-# step's packages separately. Written by
+# for the root, the build tools, the boot test's tools, the comparison's tools, libfaketime, the bootstrap
+# step's packages and the init's build tools separately. Written by
 # scripts/image_lock.py; CI regenerates it and fails on a difference, so
 # a hand edit cannot add a package resolution would not. Change it only in
 # a reviewed pull request that touches pin files and nothing else
@@ -3277,6 +3277,411 @@ architecture = "arm64"
 source = "xz-utils"
 
 [[bootstrap.package]]
+name = "zlib1g"
+version = "1:1.3.dfsg+really1.3.1-1+deb13u1"
+sha256 = "0e41b3d7ad8ad7fcd36dd4d61ca91a70018478fc4af652e044f4be770784ddff"
+archive = "debian-security"
+filename = "pool/updates/main/z/zlib/zlib1g_1.3.dfsg+really1.3.1-1+deb13u1_arm64.deb"
+architecture = "arm64"
+source = "zlib"
+
+[build]
+release = "trixie"
+
+[[build.suite]]
+archive = "debian"
+name = "trixie"
+inrelease_sha256 = "0584fba32e13e0ab8285fb16c27adea1ec03a73669c18702821094fd6ca86675"
+
+[[build.suite]]
+archive = "debian"
+name = "trixie-updates"
+inrelease_sha256 = "871ca324ca5e0d5e848fafbd9be0b6ff245563ef2362f685d15ccefc55a0a294"
+
+[[build.suite]]
+archive = "debian-security"
+name = "trixie-security"
+inrelease_sha256 = "619dd69e766c1f8ea8dd5bb1741154960804a8b9849b021e14c8fd1c6af269ab"
+
+[[build.package]]
+name = "binutils"
+version = "2.44-3"
+sha256 = "7228716cad15e78d1571f1cd4ec7141f64608790d0fbcba23a07f2eda6298272"
+archive = "debian"
+filename = "pool/main/b/binutils/binutils_2.44-3_arm64.deb"
+architecture = "arm64"
+source = "binutils"
+
+[[build.package]]
+name = "binutils-aarch64-linux-gnu"
+version = "2.44-3"
+sha256 = "79cbf1459118bce3535133ffbf1fd2adbd57af65271f95c829af5cfa7f474168"
+archive = "debian"
+filename = "pool/main/b/binutils/binutils-aarch64-linux-gnu_2.44-3_arm64.deb"
+architecture = "arm64"
+source = "binutils"
+
+[[build.package]]
+name = "binutils-common"
+version = "2.44-3"
+sha256 = "f2d6b7d0b5521c4c90fc105e32819cd5268c1aa69104173b3fb856595f898249"
+archive = "debian"
+filename = "pool/main/b/binutils/binutils-common_2.44-3_arm64.deb"
+architecture = "arm64"
+source = "binutils"
+
+[[build.package]]
+name = "cpp"
+version = "4:14.2.0-1"
+sha256 = "88b702b0fa5942a4ee52c27f1ccf6316b831357e86693b709d216ba43348172e"
+archive = "debian"
+filename = "pool/main/g/gcc-defaults/cpp_14.2.0-1_arm64.deb"
+architecture = "arm64"
+source = "gcc-defaults"
+
+[[build.package]]
+name = "cpp-14"
+version = "14.2.0-19"
+sha256 = "0b440241f7c3e2e87f2d0f1dd36792c4e2705d38a699ed331818799f21ef9437"
+archive = "debian"
+filename = "pool/main/g/gcc-14/cpp-14_14.2.0-19_arm64.deb"
+architecture = "arm64"
+source = "gcc-14"
+
+[[build.package]]
+name = "cpp-14-aarch64-linux-gnu"
+version = "14.2.0-19"
+sha256 = "8e588ac3efe06f7784b08feac584c70e6965b74c045bae7e4e80bb42938f7dbe"
+archive = "debian"
+filename = "pool/main/g/gcc-14/cpp-14-aarch64-linux-gnu_14.2.0-19_arm64.deb"
+architecture = "arm64"
+source = "gcc-14"
+
+[[build.package]]
+name = "cpp-aarch64-linux-gnu"
+version = "4:14.2.0-1"
+sha256 = "bd9c9f4536a0aea285c4735d2dfedff624f8457b8f1bb3d15ab924e029cd7aff"
+archive = "debian"
+filename = "pool/main/g/gcc-defaults/cpp-aarch64-linux-gnu_14.2.0-1_arm64.deb"
+architecture = "arm64"
+source = "gcc-defaults"
+
+[[build.package]]
+name = "gcc"
+version = "4:14.2.0-1"
+sha256 = "f543b52e29a6780a78c73cf08e551e8e524d623c1092c477cfd8beb5285a86f5"
+archive = "debian"
+filename = "pool/main/g/gcc-defaults/gcc_14.2.0-1_arm64.deb"
+architecture = "arm64"
+source = "gcc-defaults"
+
+[[build.package]]
+name = "gcc-14"
+version = "14.2.0-19"
+sha256 = "f4ba77903d7efc3c64c69a8a98c7efa8ea1ae4331521bb74abd76bcc43f1b576"
+archive = "debian"
+filename = "pool/main/g/gcc-14/gcc-14_14.2.0-19_arm64.deb"
+architecture = "arm64"
+source = "gcc-14"
+
+[[build.package]]
+name = "gcc-14-aarch64-linux-gnu"
+version = "14.2.0-19"
+sha256 = "5ff736a332ba5d60ad463355ed25c8c39da1281acf9155cc2f8a55fc1d478be8"
+archive = "debian"
+filename = "pool/main/g/gcc-14/gcc-14-aarch64-linux-gnu_14.2.0-19_arm64.deb"
+architecture = "arm64"
+source = "gcc-14"
+
+[[build.package]]
+name = "gcc-14-base"
+version = "14.2.0-19"
+sha256 = "34ee90679b018c0e64234747a4c4c0ae6b7f63541115037465a8627c2dfbc594"
+archive = "debian"
+filename = "pool/main/g/gcc-14/gcc-14-base_14.2.0-19_arm64.deb"
+architecture = "arm64"
+source = "gcc-14"
+
+[[build.package]]
+name = "gcc-aarch64-linux-gnu"
+version = "4:14.2.0-1"
+sha256 = "c8390408ed90cc96d4fead68e313ed5ce147f1654807c23235818d535d2d7d7e"
+archive = "debian"
+filename = "pool/main/g/gcc-defaults/gcc-aarch64-linux-gnu_14.2.0-1_arm64.deb"
+architecture = "arm64"
+source = "gcc-defaults"
+
+[[build.package]]
+name = "libasan8"
+version = "14.2.0-19"
+sha256 = "5621bd583a3390b45726a8eebe23601f7fad86a25193e5349976cbf17e2bc9ad"
+archive = "debian"
+filename = "pool/main/g/gcc-14/libasan8_14.2.0-19_arm64.deb"
+architecture = "arm64"
+source = "gcc-14"
+
+[[build.package]]
+name = "libatomic1"
+version = "14.2.0-19"
+sha256 = "7ccff90234484bf21ae5ecb79d25b6a84b2f4038f65dd139085b2e3a937cd8dc"
+archive = "debian"
+filename = "pool/main/g/gcc-14/libatomic1_14.2.0-19_arm64.deb"
+architecture = "arm64"
+source = "gcc-14"
+
+[[build.package]]
+name = "libbinutils"
+version = "2.44-3"
+sha256 = "c51c0cc0272202d00fc3e6da8b96bfed2a428c239b689363abddd3bac6bd7a02"
+archive = "debian"
+filename = "pool/main/b/binutils/libbinutils_2.44-3_arm64.deb"
+architecture = "arm64"
+source = "binutils"
+
+[[build.package]]
+name = "libc-dev-bin"
+version = "2.41-12+deb13u4"
+sha256 = "cd4b3bdf404a01792003f4ca400bc602252ab24e0a8c53e45d474d1818dc02e3"
+archive = "debian"
+filename = "pool/main/g/glibc/libc-dev-bin_2.41-12+deb13u4_arm64.deb"
+architecture = "arm64"
+source = "glibc"
+
+[[build.package]]
+name = "libc6"
+version = "2.41-12+deb13u4"
+sha256 = "8784eda966b189c777a384dac5ce009e8fc9b52d006926c5a013e7fa8aa688cc"
+archive = "debian"
+filename = "pool/main/g/glibc/libc6_2.41-12+deb13u4_arm64.deb"
+architecture = "arm64"
+source = "glibc"
+
+[[build.package]]
+name = "libc6-dev"
+version = "2.41-12+deb13u4"
+sha256 = "71e373cb5e9da975b02fb4af555929cb1977560e2dd8245de4eb8a7b03677a08"
+archive = "debian"
+filename = "pool/main/g/glibc/libc6-dev_2.41-12+deb13u4_arm64.deb"
+architecture = "arm64"
+source = "glibc"
+
+[[build.package]]
+name = "libcc1-0"
+version = "14.2.0-19"
+sha256 = "f5e390b5fd65432b820afa403a61ab4d6286948fc07ca3aacb4d230a81f5c9a5"
+archive = "debian"
+filename = "pool/main/g/gcc-14/libcc1-0_14.2.0-19_arm64.deb"
+architecture = "arm64"
+source = "gcc-14"
+
+[[build.package]]
+name = "libcrypt-dev"
+version = "1:4.4.38-1"
+sha256 = "eec6d4658495cdb8ce505cad91e0918edb8086677f280f3851c07ccd70543054"
+archive = "debian"
+filename = "pool/main/libx/libxcrypt/libcrypt-dev_4.4.38-1_arm64.deb"
+architecture = "arm64"
+source = "libxcrypt"
+
+[[build.package]]
+name = "libcrypt1"
+version = "1:4.4.38-1"
+sha256 = "b9aaa808aa3812b3de3e54eb5dfb16762c1779db032604abef2354c02fdc29b8"
+archive = "debian"
+filename = "pool/main/libx/libxcrypt/libcrypt1_4.4.38-1_arm64.deb"
+architecture = "arm64"
+source = "libxcrypt"
+
+[[build.package]]
+name = "libctf-nobfd0"
+version = "2.44-3"
+sha256 = "7b1894cbd09bd59507af259ba680a1f5d3b68c6ba9e5d69508ea2d75b3f01be6"
+archive = "debian"
+filename = "pool/main/b/binutils/libctf-nobfd0_2.44-3_arm64.deb"
+architecture = "arm64"
+source = "binutils"
+
+[[build.package]]
+name = "libctf0"
+version = "2.44-3"
+sha256 = "12cb7df9eafd965c00c38a8720c5b78e7b0106390f69fe180a3b3589f407d550"
+archive = "debian"
+filename = "pool/main/b/binutils/libctf0_2.44-3_arm64.deb"
+architecture = "arm64"
+source = "binutils"
+
+[[build.package]]
+name = "libgcc-14-dev"
+version = "14.2.0-19"
+sha256 = "64b8ebc7182a69aa9525df6eab5e7eb849b947e350d821549f8a8a3e9b19e5ba"
+archive = "debian"
+filename = "pool/main/g/gcc-14/libgcc-14-dev_14.2.0-19_arm64.deb"
+architecture = "arm64"
+source = "gcc-14"
+
+[[build.package]]
+name = "libgcc-s1"
+version = "14.2.0-19"
+sha256 = "1108bc87879833d6d9a145f22a4a15cddb34e065b4b5f4b97bee586adbac2851"
+archive = "debian"
+filename = "pool/main/g/gcc-14/libgcc-s1_14.2.0-19_arm64.deb"
+architecture = "arm64"
+source = "gcc-14"
+
+[[build.package]]
+name = "libgmp10"
+version = "2:6.3.0+dfsg-3"
+sha256 = "a27bbc27f119161ea9702c8dd66f54131cdf0d2ca73000f50ea91ef2fdfef0fb"
+archive = "debian"
+filename = "pool/main/g/gmp/libgmp10_6.3.0+dfsg-3_arm64.deb"
+architecture = "arm64"
+source = "gmp"
+
+[[build.package]]
+name = "libgomp1"
+version = "14.2.0-19"
+sha256 = "43e84cb7971d8a4d8870cab6204e998ea4f23ee1339bb0ff556dd881bac82d25"
+archive = "debian"
+filename = "pool/main/g/gcc-14/libgomp1_14.2.0-19_arm64.deb"
+architecture = "arm64"
+source = "gcc-14"
+
+[[build.package]]
+name = "libgprofng0"
+version = "2.44-3"
+sha256 = "4642014c84f3d070d889725900fbd23165189597d45deddc7bdcf9928de9e32e"
+archive = "debian"
+filename = "pool/main/b/binutils/libgprofng0_2.44-3_arm64.deb"
+architecture = "arm64"
+source = "binutils"
+
+[[build.package]]
+name = "libhwasan0"
+version = "14.2.0-19"
+sha256 = "5a758db399fafd354b6488c4f250b7670fb1f61c31b4e4f329d0fbb750a17084"
+archive = "debian"
+filename = "pool/main/g/gcc-14/libhwasan0_14.2.0-19_arm64.deb"
+architecture = "arm64"
+source = "gcc-14"
+
+[[build.package]]
+name = "libisl23"
+version = "0.27-1"
+sha256 = "21c490db3fa5f0a517c55090a199334da6164589772ebd922dff1e569c78515d"
+archive = "debian"
+filename = "pool/main/i/isl/libisl23_0.27-1_arm64.deb"
+architecture = "arm64"
+source = "isl"
+
+[[build.package]]
+name = "libitm1"
+version = "14.2.0-19"
+sha256 = "d6f0255b498af876ab7bf4420672e43cbe58dcd577f0711131cbfbcbee283cdb"
+archive = "debian"
+filename = "pool/main/g/gcc-14/libitm1_14.2.0-19_arm64.deb"
+architecture = "arm64"
+source = "gcc-14"
+
+[[build.package]]
+name = "libjansson4"
+version = "2.14-2+b3"
+sha256 = "7938472b1ddfa8b0c8f58d5f44406ae7a77a342dbb502a02f6bf292b4f853ab0"
+archive = "debian"
+filename = "pool/main/j/jansson/libjansson4_2.14-2+b3_arm64.deb"
+architecture = "arm64"
+source = "jansson"
+
+[[build.package]]
+name = "liblsan0"
+version = "14.2.0-19"
+sha256 = "488a54a5fe01a926ae16d73dc7ea9f530f1bf63fae73640f741695eec2541a38"
+archive = "debian"
+filename = "pool/main/g/gcc-14/liblsan0_14.2.0-19_arm64.deb"
+architecture = "arm64"
+source = "gcc-14"
+
+[[build.package]]
+name = "libmpc3"
+version = "1.3.1-1+b3"
+sha256 = "d4cfe026a624e51641c80ef2af77387185714f62f3b5c87035e62d9ed8d9eec1"
+archive = "debian"
+filename = "pool/main/m/mpclib3/libmpc3_1.3.1-1+b3_arm64.deb"
+architecture = "arm64"
+source = "mpclib3"
+
+[[build.package]]
+name = "libmpfr6"
+version = "4.2.2-1"
+sha256 = "628a4ef58cc6815880f72e9d3953984a379a017e4042bc575f1fcbf3954d79ac"
+archive = "debian"
+filename = "pool/main/m/mpfr4/libmpfr6_4.2.2-1_arm64.deb"
+architecture = "arm64"
+source = "mpfr4"
+
+[[build.package]]
+name = "libsframe1"
+version = "2.44-3"
+sha256 = "d4a90764fa79858347aaa3197bc4489404f005d9cdbea9b2ec75a607ea5ff518"
+archive = "debian"
+filename = "pool/main/b/binutils/libsframe1_2.44-3_arm64.deb"
+architecture = "arm64"
+source = "binutils"
+
+[[build.package]]
+name = "libstdc++6"
+version = "14.2.0-19"
+sha256 = "6669b0c52a2e7c6af9adfdabce3ff6e286065cdfbc7b85280862b5f799daebee"
+archive = "debian"
+filename = "pool/main/g/gcc-14/libstdc++6_14.2.0-19_arm64.deb"
+architecture = "arm64"
+source = "gcc-14"
+
+[[build.package]]
+name = "libtsan2"
+version = "14.2.0-19"
+sha256 = "c767c05f3dade13b5780478366029f2ff32e44bea852c6a4d7a1f93f1363d3e3"
+archive = "debian"
+filename = "pool/main/g/gcc-14/libtsan2_14.2.0-19_arm64.deb"
+architecture = "arm64"
+source = "gcc-14"
+
+[[build.package]]
+name = "libubsan1"
+version = "14.2.0-19"
+sha256 = "b5539003465ea1e60f66b9e3a1019da182e826c82d480944f3656b12351c74c8"
+archive = "debian"
+filename = "pool/main/g/gcc-14/libubsan1_14.2.0-19_arm64.deb"
+architecture = "arm64"
+source = "gcc-14"
+
+[[build.package]]
+name = "libzstd1"
+version = "1.5.7+dfsg-1"
+sha256 = "924540bd59fdbfa77a0604360efdaca54411a43daf11c7e002a3c64791b67448"
+archive = "debian"
+filename = "pool/main/libz/libzstd/libzstd1_1.5.7+dfsg-1_arm64.deb"
+architecture = "arm64"
+source = "libzstd"
+
+[[build.package]]
+name = "linux-libc-dev"
+version = "6.12.117-1"
+sha256 = "8b4848725a2705e5b1612f2135c44300716690ba762368ab87df127e9a5ed416"
+archive = "debian-security"
+filename = "pool/updates/main/l/linux/linux-libc-dev_6.12.117-1_all.deb"
+architecture = "all"
+source = "linux"
+
+[[build.package]]
+name = "rpcsvc-proto"
+version = "1.4.3-1+b1"
+sha256 = "6ae3c216e6c7d8e042ad3f122b8aa89aff56b2b5174b1c5780a7841b3becd61c"
+archive = "debian"
+filename = "pool/main/r/rpcsvc-proto/rpcsvc-proto_1.4.3-1+b1_arm64.deb"
+architecture = "arm64"
+source = "rpcsvc-proto"
+
+[[build.package]]
 name = "zlib1g"
 version = "1:1.3.dfsg+really1.3.1-1+deb13u1"
 sha256 = "0e41b3d7ad8ad7fcd36dd4d61ca91a70018478fc4af652e044f4be770784ddff"

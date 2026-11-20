@@ -58,6 +58,16 @@ packages = [
   "systemd-repart", "systemd-ukify", "tar", "util-linux", "xz-utils",
 ]
 
+# What the init is built with besides the pinned Rust toolchain (scripts/init-build.sh).
+# rustc links through `cc`, so the build needs gcc and the C library's headers and
+# start files. scripts/bootstrap.sh installs this set into the bootstrap container,
+# each .deb checked against the lock, and may upgrade a package the container has.
+#   gcc        the linker driver, with binutils' ld
+#   libc6-dev  crt1.o, libc.so and the headers the build scripts compile against
+[build]
+release = "trixie"
+packages = ["gcc", "libc6-dev"]
+
 # What the CI boot test runs the image on (docs/components/image.md, "Boot test").
 # Same snapshot, same lock, same verification as the tools. The boot job and
 # tools/boot.sh install exactly this set in the bootstrap container.
@@ -98,6 +108,51 @@ packages = ["binutils", "diffoscope-minimal", "erofs-utils", "fdisk", "xxd"]
 [faketime]
 release = "trixie"
 packages = ["libfaketime"]
+
+# The Rust toolchain the init is built with, by exact version (init/rust-toolchain.toml
+# names the same one; scripts/init_toolchain.py check keeps them equal). Each archive
+# is pinned by SHA-256 because rustup does not enforce signatures. A bump runs
+# scripts/pin_toolchain.py, which checks the published .sha256 and the .asc signature
+# against images/keys/rust/ and writes this block; the build checks only the hashes.
+# The builds are native, so each architecture has its own host archives.
+# BEGIN rust pins (scripts/pin_toolchain.py)
+[rust]
+version = "1.99.1"
+triple = "x86_64-unknown-linux-gnu"
+
+[[rust.component]]
+name = "rustc"
+url = "https://static.rust-lang.org/dist/rustc-1.99.1-x86_64-unknown-linux-gnu.tar.xz"
+sha256 = "2ff05ff9c08a90861e7f6e4065b40a8b87463b4576186fd613871c3e37f2091f"
+
+[[rust.component]]
+name = "cargo"
+url = "https://static.rust-lang.org/dist/cargo-1.99.1-x86_64-unknown-linux-gnu.tar.xz"
+sha256 = "53f3521949404d595efb06a55c12c5658d4ed1c75566f33d3d514eaebe70bd8a"
+
+[[rust.component]]
+name = "rust-std"
+url = "https://static.rust-lang.org/dist/rust-std-1.99.1-x86_64-unknown-linux-gnu.tar.xz"
+sha256 = "109b074225bf5b9ea3820890876bfdf4ed161adbfaf94b2b4b5984c85ee5d958"
+
+[rust.aarch64]
+triple = "aarch64-unknown-linux-gnu"
+
+[[rust.aarch64.component]]
+name = "rustc"
+url = "https://static.rust-lang.org/dist/rustc-1.99.1-aarch64-unknown-linux-gnu.tar.xz"
+sha256 = "acdcdfe09ae1f103aa9a2b7f88903a9588bc2e99288af10e6fbf5514e2e49f25"
+
+[[rust.aarch64.component]]
+name = "cargo"
+url = "https://static.rust-lang.org/dist/cargo-1.99.1-aarch64-unknown-linux-gnu.tar.xz"
+sha256 = "5156832e0c1254e9b49a79edabdc6d4c35f32f8fc1cf3ca700f268ff96087ab0"
+
+[[rust.aarch64.component]]
+name = "rust-std"
+url = "https://static.rust-lang.org/dist/rust-std-1.99.1-aarch64-unknown-linux-gnu.tar.xz"
+sha256 = "e25668477083d6a9ddb87b9beb9c00742225f38233ccb4bfba3afa7a07427f52"
+# END rust pins
 
 # Verifies the Sigstore bundle on a component's SHA256SUMS (scripts/fetch_image.py).
 # A static binary, run in the bootstrap container with the trusted root below and

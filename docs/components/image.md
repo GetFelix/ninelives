@@ -50,7 +50,7 @@ release publishes the image with its SBOM, provenance and source.
 The `image` job in `.github/workflows/ci.yml`, x86_64 qemu, `production` only:
 the fetch phase and the offline build described below, the root as erofs with
 dm-verity, the UKI with its command line, the GPT disk, and every check in
-[Checks](#checks) except the three it names there. The outputs are the `.raw`,
+[Checks](#checks) except the two it names there. The outputs are the `.raw`,
 `.root.erofs`, `.root.verity`, `.roothash`, `.efi`, `.inventory.json`,
 `.files.json` and `SHA256SUMS`, plus `.origins.json`. The `boot` job then
 boots the `.raw` (see [Boot test](#boot-test)). The `image-rebuild` and
@@ -622,13 +622,12 @@ Each check fails the build on any violation. Each allowlist lives in
 | ESP contents | The ESP holds exactly the expected UKI files and nothing else, and its FAT has 512-byte sectors like the disk. Firmware ignores a FAT with other sectors, so the machine would boot nothing. | S13 |
 | Shared libraries of network daemons | Each network-facing binary's `DT_NEEDED` set equals its entry in `images/executables.toml`. | S4 |
 | Verity | `veritysetup verify` passes for the root against its hash tree and the root hash in the UKI. | S13 |
-| Kernel config | kernel-hardening-checker passes with the listed exceptions, and `CONFIG_MODULES` is off (0007). | S2 |
-| Init config | `init check` passes on the image's `init.toml`. | init design |
+| Kernel config | kernel-hardening-checker passes with the listed exceptions, and `CONFIG_MODULES` is off (0007). The image job fetches the tarball pinned in `images/tools.toml` with the build inputs and runs it on the `.config` of the kernel artifact the image was built from, with the kernel job's policy and exceptions (`scripts/image_hardening.py`). The artifact's `bzImage` is what the UKI holds, and its `.config` hash is in the inventory. | S2 |
+| Init config | `init check` passes on the image's `init.toml`. *Not built yet:* the init has no `check` command and the image has no `init.toml` until [#48](https://github.com/GetFelix/ninelives/issues/48); the job runs this check once they exist. | init design |
 | Actions hygiene | The workflow checks in [Actions hygiene](#actions-hygiene). | S21 |
 | Size budget | Each output is within `images/budget.toml`: the root partition, the UKI, the ESP's contents and the raw image. The budget is set from the first M0 build with a margin, the build warns at 90%, and raising it is a reviewed change that says why. Every pull request reports the size change (*not built yet:* the job summary shows the sizes and the check fails over budget, but nothing compares with the target branch, [#103](https://github.com/GetFelix/ninelives/issues/103)). | S1 |
 
-The first slice runs every check above except three. Kernel config and
-`init check` are tracked in
+The first slice runs every check above except two. `init check` is tracked in
 [#97](https://github.com/GetFelix/ninelives/issues/97), and Actions hygiene in
 [#65](https://github.com/GetFelix/ninelives/issues/65). The pull request check
 that a pin change touches nothing else (I12) is

@@ -453,6 +453,12 @@ jobs:
           chmod +x /__w/_temp/image/init/init
           scripts/image-build.sh --kernel /__w/_temp/image/kernel --init /__w/_temp/image/init/init \
             --out /__w/_temp/image/out --work /__w/_temp/image/work
+      # The same pinned checker and exceptions as the kernel job, on the
+      # .config of the kernel artifact this image was built from (the UKI's
+      # kernel is checked against that artifact's bzImage). The init half of
+      # the checks table waits on the init's config (#48).
+      - name: Kernel config of the image, kernel-hardening-checker
+        run: python3 -I scripts/image_hardening.py --kernel /__w/_temp/image/kernel --store /__w/_temp/image/work/store --work /__w/_temp/image/hardening
       - name: Sizes against the budget
         if: always()
         run: |

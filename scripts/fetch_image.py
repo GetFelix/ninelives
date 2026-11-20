@@ -194,6 +194,11 @@ def main() -> int:
     mk = tools["mkosi"]
     fetch_pinned(mk["url"], mk["sha256"], out / "mkosi" / f"mkosi-{mk['version']}.tar.gz")
 
+    # The image job's kernel config check (scripts/image_hardening.py) unpacks
+    # this; the bootstrap's CA bundle is gone by the time that job step runs.
+    khc = tools["kernel_hardening_checker"]
+    fetch_pinned(khc["url"], khc["sha256"], out / "khc" / f"kernel-hardening-checker-{khc['version']}.tar.gz")
+
     components = ic.load_toml(ic.IMAGES / "components.toml")
     verifier = fetch_verifier(tools, out)
     fetched = {c["name"]: fetch_component(c, args.target_arch, out, verifier) for c in components["component"]}

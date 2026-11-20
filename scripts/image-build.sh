@@ -181,6 +181,9 @@ if python3 -I -c 'import socket,sys; socket.create_connection(("1.1.1.1", 53), t
   exit 1
 fi
 load_pins
+# The outputs are read by whoever copies them out, a user other than this one
+# (veritysetup writes its hash tree 0600).
+trap 'chmod -R a+rX "$out"' EXIT
 # mkosi, from the verified archive.
 mkosi_ver=$(toml "$repo/images/tools.toml" mkosi version)
 mkdir -p "$work/mkosi"

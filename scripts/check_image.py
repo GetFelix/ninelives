@@ -300,14 +300,14 @@ def check_cmdline(line: str, expected: str, policy) -> list[str]:
     return out
 
 
-def check_esp(files: list[str], uki: bytes, expected_uki: bytes):
+def check_esp(files: list[str], uki: bytes, expected_uki: bytes, efi_boot: str = "BOOTX64.EFI"):
     out = []
-    want = {"EFI", "EFI/BOOT", "EFI/BOOT/BOOTX64.EFI"}
+    want = {"EFI", "EFI/BOOT", f"EFI/BOOT/{efi_boot}"}
     got = {f.strip("/") for f in files}
     if {g.upper() for g in got} != {w.upper() for w in want}:
         out.append(f"ESP: holds {sorted(got)}, expected exactly {sorted(want)}")
     if uki != expected_uki:
-        out.append("ESP: BOOTX64.EFI is not the built UKI")
+        out.append(f"ESP: {efi_boot} is not the built UKI")
     return out
 
 
@@ -476,7 +476,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--image", type=pathlib.Path, required=True)
     ap.add_argument("--meta", type=pathlib.Path, required=True)
-    ap.add_argument("--target", type=pathlib.Path, default=ic.IMAGES / "qemu-x86_64" / "target.toml")
+    ap.add_argument("--target", type=pathlib.Path, default=None)
     ap.add_argument("--commit", required=True)
     ap.add_argument("--kernel", type=pathlib.Path, required=True, help="the kernel artifact directory")
     ap.add_argument("--source-date-epoch", type=int, required=True)
@@ -484,15 +484,15 @@ def main() -> int:
     args = ap.parse_args()
 
     base = str(args.image)[:-len(".raw")]
-    target = ic.load_toml(args.target)
+    target = ic.load_toml(args.target or ic.target_path())
     arch = target["architecture"]
     origins = json.loads((args.meta / "origins.json").read_text())
     stage = json.loads((args.meta / "stage.json").read_text())
-    lock = ic.load_toml(ic.IMAGES / "debian.lock")
+    lock = ic.load_toml(ic.lock_path(arch))
     keep = ic.load_toml(ic.IMAGES / "packages.toml")["package"]
     users = ic.load_toml(ic.IMAGES / "users.toml")
     removals = ic.load_removals(ic.ROOT / "rootfs" / "removals.toml")
-    execs = ic.load_toml(ic.IMAGES / "executables.toml").get("executable", []) if (ic.IMAGES / "executables.toml").exists() else []
+    execs = ic.for_arch(ic.load_for_target(ic.IMAGES / "executables.toml", target).get("executable", []), arch) if (ic.IMAGES / "executables.toml").exists() else []
     links = {l["path"]: l["target"] for l in (ic.load_toml(ic.IMAGES / "symlinks.toml").get("symlink", [])
                                               if (ic.IMAGES / "symlinks.toml").exists() else [])}
     budget = ic.load_toml(ic.IMAGES / "budget.toml")[arch]
@@ -512,7 +512,7 @@ def main() -> int:
             print(e, file=sys.stderr)
             print("1 violations")
             return 1
-        errors += check_uki_sections(sections, ic.sha256_file(args.kernel / "bzImage"))
+        errors += check_uki_sections(sections, ic.sha256_file(args.kernel / target["kernel_file"]))
         line = sections[".cmdline"].rstrip(b"\0").decode("ascii")
         dm = dm_create(line)
         sizes = dm["sectors"] * 512
@@ -529,9 +529,9 @@ def main() -> int:
         espdir.mkdir()
         subprocess.run(["mcopy", "-s", "-n", "-i", str(esp), "::", str(espdir)], check=False)
         esp_files = sorted(os.path.relpath(os.path.join(dp, n), espdir) for dp, dn, fn in os.walk(espdir) for n in dn + fn)
-        esp_uki = next((espdir / f for f in esp_files if f.upper() == "EFI/BOOT/BOOTX64.EFI"), None)
+        esp_uki = next((espdir / f for f in esp_files if f.upper() == f"EFI/BOOT/{target['efi_boot']}".upper()), None)
         errors += check_esp_sector(esp.read_bytes()[:512])
-        errors += check_esp(esp_files, esp_uki.read_bytes() if esp_uki else b"", uki_path.read_bytes())
+        errors += check_esp(esp_files, esp_uki.read_bytes() if esp_uki else b"", uki_path.read_bytes(), target["efi_boot"])
 
         policy = kc.load_policy(kc.KERNEL / "policy.toml", arch)
         expected = asm.cmdline(target, policy, dm["sectors"], dm["blocks"], dm["roothash"], dm["salt"])

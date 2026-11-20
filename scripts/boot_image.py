@@ -3,6 +3,11 @@
 
   boot_image.py --image X.raw --ovmf-code F --ovmf-vars F --log serial.log
                 [--corrupt root|hash] [--accel auto|kvm|tcg] [--timeout SECONDS]
+                [--arch x86_64|aarch64] [--qemu BINARY]
+
+--arch picks the machine: q35 for x86_64, virt for aarch64. The firmware files
+are OVMF's for x86_64 and AAVMF's for aarch64 (--ovmf-code and --ovmf-vars name
+whichever the architecture uses).
 
 Without --corrupt the image must reach the init's ready line and nothing on the
 console may be a kernel panic, an oops or a dm-verity error. With --corrupt one
@@ -42,7 +47,15 @@ BLOCK = 4096
 # it, and verifying it reads the hash tree's first block. The offset only has
 # to be inside the block.
 FLIP = {"root": ("ninelives-root-a", 2048), "hash": ("ninelives-verity-a", 17)}
-TIMEOUTS = {"kvm": 180, "tcg": 900}
+# Seconds. Emulating aarch64 on any host is slower than emulating x86_64.
+TIMEOUTS = {"x86_64": {"kvm": 180, "tcg": 900}, "aarch64": {"kvm": 180, "tcg": 1500}}
+MACHINES = {
+    # (-machine type, -cpu under KVM, -cpu under TCG)
+    "x86_64": ("q35", "host", "max"),
+    # pauth-impdef makes TCG's pointer authentication cheap; the kernel uses it.
+    "aarch64": ("virt", "host", "max,pauth-impdef=on"),
+}
+QEMU = {"x86_64": "qemu-system-x86_64", "aarch64": "qemu-system-aarch64"}
 SETTLE = 3  # seconds to keep watching after the ready line, for a late panic
 REBOOT_WAIT = 40  # panic=10 reboots after 10 s; the rest is slack for TCG
 
@@ -170,9 +183,10 @@ def pick_accel(requested: str, kvm_ok: bool) -> str:
 
 
 def qemu_command(qemu: str, accel: str, image: pathlib.Path, code: pathlib.Path, vars_: pathlib.Path,
-                 log: pathlib.Path, snapshot: bool) -> list[str]:
+                 log: pathlib.Path, snapshot: bool, arch: str = "x86_64") -> list[str]:
+    machine, cpu_kvm, cpu_tcg = MACHINES[arch]
     return [
-        qemu, "-machine", f"q35,accel={accel}", "-cpu", "host" if accel == "kvm" else "max",
+        qemu, "-machine", f"{machine},accel={accel}", "-cpu", cpu_kvm if accel == "kvm" else cpu_tcg,
         "-smp", "2", "-m", "1024", "-nodefaults", "-display", "none", "-monitor", "none",
         # A reboot ends the run: a panic's reboot is the signal, and a loop is not wanted.
         "-no-reboot",
@@ -259,12 +273,13 @@ def main() -> int:
     ap.add_argument("--corrupt", choices=sorted(FLIP), help="flip one byte in the root or the hash tree of a copy first")
     ap.add_argument("--accel", choices=["auto", "kvm", "tcg"], default="auto")
     ap.add_argument("--timeout", type=float, help="seconds; default by accelerator")
-    ap.add_argument("--qemu", default="qemu-system-x86_64")
+    ap.add_argument("--arch", choices=sorted(MACHINES), default="x86_64")
+    ap.add_argument("--qemu", help="default: qemu-system-ARCH")
     args = ap.parse_args()
 
     kvm_ok = os.access("/dev/kvm", os.R_OK | os.W_OK)
     accel = pick_accel(args.accel, kvm_ok)
-    timeout = args.timeout or TIMEOUTS[accel]
+    timeout = args.timeout or TIMEOUTS[args.arch][accel]
     expect = "verity" if args.corrupt else "ready"
     args.log.parent.mkdir(parents=True, exist_ok=True)
     args.log.write_bytes(b"")
@@ -277,7 +292,8 @@ def main() -> int:
             image = work / "corrupt.raw"
             note = corrupt_copy(args.image, image, args.corrupt)
             print(note)
-        cmd = qemu_command(args.qemu, accel, image, args.ovmf_code, vars_copy, args.log, snapshot=not args.corrupt)
+        cmd = qemu_command(args.qemu or QEMU[args.arch], accel, image, args.ovmf_code, vars_copy, args.log,
+                           snapshot=not args.corrupt, arch=args.arch)
         print("+", " ".join(cmd), flush=True)
         with (work / "qemu.stderr").open("wb") as err:
             proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=err, stderr=err)
@@ -298,7 +314,7 @@ def main() -> int:
         errors.append(f"the VM did not reset after the panic (stopped: {why})")
     if stderr:
         print("qemu stderr:\n" + stderr)
-    result = {"expect": expect, "accel": accel, "stopped": why, "seconds": round(secs, 1), "corruption": note,
+    result = {"expect": expect, "arch": args.arch, "accel": accel, "stopped": why, "seconds": round(secs, 1), "corruption": note,
               "ok": not errors, "errors": errors}
     print("boot-result: " + json.dumps(result))
     if errors:

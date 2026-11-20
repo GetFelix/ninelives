@@ -31,7 +31,7 @@ def main() -> int:
         "kernel": {
             "version": kernel["version"],
             "tarball_sha256": kernel["sha256"],
-            "image_sha256": ic.sha256_file(args.kernel_dir / "bzImage"),
+            "image_sha256": ic.sha256_file(args.kernel_dir / ic.load_toml(ic.target_path())["kernel_file"]),
             "config_sha256": ic.sha256_file(args.kernel_dir / ".config"),
         },
         "init": {"sha256": ic.sha256_file(args.init)},

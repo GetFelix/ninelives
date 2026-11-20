@@ -47,7 +47,7 @@ def main() -> int:
     ap.add_argument("--kernel", type=pathlib.Path, required=True, help="the kernel artifact directory")
     ap.add_argument("--store", type=pathlib.Path, required=True, help="the fetch phase's output directory")
     ap.add_argument("--work", type=pathlib.Path, required=True)
-    ap.add_argument("--arch", choices=kc.SRCARCH, default="x86_64")
+    ap.add_argument("--arch", choices=kc.SRCARCH, default=ic.target_arch(), help="default: NL_ARCH, else x86_64")
     ap.add_argument("--policy", type=pathlib.Path, default=kc.KERNEL / "policy.toml")
     ap.add_argument("--exceptions", type=pathlib.Path, default=kc.KERNEL / "hardening-exceptions.toml")
     args = ap.parse_args()

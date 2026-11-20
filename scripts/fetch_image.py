@@ -23,6 +23,8 @@ Any mismatch exits non-zero before anything is built.
   fetch_image.py --out DIR --boot   only the packages the boot test runs on
   fetch_image.py --out DIR --compare   only the packages the comparison job runs on
   fetch_image.py --out DIR --faketime  only libfaketime
+
+The architecture is NL_ARCH (x86_64 if unset), or --target-arch.
 """
 import argparse
 import json
@@ -35,8 +37,6 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import image_common as ic  # noqa: E402
 import image_lock  # noqa: E402
 import sigstore_verify as sv  # noqa: E402
-
-ARCH = {"x86_64": "amd64"}
 
 
 def fail(msg: str) -> "None":
@@ -113,10 +113,10 @@ def fetch_pinned(url: str, sha256: str, dest: pathlib.Path) -> None:
         fail(f"{dest.name}: downloaded {digest}, pinned {sha256}")
 
 
-def fetch_verifier(tools: dict, out: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
-    """The pinned cosign binary and the pinned Sigstore trusted root."""
-    cs = tools["cosign"]
-    cosign = out / "tools" / f"cosign-{cs['version']}"
+def fetch_verifier(tools: dict, out: pathlib.Path, arch: str) -> tuple[pathlib.Path, pathlib.Path]:
+    """The pinned cosign binary for this architecture and the pinned Sigstore trusted root."""
+    cs = ic.arch_section(tools["cosign"], arch)
+    cosign = out / "tools" / f"cosign-{cs['version']}-{arch}"
     fetch_pinned(cs["url"], cs["sha256"], cosign)
     cosign.chmod(cosign.stat().st_mode | stat.S_IXUSR)
     sg = tools["sigstore"]
@@ -164,19 +164,20 @@ def main() -> int:
     parser.add_argument("--boot", action="store_true", help="fetch only the boot test's packages")
     parser.add_argument("--compare", action="store_true", help="fetch only the comparison job's packages (diffoscope)")
     parser.add_argument("--faketime", action="store_true", help="fetch only libfaketime")
-    parser.add_argument("--target-arch", default="x86_64", choices=sorted(ARCH))
+    parser.add_argument("--target-arch", default=ic.target_arch(), choices=sorted(ic.DEB_ARCH),
+                        help="default: NL_ARCH, else x86_64")
     args = parser.parse_args()
 
     tools = ic.load_toml(ic.IMAGES / "tools.toml")
-    lock = ic.load_toml(image_lock.LOCK)
+    lock = ic.load_toml(ic.lock_path(args.target_arch))
     errors = image_lock.check()
     if errors:
         fail("; ".join(errors))
     out = args.out
     out.mkdir(parents=True, exist_ok=True)
     snapshot, arch = lock["snapshot"], lock["architecture"]
-    if arch != ARCH[args.target_arch]:
-        fail(f"the lock is for {arch}, not {ARCH[args.target_arch]}")
+    if arch != ic.DEB_ARCH[args.target_arch]:
+        fail(f"the lock is for {arch}, not {ic.DEB_ARCH[args.target_arch]}")
 
     chosen = [n for n in ("boot", "compare", "faketime") if getattr(args, n)]
     if len(chosen) > 1:
@@ -200,8 +201,10 @@ def main() -> int:
     fetch_pinned(khc["url"], khc["sha256"], out / "khc" / f"kernel-hardening-checker-{khc['version']}.tar.gz")
 
     components = ic.load_toml(ic.IMAGES / "components.toml")
-    verifier = fetch_verifier(tools, out)
-    fetched = {c["name"]: fetch_component(c, args.target_arch, out, verifier) for c in components["component"]}
+    verifier = fetch_verifier(tools, out, args.target_arch)
+    # A component with no build for this architecture is not part of its image.
+    fetched = {c["name"]: fetch_component(c, args.target_arch, out, verifier)
+               for c in components["component"] if args.target_arch in c["artifacts"]}
 
     (out / "fetched.json").write_text(json.dumps({
         "snapshot": snapshot, "debs": n, "mkosi": mk["sha256"], "components": fetched,

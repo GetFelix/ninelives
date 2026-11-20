@@ -1,0 +1,27 @@
+# The qemu aarch64 target (docs/components/image.md, "Partition layout" and
+# "Boot without an initrd").
+
+architecture = "aarch64"
+console = "ttyAMA0,115200"
+# What differs by architecture: the kernel artifact's image, the UKI stub and
+# the file name firmware looks for, the Discoverable Partitions type of the
+# root, and the multiarch directory and loader the allowlists name.
+kernel_file = "Image"
+uki_stub = "/usr/lib/systemd/boot/efi/linuxaa64.efi.stub"
+efi_boot = "BOOTAA64.EFI"
+root_type = "root-arm64"
+triplet = "aarch64-linux-gnu"
+ld_so = "ld-linux-aarch64.so.1"
+# The root's disk is the first virtio disk in qemu. Cloud targets name theirs
+# in their own file.
+root_device = "/dev/vda2"
+verity_device = "/dev/vda3"
+# Fixed seeds, so the disk, partition and filesystem UUIDs are the same every
+# build. Changing one changes every image.
+disk_seed = "13f47a48-08f9-4596-9951-0fe3c95b7aec"
+erofs_uuid_seed = "98bf25e7-2d49-45e1-895c-656bc8a499be"
+
+[sizes]
+esp_mib = 256
+config_mib = 1
+data_mib = 128

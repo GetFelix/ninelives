@@ -6,3 +6,11 @@ root_erofs = 146846515
 uki = 6189466
 esp_files = 6189466
 raw = 782681702
+
+# aarch64's limits are provisional until its first build is measured: the
+# kernel image is not compressed, so the UKI is several times x86_64's.
+[aarch64]
+root_erofs = 200000000
+uki = 60000000
+esp_files = 60000000
+raw = 1000000000

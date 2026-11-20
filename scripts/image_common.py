@@ -5,6 +5,7 @@ with gpgv against the keys pinned in images/keys/debian/. Standard library
 only: the fetch phase runs before anything else is trusted.
 """
 import hashlib
+import os
 import pathlib
 import posixpath
 import re
@@ -29,6 +30,53 @@ load_fingerprints = fetch_kernel.load_fingerprints
 
 def load_toml(path: pathlib.Path) -> dict:
     return tomllib.loads(path.read_text(encoding="utf-8"))
+
+
+# The architectures the image builds for, and Debian's name for each.
+DEB_ARCH = {"x86_64": "amd64", "aarch64": "arm64"}
+
+
+def target_arch() -> str:
+    """The architecture of this build: NL_ARCH, x86_64 if unset.
+
+    Builds are native, so it is also the architecture of the machine the
+    scripts run on (the kernel is the exception: it is cross-built on x86_64).
+    """
+    arch = os.environ.get("NL_ARCH") or "x86_64"
+    if arch not in DEB_ARCH:
+        raise SystemExit(f"NL_ARCH={arch!r}: not one of {sorted(DEB_ARCH)}")
+    return arch
+
+
+def lock_path(arch: str | None = None) -> pathlib.Path:
+    """images/debian.lock for x86_64, images/debian-ARCH.lock for the others."""
+    arch = arch or target_arch()
+    return IMAGES / ("debian.lock" if arch == "x86_64" else f"debian-{arch}.lock")
+
+
+def target_path(arch: str | None = None) -> pathlib.Path:
+    return IMAGES / f"qemu-{arch or target_arch()}" / "target.toml"
+
+
+def arch_section(section: dict, arch: str) -> dict:
+    """A pin section as one architecture sees it.
+
+    The keys directly in the section are x86_64's; a sub-table named for
+    another architecture overrides them.
+    """
+    base = {k: v for k, v in section.items() if k not in DEB_ARCH}
+    return {**base, **section.get(arch, {})} if arch != "x86_64" else base
+
+
+def for_arch(entries: list[dict], arch: str) -> list[dict]:
+    """The entries of an allowlist that apply to this architecture (no `arches` means all)."""
+    return [e for e in entries if arch in e.get("arches", DEB_ARCH)]
+
+
+def load_for_target(path: pathlib.Path, target: dict) -> dict:
+    """An allowlist whose paths hold {triplet} and {ld_so}, filled in for the target."""
+    text = path.read_text(encoding="utf-8").replace("{triplet}", target["triplet"]).replace("{ld_so}", target["ld_so"])
+    return tomllib.loads(text)
 
 
 def sha256_file(path: pathlib.Path) -> str:

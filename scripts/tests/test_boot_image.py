@@ -148,7 +148,9 @@ class Setup(unittest.TestCase):
             bi.pick_accel("kvm", False)
 
     def test_tcg_waits_longer_than_kvm(self):
-        self.assertGreater(bi.TIMEOUTS["tcg"], bi.TIMEOUTS["kvm"])
+        for arch, t in bi.TIMEOUTS.items():
+            self.assertGreater(t["tcg"], t["kvm"], arch)
+        self.assertGreater(bi.TIMEOUTS["aarch64"]["tcg"], bi.TIMEOUTS["x86_64"]["tcg"])
 
     def test_qemu_command(self):
         p = pathlib.Path
@@ -161,6 +163,26 @@ class Setup(unittest.TestCase):
         kvm = bi.qemu_command("qemu", "kvm", p("i.raw"), p("c"), p("v"), p("l"), snapshot=False)
         self.assertEqual(kvm[kvm.index("-cpu") + 1], "host")
         self.assertFalse(any("snapshot" in c for c in kvm))
+
+    def test_x86_64_is_a_q35_machine(self):
+        p = pathlib.Path
+        cmd = bi.qemu_command("qemu", "kvm", p("i.raw"), p("c"), p("v"), p("l"), snapshot=False)
+        self.assertEqual(cmd[cmd.index("-machine") + 1], "q35,accel=kvm")
+
+    def test_aarch64_is_a_virt_machine_with_its_own_cpu(self):
+        p = pathlib.Path
+        tcg = bi.qemu_command("qemu", "tcg", p("i.raw"), p("code.fd"), p("vars.fd"), p("s.log"), snapshot=True, arch="aarch64")
+        self.assertEqual(tcg[tcg.index("-machine") + 1], "virt,accel=tcg")
+        self.assertEqual(tcg[tcg.index("-cpu") + 1], "max,pauth-impdef=on")
+        self.assertIn("if=pflash,format=raw,unit=1,file=vars.fd", tcg)
+        self.assertIn("virtio-blk-pci,drive=disk0", tcg)
+        kvm = bi.qemu_command("qemu", "kvm", p("i.raw"), p("c"), p("v"), p("l"), snapshot=False, arch="aarch64")
+        self.assertEqual(kvm[kvm.index("-machine") + 1], "virt,accel=kvm")
+        self.assertEqual(kvm[kvm.index("-cpu") + 1], "host")
+
+    def test_every_architecture_has_a_machine_a_qemu_and_timeouts(self):
+        self.assertEqual(set(bi.MACHINES), set(bi.QEMU))
+        self.assertEqual(set(bi.MACHINES), set(bi.TIMEOUTS))
 
 
 def disk(path: pathlib.Path) -> None:

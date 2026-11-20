@@ -16,6 +16,8 @@ set -euo pipefail
 umask 022  # apt reads the keyring and the store as its own user
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 export PYTHONDONTWRITEBYTECODE=1 LC_ALL=C
+# shellcheck source=scripts/arch.sh
+. "$repo/scripts/arch.sh"
 a="" b="" report="" work="" kernel_a="" kernel_b="" init_a="" init_b=""
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -42,12 +44,12 @@ print(d)' "$@"
 }
 
 if ! command -v python3 >/dev/null; then
-  "$repo/scripts/bootstrap.sh" "$repo/images/debian.lock"
+  "$repo/scripts/bootstrap.sh" "$lock"
 fi
 python3 -I "$repo/scripts/image_lock.py" check
 # The lock must be what resolution gives for the pins, so a hand edit cannot add a package.
 python3 -I "$repo/scripts/image_lock.py" generate "$work/debian.lock.regenerated"
-diff -u "$repo/images/debian.lock" "$work/debian.lock.regenerated"
+diff -u "$lock" "$work/debian.lock.regenerated"
 python3 -I "$repo/scripts/fetch_image.py" --out "$store" --compare
 
 snapshot=$(toml "$repo/images/tools.toml" debian snapshot)
@@ -68,14 +70,14 @@ Types: deb
 URIs: file://$mirror/archive/debian/$snapshot
 Suites: $release $release-updates
 Components: main
-Architectures: amd64
+Architectures: $deb_arch
 Signed-By: $keyring
 
 Types: deb
 URIs: file://$mirror/archive/debian-security/$snapshot
 Suites: $release-security
 Components: main
-Architectures: amd64
+Architectures: $deb_arch
 Signed-By: $keyring
 SRC
 apt-get update

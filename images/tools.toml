@@ -25,12 +25,18 @@ image = "debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600
 release = "trixie"
 packages = ["ca-certificates", "gpgv", "python3", "xz-utils"]
 
-# One snapshot.debian.org timestamp for everything Debian. The release of the
-# image's root and the release of the build tools are separate pins, so
-# either can move without the other.
+# One snapshot.debian.org timestamp for everything Debian, for every
+# architecture. The release of the image's root and the release of the build
+# tools are separate pins, so either can move without the other.
+#
+# Where a pin differs by architecture, the keys directly in its table are
+# x86_64's and a sub-table (here [boot.aarch64], [cosign.aarch64]) overrides
+# them for aarch64. images/debian.lock is x86_64's lock and
+# images/debian-aarch64.lock aarch64's. Builds are native: the aarch64 jobs
+# run on arm64 runners, in the same container image (the digest below is the
+# multi-architecture index), so the tools are arm64 packages.
 [debian]
 snapshot = "20261118T000000Z"
-architecture = "amd64"
 
 [root]
 release = "trixie"
@@ -57,9 +63,21 @@ packages = [
 # tools/boot.sh install exactly this set in the bootstrap container.
 #   qemu-system-x86  qemu-system-x86_64
 #   ovmf             the UEFI firmware, /usr/share/OVMF/OVMF_CODE_4M.fd
+# On aarch64 the machine is qemu's `virt` and the firmware is Debian's AAVMF:
+#   qemu-system-arm  qemu-system-aarch64
+#   qemu-efi-aarch64 /usr/share/AAVMF/AAVMF_CODE.fd
 [boot]
 release = "trixie"
 packages = ["ovmf", "qemu-system-x86"]
+qemu = "qemu-system-x86_64"
+firmware_code = "/usr/share/OVMF/OVMF_CODE_4M.fd"
+firmware_vars = "/usr/share/OVMF/OVMF_VARS_4M.fd"
+
+[boot.aarch64]
+packages = ["qemu-efi-aarch64", "qemu-system-arm"]
+qemu = "qemu-system-aarch64"
+firmware_code = "/usr/share/AAVMF/AAVMF_CODE.fd"
+firmware_vars = "/usr/share/AAVMF/AAVMF_VARS.fd"
 
 # What the CI comparison job runs on (docs/components/image.md,
 # "Reproducibility"): diffoscope, installed from the same snapshot and lock,
@@ -84,11 +102,15 @@ packages = ["libfaketime"]
 # Verifies the Sigstore bundle on a component's SHA256SUMS (scripts/fetch_image.py).
 # A static binary, run in the bootstrap container with the trusted root below and
 # the bundle, so it reaches no TUF or Rekor server. The fetch checks this hash
-# before running it. Linux x86_64 only, like the fetch phase.
+# before running it. The fetch phase runs the one for its own architecture.
 [cosign]
 version = "3.1.4"
 url = "https://github.com/sigstore/cosign/releases/download/v3.1.4/cosign-linux-amd64"
 sha256 = "424e2c97d0b45fd7a6b608a87f090f35633f4c23ece5f092d48bba11aaf4bbfa"
+
+[cosign.aarch64]
+url = "https://github.com/sigstore/cosign/releases/download/v3.1.4/cosign-linux-arm64"
+sha256 = "ade83b7aac62e131cacfe96d958948b2150cc9efec46a570a2649b8e27dedad2"
 
 # What the bundle is verified against: Fulcio's and Rekor's public keys, copied
 # from targets/trusted_root.json in github.com/sigstore/root-signing at commit

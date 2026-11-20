@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Boot a built qemu x86_64 image on a Linux host, the way CI's boot job does:
+# Boot a built qemu image on a Linux host, the way CI's boot job does:
 # the clean boot, then one byte flipped in the root and one in the hash tree.
 #
-#   tools/boot.sh --image FILE.raw --out DIR
+#   NL_ARCH=x86_64|aarch64 tools/boot.sh --image FILE.raw --out DIR
 #
 # FILE.raw is the image job's output. DIR gets one serial log per boot. Needs
 # docker or podman and network: python3 and gpgv come from the lock's bootstrap
@@ -24,6 +24,6 @@ done
 container=$(sed -n 's/^image = "\(.*\)"/\1/p' "$repo/images/tools.toml")
 devices=()
 [[ -e /dev/kvm ]] && devices=(--device /dev/kvm)
-exec "$engine" run --rm "${devices[@]}" \
+exec "$engine" run --rm "${devices[@]}" -e NL_ARCH="${NL_ARCH:-x86_64}" \
   -v "$repo":/src:ro -v "$image":/in/image.raw:ro -v "$out":/out \
   "$container" /src/scripts/boot-run.sh all --work /tmp/work --image /in/image.raw --out /out

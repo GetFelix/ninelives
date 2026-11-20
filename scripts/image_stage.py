@@ -30,7 +30,6 @@ import tarfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import image_common as ic  # noqa: E402
-import image_lock  # noqa: E402
 
 # Runtime mount points the init mounts over (init design): present as empty
 # directories, 0555 in the image.
@@ -195,7 +194,9 @@ def main() -> int:
     args = ap.parse_args()
     root, store = args.root, args.store
 
-    lock = ic.load_toml(image_lock.LOCK)
+    arch = ic.target_arch()
+    target = ic.load_toml(ic.target_path(arch))
+    lock = ic.load_toml(ic.lock_path(arch))
     keep_cfg = ic.load_toml(ic.IMAGES / "packages.toml")["package"]
     keep = {p["name"] for p in keep_cfg}
     locked = {p["name"]: p for p in lock["root"]["package"]}
@@ -224,7 +225,7 @@ def main() -> int:
     inventory = [{**{k: locked[n][k] for k in ("name", "version", "sha256", "source", "architecture")}, "kept": n in keep}
                  for n in sorted(installed)]
     removed = remove_packages(root, keep)
-    prune_files(root, ic.load_toml(ic.ROOT / "rootfs" / "prune.toml").get("prune", []))
+    prune_files(root, ic.for_arch(ic.load_for_target(ic.ROOT / "rootfs" / "prune.toml", target).get("prune", []), arch))
     write_file(root, "/etc/ld.so.conf", LD_SO_CONF)
     subprocess.run(["ldconfig", "-r", str(root)], check=True)
     for r in RESIDUE:
@@ -241,7 +242,11 @@ def main() -> int:
     install = ic.load_toml(ic.ROOT / "rootfs" / "components.toml")
     comp_inv = []
     for c in components:
-        art = c["artifacts"]["x86_64"]
+        # A component with no build for this architecture is left out of its
+        # image (Felix's server has none for aarch64, felix#2797).
+        art = c["artifacts"].get(arch)
+        if art is None:
+            continue
         archive = store / "components" / art["url"].rsplit("/", 1)[1]
         if ic.sha256_file(archive) != art["sha256"]:
             raise SystemExit(f"{archive.name} is not the pinned file")

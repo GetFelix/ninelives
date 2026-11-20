@@ -283,6 +283,24 @@ class Checks(unittest.TestCase):
             self.assertTrue(any("shell or interpreter: /usr/bin/" + name in o for o in out), name)
 
 
+class ReadTree(unittest.TestCase):
+    """The checks see an erofs image without mounting it: modes, owners and xattrs come from the format."""
+    SAMPLE = pathlib.Path(__file__).resolve().parent / "fixtures" / "sample.erofs"
+
+    def test_the_seeded_violations_are_found_in_a_real_image(self):
+        entries = ci.read_tree(self.SAMPLE)
+        self.assertTrue(any("/big" in v and "4755" in v for v in ci.check_setuid(entries)))
+        self.assertTrue(any("/small" in v and "user.note" in v for v in ci.check_xattrs(entries)))
+        self.assertTrue(ci.check_ownership(entries))
+        self.assertTrue(ci.check_times(entries, 1))
+        self.assertEqual(ci.check_times(entries, 1700000000), [])
+
+    def test_contents_are_readable_for_the_content_checks(self):
+        entries = {e.path: e for e in ci.read_tree(self.SAMPLE)}
+        self.assertEqual(entries["/small"].content(), b"hello\n")
+        self.assertEqual(len(entries["/big"].sha256()), 64)
+
+
 class Formats(unittest.TestCase):
     def test_dm_create_roundtrip(self):
         policy = ci.kc.load_policy(ci.kc.KERNEL / "policy.toml", "x86_64")

@@ -9,11 +9,11 @@ check returns every violation it finds, so one run shows the whole list.
   check_image.py --image X.raw --meta DIR --out DIR [--propose-executables]
 
 --meta holds origins.json and stage.json from image_stage.py. Writes
-X.files.json next to the other outputs. Needs root (mount) and the build
-tools (veritysetup, mcopy).
+X.files.json next to the other outputs. Needs no privilege: the root is read
+from the erofs format (erofs_read.py), and veritysetup verify works on files.
+Needs the build tools (veritysetup, fsck.erofs, mcopy).
 """
 import argparse
-import contextlib
 import json
 import os
 import pathlib
@@ -28,6 +28,7 @@ import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import check_kernel_config as kc  # noqa: E402
+import erofs_read as er  # noqa: E402
 import image_assemble as asm  # noqa: E402
 import image_common as ic  # noqa: E402
 
@@ -82,28 +83,11 @@ class Entry:
         return hashlib.sha256(self.content()).hexdigest()
 
 
-KINDS = {stat.S_IFREG: "file", stat.S_IFDIR: "dir", stat.S_IFLNK: "symlink", stat.S_IFIFO: "fifo",
-         stat.S_IFSOCK: "socket", stat.S_IFCHR: "chr", stat.S_IFBLK: "blk"}
-
-
-def walk_tree(root: pathlib.Path) -> list[Entry]:
-    def reader(path: str) -> bytes:
-        return (root / path.lstrip("/")).read_bytes()
-
-    out = [Entry("/", "dir", stat.S_IMODE(os.lstat(root).st_mode), os.lstat(root).st_uid, os.lstat(root).st_gid)]
-    for dirpath, dirnames, filenames in os.walk(root):
-        for n in sorted(dirnames + filenames):
-            p = pathlib.Path(dirpath) / n
-            st = os.lstat(p)
-            kind = KINDS.get(stat.S_IFMT(st.st_mode), "other")
-            try:
-                xattrs = os.listxattr(p, follow_symlinks=False)
-            except OSError:
-                xattrs = []
-            out.append(Entry("/" + os.path.relpath(p, root), kind, stat.S_IMODE(st.st_mode), st.st_uid, st.st_gid, st.st_size,
-                             xattrs, os.readlink(p) if kind == "symlink" else "", reader=reader if kind == "file" else None,
-                             mtime=int(st.st_mtime)))
-    return sorted(out, key=lambda e: e.path)
+def read_tree(erofs: pathlib.Path) -> list[Entry]:
+    """Every inode of the root image, read from the format itself: no mount, so no privilege."""
+    def make(path, kind, mode, uid, gid, size, xattrs, link, reader, mtime):
+        return Entry(path, kind, mode, uid, gid, size, xattrs, link, reader=reader, mtime=mtime)
+    return er.walk(erofs, make)
 
 
 # ---------------------------------------------------------------------------
@@ -458,16 +442,6 @@ def dm_create(line: str) -> dict:
     return {"sectors": int(f[1]), "blocks": int(f[8]), "roothash": f[11], "salt": f[12]}
 
 
-@contextlib.contextmanager
-def mounted(image: pathlib.Path):
-    with tempfile.TemporaryDirectory() as d:
-        subprocess.run(["mount", "-t", "erofs", "-o", "ro,loop", str(image), d], check=True)
-        try:
-            yield pathlib.Path(d)
-        finally:
-            subprocess.run(["umount", d], check=True)
-
-
 def propose_executables(entries) -> str:
     groups: dict[str, list[str]] = {}
     for e in entries:
@@ -560,18 +534,25 @@ def main() -> int:
         if "VARIANT_ID=production" not in os_rel:
             errors.append("UKI: os-release does not say VARIANT_ID=production")
 
-        with mounted(erofs) as root:
-            entries = walk_tree(root)
-            if args.propose_executables:
-                print(propose_executables(entries))
-                return 0
-            errors += check_setuid(entries) + check_times(entries, args.source_date_epoch) + check_xattrs(entries) + check_ownership(entries)
-            errors += check_special(entries, links) + check_users(entries, users)
-            errors += check_executables(entries, execs) + check_elf(entries) + check_needed(entries, execs) + check_needed_resolve(entries)
-            errors += check_packages(stage, keep, removals, lock) + check_origins(entries, origins) + check_secrets(entries)
-            files = [{"path": e.path, "type": e.kind, "mode": e.mode, "uid": e.uid, "gid": e.gid, "size": e.size,
-                      **({"sha256": e.sha256()} if e.kind == "file" else {}), **({"link": e.link} if e.link else {})}
-                     for e in entries]
+        fsck = subprocess.run(["fsck.erofs", str(erofs)], capture_output=True, text=True)
+        if fsck.returncode != 0:
+            errors.append(f"erofs: fsck.erofs failed: {fsck.stdout.strip()} {fsck.stderr.strip()}")
+        try:
+            entries = read_tree(erofs)
+        except er.ErofsError as e:
+            print(f"erofs: {e}", file=sys.stderr)
+            print("1 violations")
+            return 1
+        if args.propose_executables:
+            print(propose_executables(entries))
+            return 0
+        errors += check_setuid(entries) + check_times(entries, args.source_date_epoch) + check_xattrs(entries) + check_ownership(entries)
+        errors += check_special(entries, links) + check_users(entries, users)
+        errors += check_executables(entries, execs) + check_elf(entries) + check_needed(entries, execs) + check_needed_resolve(entries)
+        errors += check_packages(stage, keep, removals, lock) + check_origins(entries, origins) + check_secrets(entries)
+        files = [{"path": e.path, "type": e.kind, "mode": e.mode, "uid": e.uid, "gid": e.gid, "size": e.size,
+                  **({"sha256": e.sha256()} if e.kind == "file" else {}), **({"link": e.link} if e.link else {})}
+                 for e in entries]
         raw_size = args.image.stat().st_size
         errors += check_budget({"root_erofs": sizes, "uki": uki_path.stat().st_size,
                                 "esp_files": sum(p.stat().st_size for p in espdir.rglob("*") if p.is_file()), "raw": raw_size}, budget)

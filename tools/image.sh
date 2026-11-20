@@ -10,8 +10,10 @@
 # kernel-qemu-ARCH artifact; FILE is the init binary
 # (cargo build --release --locked in init/). Needs docker or podman, and
 # network for the fetch phase. The container has no git: the commit and its
-# time are read here and passed in. The container is privileged because the build
-# mounts the root filesystem it makes to check it.
+# time are read here and passed in. The container is not privileged: the build
+# runs as an unprivileged user in a user namespace, so the engine's default
+# seccomp profile and masked /proc paths are lifted (docs/components/image.md,
+# "Build environment").
 set -euo pipefail
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 engine=$(command -v docker || command -v podman) || { echo "needs docker or podman" >&2; exit 1; }
@@ -28,7 +30,13 @@ done
 image=$(sed -n 's/^image = "\(.*\)"/\1/p' "$repo/images/tools.toml")
 commit=$(git -C "$repo" rev-parse HEAD)
 epoch=$(git -C "$repo" log -1 --format=%ct)
-exec "$engine" run --rm --privileged \
+# podman spells the /proc unmasking differently from docker.
+case $engine in
+  *podman) proc_opt=unmask=ALL ;;
+  *) proc_opt=systempaths=unconfined ;;
+esac
+exec "$engine" run --rm \
+  --security-opt seccomp=unconfined --security-opt apparmor=unconfined --security-opt "$proc_opt" \
   -e COMMIT="$commit" -e SOURCE_DATE_EPOCH="$epoch" -e NL_ARCH="${NL_ARCH:-x86_64}" \
   -v "$repo":/src:ro -v "$kernel":/in/kernel:ro -v "$init":/in/init:ro -v "$out":/out \
   "$image" /src/scripts/image-build.sh --kernel /in/kernel --init /in/init --out /out --work /tmp/work

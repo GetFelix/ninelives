@@ -431,10 +431,12 @@ jobs:
     outputs:
       artifact: ${{ steps.up.outputs.artifact-id }}
     # The same Debian 13 container as images/tools.toml names, by digest.
-    # The build mounts the filesystem it makes, so it needs privileges.
+    # Not privileged: no capabilities, no devices. The build runs as an
+    # unprivileged user in a user namespace, which the default seccomp profile
+    # and masked /proc paths of a container would block (image.md, "Build environment").
     container:
       image: debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 # trixie-20261104-slim
-      options: --privileged
+      options: --security-opt seccomp=unconfined --security-opt apparmor=unconfined --security-opt systempaths=unconfined
     steps:
       # The container has no git. scripts/image-build.sh installs python3,
       # gpgv, xz-utils and ca-certificates from images/debian.lock, each .deb
@@ -480,7 +482,7 @@ jobs:
         run: |
           fetch='import socket; socket.create_connection(("github.com", 443), timeout=10)'
           python3 -I -c "$fetch"
-          if unshare --net -- python3 -I -c "$fetch" 2>/dev/null; then
+          if unshare --user --net -- python3 -I -c "$fetch" 2>/dev/null; then
             echo "a download worked inside the network namespace" >&2
             exit 1
           fi
@@ -505,9 +507,9 @@ jobs:
   # fetches every input itself. It varies the checkout path, the work and
   # output paths, the user's name and home, the time zone, the CPU count (one)
   # and the clock (libfaketime, 400 days ahead, for the build phase). The
-  # container runs as root because the build mounts the filesystem it makes, so
-  # the user varies by name, not uid. The umask and locale are not varied: the
-  # scripts pin both, and the caller's values are the runner's.
+  # build runs as an unprivileged user, whose uid differs from the first
+  # build's (NL_BUILD_UID) as well as its name. The umask and locale are not
+  # varied: the scripts pin both, and the caller's values are the runner's.
   image-rebuild:
     needs: [kernel-changes, kernel-rebuild, init-rebuild]
     if: needs.kernel-changes.outputs.run == 'true'
@@ -517,7 +519,7 @@ jobs:
       artifact: ${{ steps.up.outputs.artifact-id }}
     container:
       image: debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 # trixie-20261104-slim
-      options: --privileged
+      options: --security-opt seccomp=unconfined --security-opt apparmor=unconfined --security-opt systempaths=unconfined
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -536,6 +538,7 @@ jobs:
           COMMIT: ${{ github.sha }}
           SOURCE_DATE_EPOCH: ${{ needs.kernel-changes.outputs.epoch }}
           NL_FAKETIME_DAYS: "400"
+          NL_BUILD_UID: "2345"
         run: |
           export TZ=Pacific/Kiritimati USER=builder LOGNAME=builder HOME=/home/builder
           mkdir -p "$HOME"
@@ -849,10 +852,12 @@ jobs:
     outputs:
       artifact: ${{ steps.up.outputs.artifact-id }}
     # The same Debian 13 container as images/tools.toml names, by digest.
-    # The build mounts the filesystem it makes, so it needs privileges.
+    # Not privileged: no capabilities, no devices. The build runs as an
+    # unprivileged user in a user namespace, which the default seccomp profile
+    # and masked /proc paths of a container would block (image.md, "Build environment").
     container:
       image: debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 # trixie-20261104-slim
-      options: --privileged
+      options: --security-opt seccomp=unconfined --security-opt apparmor=unconfined --security-opt systempaths=unconfined
     env:
       NL_ARCH: aarch64
     steps:
@@ -900,7 +905,7 @@ jobs:
         run: |
           fetch='import socket; socket.create_connection(("github.com", 443), timeout=10)'
           python3 -I -c "$fetch"
-          if unshare --net -- python3 -I -c "$fetch" 2>/dev/null; then
+          if unshare --user --net -- python3 -I -c "$fetch" 2>/dev/null; then
             echo "a download worked inside the network namespace" >&2
             exit 1
           fi
@@ -928,7 +933,7 @@ jobs:
       artifact: ${{ steps.up.outputs.artifact-id }}
     container:
       image: debian@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 # trixie-20261104-slim
-      options: --privileged
+      options: --security-opt seccomp=unconfined --security-opt apparmor=unconfined --security-opt systempaths=unconfined
     env:
       NL_ARCH: aarch64
     steps:
@@ -949,6 +954,7 @@ jobs:
           COMMIT: ${{ github.sha }}
           SOURCE_DATE_EPOCH: ${{ needs.kernel-changes.outputs.epoch }}
           NL_FAKETIME_DAYS: "400"
+          NL_BUILD_UID: "2345"
         run: |
           export TZ=Pacific/Kiritimati USER=builder LOGNAME=builder HOME=/home/builder
           mkdir -p "$HOME"

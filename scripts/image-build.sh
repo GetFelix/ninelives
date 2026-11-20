@@ -206,10 +206,26 @@ for p in "${root_pkgs[@]}"; do pkg_args+=(--package "$p"); done
 export SOURCE_DATE_EPOCH
 # The rebuild runs the rest of the build at another time. The fetch phase has
 # already happened: TLS certificates and signatures are checked at real time.
+# mkosi rebuilds the environment of what it starts, so the clock reaches apt,
+# dpkg and the maintainer scripts only through Environment=, and only if the
+# library is at that path in the sandbox and in the root. image_stage.py takes
+# it out of the root again, and rootfs/probe-clock.chroot fails the build if a
+# process in the root does not see the offset.
+mkosi_clock=(--environment "NL_FAKETIME_DAYS=${NL_FAKETIME_DAYS:-0}")
+faketime_path=/usr/lib/ninelives-faketime/libfaketime.so.1
 if [[ -n ${NL_FAKETIME_DAYS:-} ]]; then
   # shellcheck source=/dev/null
   . "$repo/scripts/faketime.sh"
-  faketime_on "$(python3 -I "$repo/scripts/faketime_lib.py" --store "$store" --out "$work/faketime")" "$NL_FAKETIME_DAYS"
+  lib=$(python3 -I "$repo/scripts/faketime_lib.py" --store "$store" --out "$work/faketime")
+  faketime_on "$lib" "$NL_FAKETIME_DAYS"
+  rm -rf "$work/skeleton"
+  for t in "$work/skeleton" "$sandbox"; do
+    mkdir -p "$t${faketime_path%/*}"
+    cp "$lib" "$t$faketime_path"
+  done
+  mkosi_clock+=(--skeleton-tree "$work/skeleton"
+    --environment "LD_PRELOAD=$faketime_path" --environment "FAKETIME=+${NL_FAKETIME_DAYS}d"
+    --environment FAKETIME_DONT_FAKE_MONOTONIC=1 --environment FAKETIME_NO_CACHE=1)
 fi
 PYTHONPATH=$mkosi_dir python3 -B -m mkosi \
   --directory "$repo/images/qemu-$NL_ARCH" --force \
@@ -220,6 +236,7 @@ PYTHONPATH=$mkosi_dir python3 -B -m mkosi \
   --package-cache-directory "$work/mkosi-pkgcache" \
   --local-mirror "file://$mirror" \
   --sandbox-tree "$sandbox" \
+  "${mkosi_clock[@]}" \
   "${pkg_args[@]}" \
   build
 root=$work/mkosi-out/ninelives

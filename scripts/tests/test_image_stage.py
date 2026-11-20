@@ -30,6 +30,27 @@ def archive(path: pathlib.Path, members) -> None:
                 tar.addfile(info, io.BytesIO(payload))
 
 
+class Faketime(unittest.TestCase):
+    def setUp(self):
+        self.root = pathlib.Path(tempfile.mkdtemp())
+
+    def test_removes_the_library_dir(self):
+        lib = self.root / st.FAKETIME_DIR
+        lib.mkdir(parents=True)
+        (lib / "libfaketime.so.1").write_bytes(b"x")
+        st.remove_faketime(self.root)
+        self.assertFalse(lib.exists())
+
+    def test_a_copy_elsewhere_is_refused(self):
+        (self.root / "usr/lib").mkdir(parents=True)
+        (self.root / "usr/lib/libfaketime.so.1").write_bytes(b"x")
+        with self.assertRaises(SystemExit):
+            st.remove_faketime(self.root)
+
+    def test_nothing_to_remove_passes(self):
+        st.remove_faketime(self.root)
+
+
 class Unpack(unittest.TestCase):
     def setUp(self):
         self.d = pathlib.Path(tempfile.mkdtemp())

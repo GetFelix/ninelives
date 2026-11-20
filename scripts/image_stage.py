@@ -58,6 +58,17 @@ NSSWITCH = "passwd: files\ngroup: files\nhosts: files dns\n"
 LD_SO_CONF = "include /etc/ld.so.conf.d/*.conf\n"
 TOP_LEVEL_LINKS = {"/bin": "usr/bin", "/sbin": "usr/sbin", "/lib": "usr/lib", "/lib64": "usr/lib64"}
 INSTALL_MODE = 0o555
+# Where the rebuild puts libfaketime for the package install (scripts/image-build.sh).
+# It is not in any package, so it must be gone before the root is sealed (I3).
+FAKETIME_DIR = "usr/lib/ninelives-faketime"
+
+
+def remove_faketime(root: pathlib.Path) -> None:
+    """Take the preloaded clock library out of the root; fail if any copy is left."""
+    shutil.rmtree(root / FAKETIME_DIR, ignore_errors=True)
+    left = [str(p) for p in root.rglob("libfaketime*")]
+    if left:
+        raise SystemExit(f"libfaketime is still in the root: {', '.join(left)}")
 
 
 def installed_packages(root: pathlib.Path) -> dict[str, str]:
@@ -204,6 +215,7 @@ def main() -> int:
     locked = {p["name"]: p for p in lock["root"]["package"]}
     snapshot = lock["snapshot"]
 
+    remove_faketime(root)
     installed = installed_packages(root)
     for name, version in installed.items():
         if name not in locked or locked[name]["version"] != version:

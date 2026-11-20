@@ -192,6 +192,12 @@ class Checks(unittest.TestCase):
         e = with_(clean(), ci.Entry("/opt", "dir", 0o555))
         self.assertTrue(ci.check_origins(e, self.origins(clean())))
 
+    def test_faketime_left_in_the_root(self):
+        self.assertEqual(ci.check_faketime(clean()), [])
+        e = with_(clean(), ci.Entry("/usr/lib/ninelives-faketime", "dir", 0o555),
+                  ci.Entry("/usr/lib/ninelives-faketime/libfaketime.so.1", "file", 0o444, content=b"x"))
+        self.assertEqual(len(ci.check_faketime(e)), 2)
+
     def test_planted_secret(self):
         e = with_(clean(), ci.Entry("/etc/key", "file", 0o444, content=b"-----BEGIN OPENSSH PRIVATE KEY-----\nabc"))
         self.assertTrue(ci.check_secrets(e))

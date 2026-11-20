@@ -1,0 +1,16 @@
+#!/bin/sh
+# Runs inside the root right after the package install (PostInstallationScripts=).
+# NL_FAKETIME_DAYS is the offset the build was asked for, 0 in the first build.
+# A process here must see exactly that offset, so the rebuild cannot pass with
+# its package install at the real clock (docs/components/image.md).
+set -eu
+days=${NL_FAKETIME_DAYS:-0}
+real=$(env -u LD_PRELOAD -u FAKETIME date -u +%s)
+seen=$(date -u +%s)
+ahead=$(( (seen - real) / 86400 ))
+echo "clock probe: asked for +${days}d, this process sees ${ahead} days ahead"
+if [ "$days" -gt 0 ]; then
+  [ "$ahead" -ge $((days - 1)) ] && [ "$ahead" -le $((days + 1)) ] || { echo "clock probe: the offset is not in effect here" >&2; exit 1; }
+else
+  [ "$ahead" -eq 0 ] || { echo "clock probe: the first build is not at the real clock" >&2; exit 1; }
+fi

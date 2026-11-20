@@ -20,6 +20,10 @@ LAYOUTS = {0: "plain", 1: "compressed", 2: "inline", 3: "compressed", 4: "chunk"
 # Names of the standard xattr prefixes by name_index.
 PREFIXES = {1: "user.", 2: "system.posix_acl_access", 3: "system.posix_acl_default", 4: "trusted.", 6: "security."}
 LONG_PREFIX = 0x80
+# The incompat feature bits the reader understands: long xattr name prefixes.
+# Anything else changes how the image must be read (compression, devices,
+# chunks, fragments, dedupe), so it is refused.
+KNOWN_INCOMPAT = 0x40
 # A directory loop in a damaged image would not end otherwise.
 MAX_DEPTH = 64
 
@@ -53,11 +57,14 @@ class Image:
             raise ErofsError(f"bad magic {magic:#x}")
         feature_incompat, = struct.unpack_from("<I", sb, 80)
         extra_devices, = struct.unpack_from("<H", sb, 86)
+        if feature_incompat & ~KNOWN_INCOMPAT:
+            raise ErofsError(f"incompatible features {feature_incompat & ~KNOWN_INCOMPAT:#x} are not supported")
         if extra_devices:
             raise ErofsError("extra devices are not supported")
         self.blkbits = sb[12]
         self.blksz = 1 << self.blkbits
         self.root_nid, = struct.unpack_from("<H", sb, 14)
+        self.inos, = struct.unpack_from("<Q", sb, 16)
         self.build_time, = struct.unpack_from("<Q", sb, 24)
         self.meta_blkaddr, = struct.unpack_from("<I", sb, 40)
         self.xattr_blkaddr, = struct.unpack_from("<I", sb, 44)
@@ -122,7 +129,7 @@ class Image:
         if index & LONG_PREFIX:
             prefix = self.long_prefix(index & ~LONG_PREFIX)
         else:
-            prefix = PREFIXES.get(index, "")
+            prefix = PREFIXES.get(index, f"unknown-prefix-{index}:")
         return prefix + name.decode("utf-8", "replace")
 
     def read(self, ino: Inode) -> bytes:
@@ -157,11 +164,13 @@ def walk(path: pathlib.Path, make_entry):
     """Call make_entry(path, kind, mode, uid, gid, size, xattrs, link, reader, mtime) for every inode, depth first."""
     img = Image(path.read_bytes())
     out = []
+    seen_nids = []
 
     def visit(posix: str, nid: int, depth: int) -> None:
         if depth > MAX_DEPTH:
             raise ErofsError(f"directories nest deeper than {MAX_DEPTH} at {posix}")
         ino = img.inode(nid)
+        seen_nids.append(nid)
         fmt = stat.S_IFMT(ino.mode)
         kind = {stat.S_IFREG: "file", stat.S_IFDIR: "dir", stat.S_IFLNK: "symlink", stat.S_IFIFO: "fifo",
                 stat.S_IFSOCK: "socket", stat.S_IFCHR: "chr", stat.S_IFBLK: "blk"}.get(fmt, "other")
@@ -173,4 +182,8 @@ def walk(path: pathlib.Path, make_entry):
                 visit(f"{posix}/{name}", child, depth + 1)
 
     visit("", img.root_nid, 0)
+    # An inode the walk never reached would go unchecked; the superblock counts them all.
+    seen = len(set(seen_nids))
+    if seen != img.inos:
+        raise ErofsError(f"the walk found {seen} inodes, the superblock counts {img.inos}")
     return sorted(out, key=lambda e: e.path)

@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # Build the qemu production image for NL_ARCH, x86_64 or aarch64 (docs/components/image.md).
 #
-# Starts as root inside the pinned bootstrap container (images/tools.toml), which
-# is not privileged; tools/image.sh starts it there, and CI runs it in the same
-# container. The fetch phase's own tools are installed first by
-# scripts/bootstrap.sh, each .deb checked against images/debian.lock.
-# Two phases. Fetch, as root, downloads and verifies every input, has the
-# network, and installs the locked build tools. The build then re-runs itself
-# as an unprivileged user in a user namespace of its own with a network
-# namespace holding only loopback: mkosi, the staging, the sealing and every
-# check run there and read nothing but the verified store. Root copies the
-# outputs out afterwards.
+# tools/image.sh runs it twice in the pinned bootstrap container
+# (images/tools.toml), CI through the same script. The fetch phase's own tools
+# are installed first by scripts/bootstrap.sh, each .deb checked against
+# images/debian.lock.
+# Fetch (NL_IMAGE_PHASE unset): root, in a container with the engine's default
+# seccomp and /proc masking. It downloads and verifies every input, has the
+# network, installs the locked build tools and prepares the build user.
+# Build (NL_IMAGE_PHASE=build): started by tools/image.sh as that user, never
+# root, in the committed result of the first phase, inside a user namespace
+# and a network namespace holding only loopback. mkosi, the staging, the
+# sealing and every check run there and read nothing but the verified store.
 #
 #   image-build.sh --kernel DIR --init FILE --out DIR [--work DIR]
 #
@@ -159,34 +160,19 @@ if [[ ${NL_IMAGE_PHASE:-fetch} == fetch ]]; then
     exit 1
   fi
 
-  # The build runs as this user. It owns the work directory and nothing else
-  # the build writes outside it; the outputs are copied out below.
+  # The build runs as this user, in the phase tools/image.sh starts next
+  # in another container, with no root in it. The user owns the work directory,
+  # the output directory and its home; nothing else.
   build_uid=${NL_BUILD_UID:-1000}
   [[ $build_uid =~ ^[1-9][0-9]{3,8}$ ]] || { echo "NL_BUILD_UID must be a number of 1000 or more" >&2; exit 2; }
-  getent passwd "$build_uid" >/dev/null || useradd --uid "$build_uid" --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin nlbuild
-  build_user=$(id -nu "$build_uid")
-  chown "$build_uid" "$work"
-  # The caller's HOME is kept when it is not root's (the rebuild varies it); the user owns it.
+  getent passwd "$build_uid" >/dev/null || { groupadd --gid "$build_uid" nlbuild && useradd --uid "$build_uid" --gid "$build_uid" --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin nlbuild; }
+  # The caller's HOME is kept when it is not root's (the rebuild varies it).
   child_home=${HOME:-}
   if [[ -z $child_home || $child_home == / || $child_home == /root ]]; then child_home=$work/home; fi
-  mkdir -p "$child_home"
-  chown "$build_uid" "$child_home"
-  rm -rf "$work/out"
-  mkdir "$work/out"
-  chown "$build_uid" "$work/out"
-
-  # A user namespace of its own (CAP_SYS_ADMIN only inside it) and a network
-  # namespace with nothing but loopback. unshare maps the user to itself, so
-  # mkosi sees an ordinary user and takes its unprivileged path.
-  rc=0
-  NL_IMAGE_PHASE=build HOME="$child_home" setpriv --reuid="$build_uid" --regid="$(id -g "$build_user")" --clear-groups -- \
-    unshare --user --map-current-user --net -- \
-    "$0" --kernel "$kernel_dir" --init "$init_bin" --out "$work/out" --work "$work" || rc=$?
-  # Whatever was written is copied, so a failed run still hands over what it found.
-  cp -a --no-preserve=ownership "$work/out/." "$out/"
-  exit "$rc"
+  mkdir -p "$child_home" "$out"
+  chown "$build_uid:$build_uid" "$work" "$out" "$child_home"
+  exit 0
 fi
-
 
 # ---- build phase: an unprivileged user, no network from here on -----------
 # A build step that reaches the network means the namespace is not doing its job (I2).

@@ -7,7 +7,9 @@ made it, so the tests compare owners only to each other.
 """
 import collections
 import pathlib
+import struct
 import sys
+import tempfile
 import unittest
 
 SCRIPTS = pathlib.Path(__file__).resolve().parents[1]
@@ -59,6 +61,29 @@ class ErofsRead(unittest.TestCase):
             er.Image(b"\0" * 4096)
         with self.assertRaises(er.ErofsError):
             er.Image(b"short")
+
+    def test_inode_count_matches_the_superblock(self):
+        # 3 hard-linked paths still count once per inode, so the walk has more paths than inodes.
+        data = bytearray(SAMPLE.read_bytes())
+        inos = struct.unpack_from("<Q", data, er.SB_OFFSET + 16)[0]
+        self.assertLess(inos, len(entries()))
+        struct.pack_into("<Q", data, er.SB_OFFSET + 16, inos + 1)
+        tampered = pathlib.Path(tempfile.mkdtemp()) / "t.erofs"
+        tampered.write_bytes(bytes(data))
+        with self.assertRaises(er.ErofsError) as cm:
+            er.walk(tampered, E)
+        self.assertIn("superblock counts", str(cm.exception))
+
+    def test_rejects_an_unknown_incompat_feature(self):
+        data = bytearray(SAMPLE.read_bytes())
+        struct.pack_into("<I", data, er.SB_OFFSET + 80, 0x1)  # lz4 0padding: a compressed image
+        with self.assertRaises(er.ErofsError):
+            er.Image(bytes(data))
+
+    def test_an_unknown_xattr_prefix_is_named_unknown(self):
+        img = er.Image(SAMPLE.read_bytes())
+        self.assertEqual(img._name(5, b"x"), "unknown-prefix-5:x")
+        self.assertEqual(img._name(1, b"x"), "user.x")
 
     def test_rejects_a_changed_layout(self):
         data = bytearray(SAMPLE.read_bytes())

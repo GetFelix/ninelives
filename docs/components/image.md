@@ -667,40 +667,47 @@ trusts them.
 
 ### Build environment
 
-The container is the digest-pinned Debian image with no `--privileged`, no
-added capabilities and no devices. The script starts as the container's root
-and does only what needs it: installs the locked bootstrap and build tools, and
-copies the outputs out at the end. Everything that handles the build's inputs
-runs as an unprivileged user (`nlbuild`, uid 1000, or `NL_BUILD_UID`): mkosi
-and Debian's maintainer scripts, staging, `mkfs.erofs`, `veritysetup`, `ukify`,
-`systemd-repart` and every check. That user runs in a user namespace of its
-own, with its own network namespace holding only loopback. mkosi sees an
-ordinary user and uses its single-user mode (since v25): files in the tree are
-owned by that user, and a `chown` to another owner by a package's maintainer
-script is suppressed. This costs nothing in the image, because `mkfs.erofs
---all-root` sets every owner to 0:0 and the checks read the owners back from
-the erofs.
+The container image is the digest-pinned Debian one. Nothing runs with
+`--privileged`, extra capabilities or devices. `tools/image.sh`, which CI runs
+too, starts two containers from it:
 
-A container engine's default seccomp profile blocks creating a user namespace,
-and its masked `/proc` paths block mounting a fresh `/proc` in one, which
-mkosi's sandbox does. `tools/image.sh`, which CI runs too, therefore turns off
-the seccomp and AppArmor profiles and unmasks `/proc` (`--security-opt
+1. **Fetch**, as the container's root, with the engine's default seccomp
+   profile and masked `/proc`. It downloads and verifies the inputs (with the
+   network), installs the locked bootstrap and build tools, whose maintainer
+   scripts run here, and prepares the build user. Its result is committed.
+2. **Build**, from that result, as an unprivileged user (`nlbuild`, uid 1000,
+   or `NL_BUILD_UID`), never root. mkosi and Debian's maintainer scripts for
+   the root, staging, `mkfs.erofs`, `veritysetup`, `ukify`, `systemd-repart` and
+   every check run here, in a user namespace of its own and a network
+   namespace holding only loopback.
+
+mkosi sees an ordinary user and uses its single-user mode (since v25): files in
+the tree are owned by that user, and a `chown` to another owner by a
+maintainer script is suppressed. This costs nothing in the image, because
+`mkfs.erofs --all-root` sets every owner to 0:0 and the checks read the owners
+back from the erofs.
+
+Only the second container gets relaxed settings, because a container engine's
+default seccomp profile blocks creating a user namespace and its masked
+`/proc` paths block mounting a fresh `/proc` in one, which mkosi's sandbox does:
+seccomp and AppArmor off and `/proc` unmasked (`--security-opt
 seccomp=unconfined`, `apparmor=unconfined`, `systempaths=unconfined`; podman's
-`unmask=ALL`). That is a smaller grant than `--privileged`: the container
-still has no `CAP_SYS_ADMIN` and no device access, and only a process that made
-its own user namespace gets capabilities, over that namespace alone. The
+`unmask=ALL`). Its user is not root and has no capabilities in the container;
+it gets them only inside the user namespace it makes, over that namespace. A
+root process with a writable `/proc/sys` could set `kernel.core_pattern` and
+reach the host, which is why the root phase does not get these settings. The
 Ubuntu 24.04 runner also restricts user namespaces with AppArmor, a setting of
 the host that a container cannot change, so the image jobs run on the runner
 itself, set `kernel.apparmor_restrict_unprivileged_userns=0` and start the
-container through `tools/image.sh` instead of as the job's container. The root
-phase has the network, as the fetch phase needs it, and installs the tools from
-the file mirror of the verified store.
+containers through `tools/image.sh` instead of as the job's container.
 
 Nothing in the build or the checks needs root or a mount. The checks read the
 root through `scripts/erofs_read.py`, which parses the erofs format (the
 superblock, compact and extended inodes, plain and inline data, directories
 and extended attributes), so a setuid bit, an owner, a timestamp or an
-extended attribute is seen as the image stores it. An extraction by
+extended attribute is seen as the image stores it. The number of distinct inodes
+it walks must equal the superblock's count, so an inode it missed fails the
+build, and an incompatible feature bit it does not implement is refused. An extraction by
 `fsck.erofs --extract` as an unprivileged user would lose the owners and the
 attributes, and a mount needs root. The reader refuses compressed or
 chunk-based inodes, which the build never writes. `fsck.erofs` also runs on the

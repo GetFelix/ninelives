@@ -13,12 +13,15 @@
 # time are read here and passed in (COMMIT and SOURCE_DATE_EPOCH in the
 # environment win, for CI).
 #
-# The container is not privileged: the build runs as an unprivileged user in a
-# user namespace, so the engine's default seccomp profile, its AppArmor profile
-# and the masking of /proc are lifted (docs/components/image.md, "Build
-# environment"). Every path is mounted at its own host path, so a build from
-# another checkout or work directory sees another path, as the rebuild wants.
-# On Ubuntu 24.04 the host also needs kernel.apparmor_restrict_unprivileged_userns=0.
+# Two containers, so nothing that fetched or installed anything runs with the
+# relaxed settings. The fetch phase runs as root in a container with the
+# engine's default seccomp profile and /proc masking, and is committed. The
+# build phase runs from that result as an unprivileged user, never root, with
+# seccomp and AppArmor off and /proc unmasked: a user namespace with a fresh
+# /proc needs them (docs/components/image.md, "Build environment"). Every path
+# is mounted at its own host path, so a build from another checkout or work
+# directory sees another path, as the rebuild wants. On Ubuntu 24.04 the host
+# also needs kernel.apparmor_restrict_unprivileged_userns=0.
 #
 # Passed through when set: NL_FAKETIME_DAYS, NL_BUILD_UID, TZ, USER, LOGNAME,
 # HOME. NL_CPUS=0 pins the container to that CPU list (docker --cpuset-cpus).
@@ -53,8 +56,33 @@ for v in NL_FAKETIME_DAYS NL_BUILD_UID TZ USER LOGNAME HOME; do
 done
 cpu_args=()
 [[ -z ${NL_CPUS:-} ]] || cpu_args=(--cpuset-cpus="$NL_CPUS")
-exec "$engine" run --rm "${cpu_args[@]}" \
+uid=${NL_BUILD_UID:-1000}
+build_home=${HOME:-}
+if [[ -z $build_home || $build_home == / || $build_home == /root ]]; then build_home=$work/home; fi
+mounts=(-v "$repo:$repo:ro" -v "$kernel:$kernel:ro" -v "$(dirname "$init"):$(dirname "$init"):ro" -v "$work:$work")
+args=("$repo/scripts/image-build.sh" --kernel "$kernel" --init "$init" --out "$work/out" --work "$work")
+tag=ninelives-build-$$
+cid=""
+cleanup() {
+  [[ -z $cid ]] || "$engine" rm -f "$cid" >/dev/null 2>&1 || true
+  "$engine" rmi -f "$tag" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+# Phase one: fetch, verify, install the tools, prepare the user.
+cid=$("$engine" create "${cpu_args[@]}" "${env_args[@]}" "${mounts[@]}" "$image" "${args[@]}")
+"$engine" start -a "$cid"
+"$engine" commit -q "$cid" "$tag" >/dev/null
+"$engine" rm -f "$cid" >/dev/null
+cid=""
+
+# Phase two: the build, as the user, in its own user and network namespaces.
+rc=0
+"$engine" run --rm "${cpu_args[@]}" --user "$uid:$uid" \
   --security-opt seccomp=unconfined --security-opt apparmor=unconfined --security-opt "$proc_opt" \
-  "${env_args[@]}" \
-  -v "$repo:$repo:ro" -v "$kernel:$kernel:ro" -v "$(dirname "$init"):$(dirname "$init"):ro" -v "$out:$out" -v "$work:$work" \
-  "$image" "$repo/scripts/image-build.sh" --kernel "$kernel" --init "$init" --out "$out" --work "$work"
+  "${env_args[@]}" -e NL_IMAGE_PHASE=build -e HOME="$build_home" "${mounts[@]}" \
+  "$tag" unshare --user --map-current-user --net -- "${args[@]}" || rc=$?
+# A failed run still hands over what it wrote (a rejected check's report).
+mkdir -p "$out"
+cp -R "$work/out/." "$out/"
+exit "$rc"

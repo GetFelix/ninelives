@@ -397,8 +397,8 @@ cluster. What that fixes here:
   Neither does the issuer's group grant, which is scoped to `node:<id>`
   (0009), so an issuer compromise cannot clear it either. Registering
   with the role is refused (409) until every control-plane member runs
-  metadata level 44. This holds only with a Felix release that contains it; M1 pins the
-  first one, expected to be v0.8.0-preview.1.
+  metadata level 44. This holds only with a Felix release that contains it, and the image pins
+  v0.8.0-preview.1.
 - So a cluster that runs felixd or serves any client needs storage machines
   ([topology.md](../topology.md#cluster-sizes)); the fault-tolerant size is
   [open](#open-questions).

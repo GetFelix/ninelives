@@ -30,17 +30,19 @@ sha256 = "e45a8e5eeadfd37153ca41af4811341ecc0846b3aa0b917c5eabd027e5d690f4"
 
 [[component]]
 name = "felix"
-version = "0.7.2"
+version = "0.8.0-preview.1"
 license = "AGPL-3.0-only"
 source = "https://github.com/GetFelix/felix"
 
-# Felix does not sign its SHA256SUMS yet (felix#2796), so only the pinned
-# sha256 is checked. Its server is published for Linux x86_64 only
-# (felix#2797), so an aarch64 machine cannot take a core or storage role.
+# Felix publishes its server for Linux x86_64 only (felix#2797), so an
+# aarch64 machine cannot take a core or storage role.
 [component.signature]
-kind = "none"
-tracking = "https://github.com/GetFelix/felix/issues/2796"
+kind = "sigstore"
+checksums = "https://github.com/GetFelix/felix/releases/download/v0.8.0-preview.1/SHA256SUMS"
+bundle = "https://github.com/GetFelix/felix/releases/download/v0.8.0-preview.1/SHA256SUMS.sigstore.json"
+identity = "https://github.com/GetFelix/felix/.github/workflows/release.yml@refs/tags/v0.8.0-preview.1"
+issuer = "https://token.actions.githubusercontent.com"
 
 [component.artifacts.x86_64]
-url = "https://github.com/GetFelix/felix/releases/download/v0.7.2/felix-v0.7.2-linux-x86_64.tar.gz"
-sha256 = "ed024422603c82c0f18a8ebe2c5071aba90e2b1d63ea34792cc9375c7e01643e"
+url = "https://github.com/GetFelix/felix/releases/download/v0.8.0-preview.1/felix-v0.8.0-preview.1-linux-x86_64.tar.gz"
+sha256 = "f3ed0c33ecbadeca1afc7c5f7026e8ce2da56c2189681f1dc2ca439356674640"

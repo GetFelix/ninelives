@@ -55,4 +55,5 @@ to do this. The certificate's identity and issuer must equal the manifest's
 exactly, and the artifact's hash must equal both the manifest's and the line
 for its file name in the signed `SHA256SUMS`. Any mismatch stops the build. A
 component with `kind = "none"` is checked by SHA-256 only, and its manifest
-entry links the issue that tracks the missing signature.
+entry links the issue that tracks the missing signature. Both components
+are signed today.

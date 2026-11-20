@@ -52,8 +52,9 @@ QUERY = """#!/bin/sh
 # dpkg-query -W -f FMT NAME: "ii  <version>" for an installed name
 name=$4
 line=$(grep "^$name " "$FIXTURE_STATE/installed" 2>/dev/null | tail -n1) || true
-[ -n "$line" ] && echo "ii  ${line#* }"
-exit 0
+# like dpkg-query, fails for a package it has never heard of
+[ -n "$line" ] || exit 1
+echo "ii  ${line#* }"
 """
 
 

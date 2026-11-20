@@ -78,7 +78,7 @@ for line in "${entries[@]}"; do
   read -r name version sha archive filename <<<"$line"
   [[ $sha =~ ^[0-9a-f]{64}$ && $filename =~ ^pool/[A-Za-z0-9+._~%/-]+\.deb$ && $archive =~ ^debian(-security)?$ ]] \
     || { echo "bootstrap: bad lock entry for $name" >&2; exit 1; }
-  have=$(installed_version "$name")
+  have=$(installed_version "$name" || true)
   if [[ -n $have && ( ${NL_BOOTSTRAP_UPGRADE:-} != 1 || $have == "$version" ) ]]; then
     continue
   fi
